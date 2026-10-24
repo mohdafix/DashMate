@@ -5,6 +5,7 @@ import android.app.Presentation
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.SystemClock
@@ -25,6 +26,7 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import java.util.Locale
 
 class DashMatePresentation(
     private val hostContext: Context,
@@ -32,15 +34,26 @@ class DashMatePresentation(
 ) : Presentation(hostContext, display), DashMateStateBridge.StateListener {
 
     private val TAG = "DashMatePresentation"
-    private var webView: WebView? = null
+    
+    // AutoDeck Dual-WebView Architecture:
+    // deckWebView: dedicated permanently for in-car dashboard HTML (never reloaded/destroyed on web browsing)
+    // browserWebView: dedicated for web navigation, YouTube, RTM Klik
+    private var deckWebView: WebView? = null
+    private var browserWebView: WebView? = null
+    
     private lateinit var rootLayout: FrameLayout
     private lateinit var browserBar: LinearLayout
     private var dockBar: DashMateDockBar? = null
-    private var fullscreenBtn: ImageView? = null
     private var isFullscreen: Boolean = false
-    private var lastVisibleArea: android.graphics.Rect? = null
+    private var lastVisibleArea: Rect? = null
     private var currentPage: String = "home"
     private var isBrowsingWeb: Boolean = false
+    private var currentZoom: Float = 1.0f
+    
+    // Google Sign-in Auth Overlay
+    private var authOverlay: FrameLayout? = null
+    private var authWebView: WebView? = null
+
     private var carKeyboard: DashMateCarKeyboard? = null
     var onOpenKeyboard: ((initialText: String, hint: String, onSubmitted: (String) -> Unit) -> Unit)? = null
 
@@ -59,11 +72,12 @@ class DashMatePresentation(
             setBackgroundColor(Color.parseColor("#070B14"))
         }
 
-        // Enable cookies for YouTube & Google authentication
+        // Enable cookies globally for Google & YouTube authentication
         val cookieManager = CookieManager.getInstance()
         cookieManager.setAcceptCookie(true)
 
-        webView = WebView(context).apply {
+        // 1. Initialize permanent Deck WebView
+        deckWebView = WebView(context).apply {
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
@@ -85,49 +99,14 @@ class DashMatePresentation(
                 cacheMode = WebSettings.LOAD_DEFAULT
                 useWideViewPort = true
                 loadWithOverviewMode = true
-                userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36 DashMate/2.0"
             }
 
             webChromeClient = object : WebChromeClient() {}
-
             webViewClient = object : WebViewClient() {
-                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                    return false
-                }
-
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
                     Log.d(TAG, "Car Deck page finished loading: $url")
-                    if (!isBrowsingWeb) {
-                        onStateUpdated(DashMateStateBridge.buildStateJson(hostContext))
-                    } else {
-                        val script = """
-                            (function () {
-                              if (window.__ddAudible) return;
-                              window.__ddAudible = true;
-                              var isField = function (el) {
-                                if (!el || !el.tagName) return false;
-                                var t = el.tagName;
-                                if (t !== 'INPUT' && t !== 'TEXTAREA' && !el.isContentEditable) return false;
-                                if (t === 'INPUT' && !/^(text|search|email|url|tel|number|password|)$/i.test(el.getAttribute('type') || '')) return false;
-                                return !el.disabled && !el.readOnly;
-                              };
-                              var field = function (el) {
-                                if (!isField(el) || !window.AutoDeckWeb) return;
-                                window.__ddField = el;
-                                var v = el.isContentEditable ? el.innerText : el.value;
-                                try {
-                                  AutoDeckWeb.textField(v || '', el.getAttribute('placeholder') || el.getAttribute('aria-label') || '');
-                                } catch (err) {}
-                              };
-                              document.addEventListener('click', function (e) {
-                                var el = e.target && e.target.closest ? e.target.closest('input,textarea,[contenteditable=""],[contenteditable="true"]') : null;
-                                if (el) field(el);
-                              }, true);
-                            })();
-                        """.trimIndent()
-                        view?.evaluateJavascript(script, null)
-                    }
+                    onStateUpdated(DashMateStateBridge.buildStateJson(hostContext))
                 }
             }
 
@@ -138,17 +117,65 @@ class DashMatePresentation(
 
             loadUrl("file:///android_asset/drivedeck_home.html")
         }
+        rootLayout.addView(deckWebView)
 
-        rootLayout.addView(webView)
+        // 2. Initialize dedicated Browser WebView (hidden by default)
+        browserWebView = WebView(context).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+            setBackgroundColor(Color.parseColor("#0B0F1A"))
+            visibility = View.GONE
+            setLayerType(View.LAYER_TYPE_HARDWARE, null)
 
-        // Floating in-car browser navigation bar (discreet glassmorphic pill)
+            cookieManager.setAcceptThirdPartyCookies(this, true)
+
+            settings.apply {
+                javaScriptEnabled = true
+                domStorageEnabled = true
+                databaseEnabled = true
+                allowFileAccess = true
+                allowContentAccess = true
+                mediaPlaybackRequiresUserGesture = false
+                cacheMode = WebSettings.LOAD_DEFAULT
+                useWideViewPort = true
+                loadWithOverviewMode = true
+                userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
+            }
+
+            webChromeClient = object : WebChromeClient() {}
+            webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                    val url = request?.url?.toString() ?: ""
+                    if (isGoogleAuthUrl(url)) {
+                        showAuthOverlay(url)
+                        return true
+                    }
+                    return false
+                }
+
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    super.onPageFinished(view, url)
+                    Log.d(TAG, "Browser page finished loading: $url")
+                    injectBrowserEnhancements(view)
+                }
+            }
+
+            val bridge = AutoDeckJsInterface()
+            addJavascriptInterface(bridge, "AutoDeck")
+            addJavascriptInterface(bridge, "AutoDeckWeb")
+        }
+        rootLayout.addView(browserWebView)
+
+        // 3. Floating in-car browser navigation bar (with zoom & controls)
         browserBar = createBrowserControls()
         browserBar.visibility = View.GONE
         rootLayout.addView(browserBar)
 
         val density = context.resources.displayMetrics.density
 
-        // Floating in-car navigation dock bar (6-icon pill directly on head unit)
+        // 4. Floating in-car navigation dock bar (6-icon pill directly on head unit)
         dockBar = DashMateDockBar(context) { targetPage ->
             DashMateStateBridge.setPage(targetPage)
         }.apply {
@@ -158,69 +185,248 @@ class DashMatePresentation(
             ).apply {
                 gravity = Gravity.START or Gravity.TOP
                 leftMargin = (16 * density + 0.5f).toInt()
-                topMargin = (12 * density + 0.5f).toInt()
+                topMargin = (16 * density + 0.5f).toInt()
             }
             layoutParams = lp
         }
         rootLayout.addView(dockBar)
 
-        // In-car virtual keyboard (replaces external screen push, keeps VirtualDisplay fully intact)
+        // 5. In-car virtual keyboard overlay
         carKeyboard = DashMateCarKeyboard(
             context,
             onSubmit = { text, isAddressBar ->
                 injectBrowserText(text, isAddressBar)
             },
             onDismiss = {
-                // Keyboard closed
+                // dismissed
             }
-        ).apply {
-            val lp = FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
-                gravity = Gravity.BOTTOM
-            }
-            layoutParams = lp
-        }
+        )
         rootLayout.addView(carKeyboard)
 
-        rootLayout.post {
-            dockBar?.restorePosition(rootLayout.width, rootLayout.height)
-        }
-
         setContentView(rootLayout)
-
         DashMateStateBridge.addListener(this)
-        DashMateStateBridge.refreshAllServices(hostContext)
+
+        updateVisibleArea(lastVisibleArea)
+    }
+
+    fun toggleFullscreen(fullscreen: Boolean) {
+        isFullscreen = fullscreen
+        val density = context.resources.displayMetrics.density
+        if (isFullscreen) {
+            dockBar?.visibility = View.GONE
+            browserBar.visibility = View.GONE
+        } else {
+            if (isBrowsingWeb) {
+                browserBar.visibility = View.VISIBLE
+            } else {
+                dockBar?.visibility = View.VISIBLE
+            }
+        }
+    }
+
+    fun onSizeChanged(width: Int, height: Int) {
+        rootLayout.post {
+            updateVisibleArea(lastVisibleArea)
+        }
+    }
+
+    fun onVisibleAreaChanged(visibleArea: Rect) {
+        updateVisibleArea(visibleArea)
+    }
+
+    private fun isGoogleAuthUrl(url: String): Boolean {
+        return url.contains("accounts.google.com") || url.contains("/gsi/transform")
+    }
+
+    private fun showAuthOverlay(url: String) {
+        if (authOverlay == null) {
+            val density = context.resources.displayMetrics.density
+            authOverlay = FrameLayout(context).apply {
+                layoutParams = FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+                setBackgroundColor(Color.parseColor("#CC070B14"))
+
+                val card = FrameLayout(context).apply {
+                    val cardWidth = (560 * density).toInt()
+                    val cardHeight = (420 * density).toInt()
+                    layoutParams = FrameLayout.LayoutParams(cardWidth, cardHeight).apply {
+                        gravity = Gravity.CENTER
+                    }
+                    background = GradientDrawable().apply {
+                        setColor(Color.parseColor("#16253B"))
+                        cornerRadius = 20 * density
+                        setStroke((1 * density).toInt(), Color.parseColor("#335EF2D6"))
+                    }
+
+                    authWebView = WebView(context).apply {
+                        layoutParams = FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        ).apply {
+                            setMargins((8 * density).toInt(), (40 * density).toInt(), (8 * density).toInt(), (8 * density).toInt())
+                        }
+                        settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
+                        webViewClient = object : WebViewClient() {
+                            override fun onPageFinished(v: WebView?, u: String?) {
+                                if (u != null && !u.contains("accounts.google.com")) {
+                                    closeAuthOverlay()
+                                    browserWebView?.reload()
+                                }
+                            }
+                        }
+                    }
+                    addView(authWebView)
+
+                    // Close button '×'
+                    val closeBtn = TextView(context).apply {
+                        text = "×"
+                        textSize = 26f
+                        setTextColor(Color.WHITE)
+                        setPadding((16 * density).toInt(), (4 * density).toInt(), (16 * density).toInt(), (4 * density).toInt())
+                        layoutParams = FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        ).apply {
+                            gravity = Gravity.END or Gravity.TOP
+                        }
+                        setOnClickListener {
+                            closeAuthOverlay()
+                        }
+                    }
+                    addView(closeBtn)
+                }
+                addView(card)
+            }
+            rootLayout.addView(authOverlay)
+        }
+        authOverlay?.visibility = View.VISIBLE
+        authWebView?.loadUrl(url)
+    }
+
+    private fun closeAuthOverlay() {
+        authOverlay?.visibility = View.GONE
+        authWebView?.loadUrl("about:blank")
+    }
+
+    private fun injectBrowserEnhancements(view: WebView?) {
+        val script = """
+            (function () {
+              var d = document.documentElement;
+              function st(id, text) {
+                if (document.getElementById(id)) return;
+                var s = document.createElement('style');
+                s.id = id;
+                s.textContent = text;
+                d.appendChild(s);
+              }
+              st('dd-corner', 'ytd-masthead #container.ytd-masthead{padding-right:88px!important}');
+              st('dd-tap', 'html,body{touch-action:manipulation!important}');
+              st('dd-fit', 'ytd-miniplayer{transform:scale(.62)!important;transform-origin:bottom right!important}');
+              st('dd-fs', 'video{object-fit:cover!important}');
+
+              if (window.__ddAudible) return;
+              window.__ddAudible = true;
+              var isField = function (el) {
+                if (!el || !el.tagName) return false;
+                var t = el.tagName;
+                if (t !== 'INPUT' && t !== 'TEXTAREA' && !el.isContentEditable) return false;
+                if (t === 'INPUT' && !/^(text|search|email|url|tel|number|password|)$/i.test(el.getAttribute('type') || '')) return false;
+                return !el.disabled && !el.readOnly;
+              };
+              var field = function (el) {
+                if (!isField(el) || !window.AutoDeckWeb) return;
+                window.__ddField = el;
+                var v = el.isContentEditable ? el.innerText : el.value;
+                try {
+                  AutoDeckWeb.textField(v || '', el.getAttribute('placeholder') || el.getAttribute('aria-label') || '');
+                } catch (err) {}
+              };
+              document.addEventListener('click', function (e) {
+                var el = e.target && e.target.closest ? e.target.closest('input,textarea,[contenteditable=""],[contenteditable="true"]') : null;
+                if (el) field(el);
+              }, true);
+            })();
+        """.trimIndent()
+        view?.evaluateJavascript(script, null)
+    }
+
+    override fun onSwitchPage(page: String) {
+        if (currentPage == page && !isBrowsingWeb) return
+        currentPage = page
+        exitBrowserToHome(false)
+
+        val assetUrl = when (page) {
+            "lyrics" -> "file:///android_asset/drivedeck_lyrics.html"
+            "prayer" -> "file:///android_asset/drivedeck_prayer.html"
+            else -> "file:///android_asset/drivedeck_home.html"
+        }
+        deckWebView?.loadUrl(assetUrl)
+    }
+
+    override fun onExecuteScript(script: String) {
+        deckWebView?.post {
+            deckWebView?.evaluateJavascript(script, null)
+        }
+    }
+
+    fun loadWebUrl(url: String) {
+        isBrowsingWeb = true
+        dockBar?.visibility = View.GONE
+        deckWebView?.visibility = View.GONE
+        browserWebView?.visibility = View.VISIBLE
+        browserBar.visibility = View.VISIBLE
+        currentZoom = 1.0f
+        browserWebView?.loadUrl(url)
+    }
+
+    fun exitBrowserToHome(reloadDeck: Boolean = false) {
+        if (!isBrowsingWeb && currentPage == "home") return
+        isBrowsingWeb = false
+        currentPage = "home"
+        browserWebView?.stopLoading()
+        browserWebView?.visibility = View.GONE
+        browserBar.visibility = View.GONE
+        closeAuthOverlay()
+        dockBar?.visibility = View.VISIBLE
+        deckWebView?.visibility = View.VISIBLE
+
+        if (reloadDeck) {
+            deckWebView?.loadUrl("file:///android_asset/drivedeck_home.html")
+        } else {
+            onStateUpdated(DashMateStateBridge.buildStateJson(hostContext))
+        }
     }
 
     private fun createBrowserControls(): LinearLayout {
+        val density = context.resources.displayMetrics.density
         val bar = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            val bg = GradientDrawable().apply {
-                setColor(Color.parseColor("#CC121826"))
-                cornerRadius = 32f
-                setStroke(2, Color.parseColor("#33FFFFFF"))
+            setPadding((10 * density).toInt(), (4 * density).toInt(), (10 * density).toInt(), (4 * density).toInt())
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#D90B0F1A"))
+                cornerRadius = 24 * density
+                setStroke((1 * density).toInt(), Color.parseColor("#33FFFFFF"))
             }
-            background = bg
-            setPadding(24, 12, 24, 12)
-            val params = FrameLayout.LayoutParams(
+            val lp = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
+                (42 * density).toInt()
             ).apply {
                 gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                topMargin = 20
+                topMargin = (10 * density).toInt()
             }
-            layoutParams = params
+            layoutParams = lp
         }
 
         // Home button
         val homeBtn = TextView(context).apply {
-            text = "⌂ DashMate"
+            text = "⌂ Deck"
             setTextColor(Color.parseColor("#5EF2D6"))
             textSize = 14f
-            setPadding(16, 8, 16, 8)
+            setPadding(14, 6, 14, 6)
             setOnClickListener {
                 exitBrowserToHome()
             }
@@ -232,10 +438,10 @@ class DashMatePresentation(
             text = "◀ Back"
             setTextColor(Color.WHITE)
             textSize = 14f
-            setPadding(16, 8, 16, 8)
+            setPadding(14, 6, 14, 6)
             setOnClickListener {
-                if (webView?.canGoBack() == true) {
-                    webView?.goBack()
+                if (browserWebView?.canGoBack() == true) {
+                    browserWebView?.goBack()
                 } else {
                     exitBrowserToHome()
                 }
@@ -245,24 +451,50 @@ class DashMatePresentation(
 
         // Reload button
         val reloadBtn = TextView(context).apply {
-            text = "↻ Reload"
+            text = "↻"
             setTextColor(Color.WHITE)
-            textSize = 14f
-            setPadding(16, 8, 16, 8)
+            textSize = 16f
+            setPadding(12, 6, 12, 6)
             setOnClickListener {
-                webView?.reload()
+                browserWebView?.reload()
             }
         }
         bar.addView(reloadBtn)
+
+        // Zoom In button using dd_zoom_in drawable
+        val zoomInBtn = ImageView(context).apply {
+            setImageResource(R.drawable.dd_zoom_in)
+            imageTintList = ColorStateList.valueOf(Color.WHITE)
+            setPadding(10, 6, 10, 6)
+            layoutParams = LinearLayout.LayoutParams((32 * density).toInt(), (32 * density).toInt())
+            setOnClickListener {
+                currentZoom = minOf(2.0f, currentZoom + 0.15f)
+                browserWebView?.evaluateJavascript("document.documentElement.style.zoom='${String.format(Locale.US, "%.2f", currentZoom)}';", null)
+            }
+        }
+        bar.addView(zoomInBtn)
+
+        // Zoom Out button using dd_zoom_out drawable
+        val zoomOutBtn = ImageView(context).apply {
+            setImageResource(R.drawable.dd_zoom_out)
+            imageTintList = ColorStateList.valueOf(Color.WHITE)
+            setPadding(10, 6, 10, 6)
+            layoutParams = LinearLayout.LayoutParams((32 * density).toInt(), (32 * density).toInt())
+            setOnClickListener {
+                currentZoom = maxOf(0.5f, currentZoom - 0.15f)
+                browserWebView?.evaluateJavascript("document.documentElement.style.zoom='${String.format(Locale.US, "%.2f", currentZoom)}';", null)
+            }
+        }
+        bar.addView(zoomOutBtn)
 
         // Search / Keyboard button
         val searchBtn = TextView(context).apply {
             text = "🔍 Search"
             setTextColor(Color.WHITE)
             textSize = 14f
-            setPadding(16, 8, 16, 8)
+            setPadding(14, 6, 14, 6)
             setOnClickListener {
-                val currentUrl = webView?.url ?: ""
+                val currentUrl = browserWebView?.url ?: ""
                 showVirtualKeyboard(if (currentUrl.startsWith("http")) currentUrl else "", "Search YouTube, Google or enter URL...", isAddressBar = true)
             }
         }
@@ -279,168 +511,85 @@ class DashMatePresentation(
 
     fun injectBrowserText(text: String, isAddressBar: Boolean = false) {
         if (isAddressBar) {
-            val q = text.trim()
-            if (q.isEmpty()) return
-            val cur = webView?.url ?: ""
-            if (Regex("^(https?://|[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+)", RegexOption.IGNORE_CASE).containsMatchIn(q)) {
-                val target = if (q.startsWith("http://", true) || q.startsWith("https://", true)) q else "https://$q"
-                loadWebUrl(target)
-            } else if (cur.contains("youtube.com", true)) {
-                loadWebUrl("https://m.youtube.com/results?search_query=" + android.net.Uri.encode(q))
+            val query = text.trim()
+            if (query.startsWith("http://") || query.startsWith("https://")) {
+                loadWebUrl(query)
+            } else if (query.contains(".") && !query.contains(" ")) {
+                loadWebUrl("https://$query")
             } else {
-                loadWebUrl("https://www.google.com/search?q=" + android.net.Uri.encode(q))
+                loadWebUrl("https://www.google.com/search?q=" + java.net.URLEncoder.encode(query, "UTF-8"))
             }
             return
         }
 
-        val escaped = org.json.JSONObject.quote(text)
+        val escaped = JSONObjectEscape(text)
         val script = """
             (function (t) {
-                var e = window.__ddField || document.activeElement;
-                if (!e || !e.isConnected) return;
-                if (e.isContentEditable) {
-                    e.textContent = t;
-                    e.dispatchEvent(new InputEvent('input', { bubbles: true }));
-                } else {
-                    var d = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(e), 'value');
-                    if (d && d.set) d.set.call(e, t); else e.value = t;
-                    e.dispatchEvent(new Event('input', { bubbles: true }));
-                    e.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-                if (/(^|\.)youtube\.com$/.test(location.hostname) && (e.name === 'search_query' || /search/i.test(e.id + ' ' + e.className))) {
-                    location.href = '/results?search_query=' + encodeURIComponent(t);
-                    return;
-                }
-                if (e.tagName === 'TEXTAREA') return;
-                var o = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true };
-                var go = e.dispatchEvent(new KeyboardEvent('keydown', o));
-                e.dispatchEvent(new KeyboardEvent('keypress', o));
-                e.dispatchEvent(new KeyboardEvent('keyup', o));
-                if (go && e.form) { if (e.form.requestSubmit) e.form.requestSubmit(); else e.form.submit(); }
-            })($escaped);
+              var e = window.__ddField || document.activeElement;
+              if (!e || !e.isConnected) return;
+              if (e.isContentEditable) {
+                e.textContent = t;
+                e.dispatchEvent(new InputEvent('input', { bubbles: true }));
+              } else {
+                var d = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(e), 'value');
+                if (d && d.set) d.set.call(e, t); else e.value = t;
+                e.dispatchEvent(new Event('input', { bubbles: true }));
+                e.dispatchEvent(new Event('change', { bubbles: true }));
+              }
+              if (/(^|\.)youtube\.com$/.test(location.hostname) && (e.name === 'search_query' || /search/i.test(e.id + ' ' + e.className))) {
+                location.href = '/results?search_query=' + encodeURIComponent(t);
+                return;
+              }
+              if (e.tagName === 'TEXTAREA') return;
+              var o = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true };
+              var go = e.dispatchEvent(new KeyboardEvent('keydown', o));
+              e.dispatchEvent(new KeyboardEvent('keypress', o));
+              e.dispatchEvent(new KeyboardEvent('keyup', o));
+              if (go && e.form) { if (e.form.requestSubmit) e.form.requestSubmit(); else e.form.submit(); }
+            })('$escaped');
         """.trimIndent()
-        webView?.post {
-            webView?.evaluateJavascript(script, null)
-        }
+
+        browserWebView?.evaluateJavascript(script, null)
     }
 
-    private fun exitBrowserToHome() {
-        isBrowsingWeb = false
-        browserBar.visibility = View.GONE
-        carKeyboard?.hide()
-        onSwitchPage("home")
-    }
+    fun updateVisibleArea(visibleArea: Rect?) {
+        lastVisibleArea = visibleArea
+        if (visibleArea == null || !::rootLayout.isInitialized) return
 
-    fun loadWebUrl(url: String) {
-        isBrowsingWeb = true
         rootLayout.post {
-            browserBar.visibility = View.VISIBLE
-            webView?.loadUrl(url)
-        }
-    }
+            val screenWidth = rootLayout.width
+            val screenHeight = rootLayout.height
+            if (screenWidth <= 0 || screenHeight <= 0) return@post
 
-    override fun onDetachedFromWindow() {
-        DashMateStateBridge.removeListener(this)
-        webView?.destroy()
-        webView = null
-        super.onDetachedFromWindow()
-    }
+            val insetLeft = visibleArea.left
+            val insetTop = visibleArea.top
+            val insetRight = screenWidth - visibleArea.right
+            val insetBottom = screenHeight - visibleArea.bottom
 
-    fun updateViewportPadding(visibleArea: android.graphics.Rect?) {
-        val dm = context.resources.displayMetrics
-        val isSplit = visibleArea != null && (visibleArea.width() < dm.widthPixels * 0.8f)
-        if (visibleArea != null && (!isFullscreen || isSplit)) {
-            val l = Math.max(0, visibleArea.left)
-            val t = Math.max(0, visibleArea.top)
-            val r = Math.max(0, dm.widthPixels - visibleArea.right)
-            val b = Math.max(0, dm.heightPixels - visibleArea.bottom)
-            rootLayout.setPadding(l, t, r, b)
-        } else {
-            rootLayout.setPadding(0, 0, 0, 0)
-        }
-    }
+            val padLeft = if (insetLeft > 0) insetLeft else 0
+            val padTop = if (insetTop > 0) insetTop else 0
+            val padRight = if (insetRight > 0) insetRight else 0
+            val padBottom = if (insetBottom > 0) insetBottom else 0
 
-    fun toggleFullscreen(fullscreen: Boolean) {
-        isFullscreen = fullscreen
-        updateViewportPadding(lastVisibleArea)
-        rootLayout.post {
-            dockBar?.restorePosition(rootLayout.width, rootLayout.height)
-            webView?.evaluateJavascript(
-                "if (window.applyLayout && window.pickLayout) { applyLayout(pickLayout()); }",
-                null
-            )
-        }
-    }
+            deckWebView?.setPadding(padLeft, padTop, padRight, padBottom)
+            browserWebView?.setPadding(padLeft, padTop, padRight, padBottom)
 
-    fun onSizeChanged(width: Int, height: Int) {
-        rootLayout.post {
-            updateViewportPadding(lastVisibleArea)
-            dockBar?.restorePosition(width, height)
-            webView?.evaluateJavascript(
-                "if (window.applyLayout && window.pickLayout) { applyLayout(pickLayout()); }",
-                null
-            )
-        }
-    }
-
-    fun onVisibleAreaChanged(rect: android.graphics.Rect) {
-        lastVisibleArea = rect
-        updateViewportPadding(rect)
-        rootLayout.post {
-            dockBar?.restorePosition(rootLayout.width, rootLayout.height)
-            webView?.evaluateJavascript(
-                "if (window.applyLayout && window.pickLayout) { applyLayout(pickLayout()); }",
-                null
-            )
-        }
-    }
-
-    override fun onSwitchPage(page: String) {
-        currentPage = page
-        dockBar?.updateCurrentPage(page)
-
-        val targetUrl = when (page) {
-            "lyrics" -> "file:///android_asset/drivedeck_lyrics.html"
-            "prayer" -> "file:///android_asset/drivedeck_prayer.html"
-            "custom" -> "file:///android_asset/drivedeck_home.html"
-            "web", "browse" -> {
-                loadWebUrl("https://m.youtube.com")
-                return
-            }
-            else -> "file:///android_asset/drivedeck_home.html"
-        }
-
-        isBrowsingWeb = false
-        browserBar.visibility = View.GONE
-
-        webView?.post {
-            val currentUrl = webView?.url ?: ""
-            val targetAsset = targetUrl.substringAfter("android_asset/")
-            if (!currentUrl.contains(targetAsset)) {
-                Log.d(TAG, "Navigating to: $targetUrl")
-                webView?.loadUrl(targetUrl)
-            } else {
-                Log.d(TAG, "Already on $targetAsset, updating state cleanly")
-                onStateUpdated(DashMateStateBridge.buildStateJson(hostContext))
+            val density = context.resources.displayMetrics.density
+            val lp = dockBar?.layoutParams as? FrameLayout.LayoutParams
+            if (lp != null) {
+                lp.leftMargin = padLeft + (16 * density + 0.5f).toInt()
+                lp.topMargin = padTop + (16 * density + 0.5f).toInt()
+                dockBar?.layoutParams = lp
             }
         }
     }
 
     override fun onStateUpdated(stateJson: String) {
         if (isBrowsingWeb) return
-        val script = when (currentPage) {
-            "lyrics" -> "if (window.ddUpdate) { var d = $stateJson; window.ddUpdate(d.music || d); } else if (window.ddLyrics) { window.ddLyrics($stateJson); }"
-            "prayer" -> "if (window.ddUpdate) { var d = $stateJson; window.ddUpdate(d.prayer || d); } else if (window.ddPrayer) { window.ddPrayer($stateJson); }"
-            else -> "if (window.ddUpdate) { window.ddUpdate($stateJson); }"
-        }
-        webView?.post {
-            webView?.evaluateJavascript(script, null)
-        }
-    }
-
-    override fun onExecuteScript(script: String) {
-        webView?.post {
-            webView?.evaluateJavascript(script, null)
+        val escapedJson = JSONObjectEscape(stateJson)
+        val script = "if (window.ddUpdate) { window.ddUpdate('$escapedJson'); }"
+        deckWebView?.post {
+            deckWebView?.evaluateJavascript(script, null)
         }
     }
 
@@ -471,6 +620,16 @@ class DashMatePresentation(
 
         if (::rootLayout.isInitialized) {
             rootLayout.post {
+                if (isBrowsingWeb) {
+                    val script = """
+                        (function(dx, dy) {
+                          var target = document.scrollingElement || document.documentElement;
+                          target.scrollBy(dx, dy);
+                        })($distanceX, $distanceY);
+                    """.trimIndent()
+                    browserWebView?.evaluateJavascript(script, null)
+                }
+
                 rootLayout.dispatchTouchEvent(down)
                 rootLayout.dispatchTouchEvent(move)
                 rootLayout.dispatchTouchEvent(up)

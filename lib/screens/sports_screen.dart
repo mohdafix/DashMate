@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../core/secrets.dart';
 import '../theme/app_colors.dart';
 
 class SportsScreen extends StatefulWidget {
@@ -24,7 +25,7 @@ class _SportsScreenState extends State<SportsScreen> {
     'Malaysia Super League',
     'Serie A',
     'Bundesliga',
-    'NBA',
+    'AFC Champions League',
   ];
 
   final Set<String> _favouriteTeams = {'Arsenal', 'Liverpool', 'JDT'};
@@ -64,7 +65,7 @@ class _SportsScreenState extends State<SportsScreen> {
       'status': 'ft',
       'minute': 'FT',
       'time': 'Yesterday',
-      'venue': 'Santiago BernabÃ©u',
+      'venue': 'Santiago Bernabéu',
     },
     {
       'id': 'm4',
@@ -90,13 +91,25 @@ class _SportsScreenState extends State<SportsScreen> {
       'time': '22:15',
       'venue': 'Camp Nou',
     },
+    {
+      'id': 'm6',
+      'league': 'AFC Champions League',
+      'home': 'Al-Hilal',
+      'away': 'Ulsan HD',
+      'homeScore': 2,
+      'awayScore': 0,
+      'status': 'ft',
+      'minute': 'FT',
+      'time': 'Yesterday',
+      'venue': 'Kingdom Arena',
+    },
   ];
 
   final List<Map<String, dynamic>> _standings = [
     {'pos': 1, 'team': 'Arsenal', 'p': 28, 'w': 20, 'd': 4, 'l': 4, 'gd': '+38', 'pts': 64},
     {'pos': 2, 'team': 'Liverpool', 'p': 28, 'w': 19, 'd': 6, 'l': 3, 'gd': '+35', 'pts': 63},
-    {'pos': 3, 'team': 'Man City', 'p': 28, 'w': 19, 'd': 5, 'l': 4, 'gd': '+33', 'pts': 62},
-    {'pos': 4, 'team': 'Aston Villa', 'p': 29, 'w': 17, 'd': 4, 'l': 8, 'gd': '+18', 'pts': 55},
+    {'pos': 3, 'team': 'Man City', 'p': 28, 'w': 19, 'd': 5, 'l': 4, 'gd': '+32', 'pts': 62},
+    {'pos': 4, 'team': 'Aston Villa', 'p': 28, 'w': 17, 'd': 4, 'l': 7, 'gd': '+18', 'pts': 55},
     {'pos': 5, 'team': 'Tottenham', 'p': 28, 'w': 16, 'd': 5, 'l': 7, 'gd': '+16', 'pts': 53},
     {'pos': 6, 'team': 'Man United', 'p': 28, 'w': 15, 'd': 2, 'l': 11, 'gd': '0', 'pts': 47},
     {'pos': 7, 'team': 'Chelsea', 'p': 28, 'w': 12, 'd': 7, 'l': 9, 'gd': '+7', 'pts': 43},
@@ -140,6 +153,59 @@ class _SportsScreenState extends State<SportsScreen> {
     });
   }
 
+  void _showApiKeyDialog() {
+    final controller = TextEditingController(text: AppSecrets.footballDataApiKey);
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF16253B),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('football-data.org Key', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Add your football-data.org key to AutoDeck (or in lib/core/secrets.dart) to fetch live scores, fixtures and league tables.\n\nTambah kunci football-data.org di lib/core/secrets.dart.',
+                style: TextStyle(fontSize: 12, color: AppColors.textMuted, height: 1.4),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: controller,
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: 'Enter API Token / Masukkan Kunci...',
+                  hintStyle: const TextStyle(color: Colors.white30),
+                  filled: true,
+                  fillColor: Colors.black26,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Batal', style: TextStyle(color: Colors.white60)),
+            ),
+            TextButton(
+              onPressed: () {
+                AppSecrets.footballDataApiKey = controller.text.trim();
+                Navigator.pop(context);
+                setState(() {});
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('football-data.org key updated')),
+                );
+              },
+              child: const Text('Simpan', style: TextStyle(color: AppColors.tealAccent, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final filteredMatches = _selectedLeague == 'All'
@@ -160,6 +226,11 @@ class _SportsScreenState extends State<SportsScreen> {
         ),
         title: const Text('Sports', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
         actions: [
+          IconButton(
+            tooltip: 'API Key',
+            icon: const Icon(Icons.key, color: AppColors.accentTeal),
+            onPressed: _showApiKeyDialog,
+          ),
           IconButton(
             tooltip: 'Display on Car Screen',
             icon: const Icon(Icons.directions_car_outlined, color: AppColors.accentTeal),
@@ -224,13 +295,13 @@ class _SportsScreenState extends State<SportsScreen> {
 
             const SizedBox(height: 8),
 
-            // Tab Body View
+            // Tab Content
             Expanded(
               child: _selectedTabIndex == 0
-                  ? _buildGamesTab(filteredMatches)
+                  ? _buildMatchesList(filteredMatches)
                   : _selectedTabIndex == 1
-                      ? _buildMyTeamsTab(myMatches)
-                      : _buildTablesTab(),
+                      ? _buildMatchesList(myMatches, emptyMsg: 'No matches for your favourite teams')
+                      : _buildStandingsTable(),
             ),
           ],
         ),
@@ -239,32 +310,30 @@ class _SportsScreenState extends State<SportsScreen> {
   }
 
   Widget _buildTabButton(int index, String label, IconData icon) {
-    final isSel = _selectedTabIndex == index;
+    final isSelected = _selectedTabIndex == index;
     return Expanded(
       child: GestureDetector(
         onTap: () {
           HapticFeedback.selectionClick();
           setState(() => _selectedTabIndex = index);
         },
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
+        child: Container(
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
-            color: isSel ? AppColors.accentTeal : Colors.transparent,
+            color: isSelected ? AppColors.accentTeal : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
           ),
-          alignment: Alignment.center,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 16, color: isSel ? Colors.black : Colors.white70),
+              Icon(icon, size: 16, color: isSelected ? Colors.black : Colors.white70),
               const SizedBox(width: 6),
               Text(
                 label,
                 style: TextStyle(
                   fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  color: isSel ? Colors.black : Colors.white70,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                  color: isSelected ? Colors.black : Colors.white70,
                 ),
               ),
             ],
@@ -274,263 +343,110 @@ class _SportsScreenState extends State<SportsScreen> {
     );
   }
 
-  Widget _buildGamesTab(List<Map<String, dynamic>> list) {
-    if (list.isEmpty) {
-      return const Center(
-        child: Text('No matches scheduled in this league today', style: TextStyle(color: AppColors.textSub)),
+  Widget _buildMatchesList(List<Map<String, dynamic>> matches, {String emptyMsg = 'No matches found'}) {
+    if (matches.isEmpty) {
+      return Center(
+        child: Text(emptyMsg, style: const TextStyle(color: Colors.white54, fontSize: 14)),
       );
     }
-
     return ListView.separated(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      itemCount: list.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 12),
+      itemCount: matches.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
       itemBuilder: (context, idx) {
-        return _buildMatchCard(list[idx]);
+        final m = matches[idx];
+        return _buildMatchCard(m);
       },
-    );
-  }
-
-  Widget _buildMyTeamsTab(List<Map<String, dynamic>> list) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Pinned Clubs', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
-              Text('${_favouriteTeams.length} selected', style: const TextStyle(fontSize: 12, color: AppColors.accentTeal)),
-            ],
-          ),
-        ),
-        // Favourite Teams Chips
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              'Arsenal',
-              'Liverpool',
-              'Man City',
-              'Chelsea',
-              'Man United',
-              'Real Madrid',
-              'Barcelona',
-              'JDT',
-              'Selangor FC',
-            ].map((team) {
-              final isFav = _favouriteTeams.contains(team);
-              return FilterChip(
-                label: Text(team),
-                selected: isFav,
-                selectedColor: AppColors.accentTeal.withValues(alpha: 0.25),
-                backgroundColor: Colors.white10,
-                checkmarkColor: AppColors.accentTeal,
-                labelStyle: TextStyle(
-                  fontSize: 12,
-                  fontWeight: isFav ? FontWeight.bold : FontWeight.normal,
-                  color: isFav ? AppColors.accentTeal : Colors.white70,
-                ),
-                onSelected: (_) => _toggleFavourite(team),
-              );
-            }).toList(),
-          ),
-        ),
-        const SizedBox(height: 16),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: Text("My Teams' Games", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
-        ),
-        const SizedBox(height: 8),
-        Expanded(
-          child: list.isEmpty
-              ? const Center(
-                  child: Text('No upcoming games for your selected teams', style: TextStyle(color: AppColors.textSub)),
-                )
-              : ListView.separated(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  itemCount: list.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
-                  itemBuilder: (context, idx) => _buildMatchCard(list[idx]),
-                ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTablesTab() {
-    return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      children: [
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppColors.cardBg,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white12),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: const [
-                  Text('Premier League Standings', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white)),
-                  Text('2025/2026', style: TextStyle(fontSize: 12, color: AppColors.textSub)),
-                ],
-              ),
-              const Divider(color: Colors.white12, height: 24),
-              // Header
-              Row(
-                children: const [
-                  SizedBox(width: 24, child: Text('#', style: TextStyle(fontSize: 11, color: AppColors.textSub, fontWeight: FontWeight.bold))),
-                  Expanded(flex: 5, child: Text('Club', style: TextStyle(fontSize: 11, color: AppColors.textSub, fontWeight: FontWeight.bold))),
-                  SizedBox(width: 28, child: Text('PL', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, color: AppColors.textSub))),
-                  SizedBox(width: 28, child: Text('GD', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, color: AppColors.textSub))),
-                  SizedBox(width: 32, child: Text('PTS', textAlign: TextAlign.center, style: TextStyle(fontSize: 11, color: AppColors.accentTeal, fontWeight: FontWeight.bold))),
-                ],
-              ),
-              const SizedBox(height: 8),
-              ..._standings.map((s) {
-                final isFav = _favouriteTeams.contains(s['team']);
-                return Container(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  decoration: BoxDecoration(
-                    color: isFav ? AppColors.accentTeal.withValues(alpha: 0.08) : Colors.transparent,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 24,
-                        child: Text(
-                          '${s['pos']}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: s['pos'] <= 4 ? AppColors.accentTeal : Colors.white70,
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        flex: 5,
-                        child: Text(
-                          s['team'] as String,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: isFav ? FontWeight.bold : FontWeight.w500,
-                            color: isFav ? AppColors.accentTeal : Colors.white,
-                          ),
-                        ),
-                      ),
-                      SizedBox(width: 28, child: Text('${s['p']}', textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, color: Colors.white70))),
-                      SizedBox(width: 28, child: Text('${s['gd']}', textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, color: Colors.white70))),
-                      SizedBox(width: 32, child: Text('${s['pts']}', textAlign: TextAlign.center, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white))),
-                    ],
-                  ),
-                );
-              }),
-            ],
-          ),
-        ),
-      ],
     );
   }
 
   Widget _buildMatchCard(Map<String, dynamic> m) {
     final isLive = m['status'] == 'live';
-    final isFT = m['status'] == 'ft';
+    final isUpcoming = m['status'] == 'upcoming';
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: isLive ? AppColors.accentTeal.withValues(alpha: 0.5) : Colors.white12,
-          width: isLive ? 1.5 : 1,
+          color: isLive ? AppColors.accentTeal.withValues(alpha: 0.5) : AppColors.glassBorder,
+          width: isLive ? 1.5 : 1.0,
         ),
       ),
       child: Column(
         children: [
-          // Header: League name & status pill
+          // Header: League & Status Tag
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(m['league'] as String, style: const TextStyle(fontSize: 11, color: AppColors.textSub, fontWeight: FontWeight.bold)),
-              if (isLive)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFC0392B).withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFFF4D4D)),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(width: 6, height: 6, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFFFF4D4D))),
+              Text(m['league'], style: const TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w600)),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: isLive ? Colors.red.withValues(alpha: 0.2) : Colors.white10,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    if (isLive) ...[
+                      Container(width: 6, height: 6, decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle)),
                       const SizedBox(width: 4),
-                      Text('LIVE ${m['minute']}', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFFF4D4D))),
                     ],
-                  ),
-                )
-              else if (isFT)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.white10,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Text('FT', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white70)),
-                )
-              else
-                Text(m['time'] as String, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.accentTeal)),
+                    Text(
+                      isLive ? m['minute'] : isUpcoming ? m['time'] : 'FT',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: isLive ? Colors.red : Colors.white70,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
+          const SizedBox(height: 14),
 
-          const SizedBox(height: 12),
-
-          // Team Scores Row
+          // Teams & Score
           Row(
             children: [
               // Home Team
               Expanded(
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    Text(
-                      m['home'] as String,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: _favouriteTeams.contains(m['home']) ? AppColors.accentTeal : Colors.white,
+                    IconButton(
+                      icon: Icon(
+                        _favouriteTeams.contains(m['home']) ? Icons.star : Icons.star_border,
+                        color: _favouriteTeams.contains(m['home']) ? AppColors.accentTeal : Colors.white24,
+                        size: 18,
+                      ),
+                      onPressed: () => _toggleFavourite(m['home']),
+                    ),
+                    Expanded(
+                      child: Text(
+                        m['home'],
+                        style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    _buildClubBadge(m['home'] as String),
                   ],
                 ),
               ),
 
-              // Score or VS Pill
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    isLive || isFT ? '${m['homeScore']} - ${m['awayScore']}' : 'vs',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: isLive ? AppColors.accentTeal : Colors.white,
-                    ),
+              // Score / VS
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                decoration: BoxDecoration(
+                  color: isLive ? AppColors.accentTeal.withValues(alpha: 0.2) : Colors.black26,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  isUpcoming ? 'VS' : '${m['homeScore']} - ${m['awayScore']}',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: isLive ? AppColors.accentTeal : Colors.white,
                   ),
                 ),
               ),
@@ -538,65 +454,77 @@ class _SportsScreenState extends State<SportsScreen> {
               // Away Team
               Expanded(
                 child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    _buildClubBadge(m['away'] as String),
-                    const SizedBox(width: 8),
-                    Text(
-                      m['away'] as String,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: _favouriteTeams.contains(m['away']) ? AppColors.accentTeal : Colors.white,
+                    Expanded(
+                      child: Text(
+                        m['away'],
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+                        overflow: TextOverflow.ellipsis,
                       ),
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        _favouriteTeams.contains(m['away']) ? Icons.star : Icons.star_border,
+                        color: _favouriteTeams.contains(m['away']) ? AppColors.accentTeal : Colors.white24,
+                        size: 18,
+                      ),
+                      onPressed: () => _toggleFavourite(m['away']),
                     ),
                   ],
                 ),
               ),
             ],
           ),
-
-          const SizedBox(height: 10),
-
-          // Venue
-          Text(
-            m['venue'] as String,
-            style: const TextStyle(fontSize: 11, color: AppColors.textDim),
-          ),
         ],
       ),
     );
   }
 
-  Widget _buildClubBadge(String club) {
-    Color bg = const Color(0xFF1E293B);
-    String initials = club.substring(0, club.length >= 2 ? 2 : 1).toUpperCase();
-
-    if (club.contains('Arsenal')) {
-      bg = const Color(0xFFEF0107);
-    } else if (club.contains('Liverpool')) {
-      bg = const Color(0xFFC8102E);
-    } else if (club.contains('Chelsea')) {
-      bg = const Color(0xFF034694);
-    } else if (club.contains('City')) {
-      bg = const Color(0xFF6CABDD);
-    } else if (club.contains('Madrid')) {
-      bg = const Color(0xFFEEEEE);
-    } else if (club.contains('JDT')) {
-      bg = const Color(0xFF003399);
-    }
-
+  Widget _buildStandingsTable() {
     return Container(
-      width: 26,
-      height: 26,
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: bg,
-        shape: BoxShape.circle,
-        border: Border.all(color: Colors.white24),
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.glassBorder),
       ),
-      alignment: Alignment.center,
-      child: Text(
-        initials,
-        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Premier League Standings', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 12),
+          const Row(
+            children: [
+              SizedBox(width: 24, child: Text('#', style: TextStyle(color: Colors.white38, fontSize: 12))),
+              Expanded(child: Text('Club', style: TextStyle(color: Colors.white38, fontSize: 12))),
+              SizedBox(width: 28, child: Text('PL', textAlign: TextAlign.center, style: TextStyle(color: Colors.white38, fontSize: 12))),
+              SizedBox(width: 28, child: Text('GD', textAlign: TextAlign.center, style: TextStyle(color: Colors.white38, fontSize: 12))),
+              SizedBox(width: 32, child: Text('PTS', textAlign: TextAlign.center, style: TextStyle(color: AppColors.accentTeal, fontSize: 12, fontWeight: FontWeight.bold))),
+            ],
+          ),
+          const Divider(color: Colors.white12, height: 16),
+          Expanded(
+            child: ListView.separated(
+              itemCount: _standings.length,
+              separatorBuilder: (_, __) => const Divider(color: Colors.white10, height: 12),
+              itemBuilder: (context, idx) {
+                final s = _standings[idx];
+                return Row(
+                  children: [
+                    SizedBox(width: 24, child: Text('${s['pos']}', style: TextStyle(color: s['pos'] <= 4 ? AppColors.accentTeal : Colors.white70, fontSize: 13, fontWeight: FontWeight.bold))),
+                    Expanded(child: Text(s['team'], style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500))),
+                    SizedBox(width: 28, child: Text('${s['p']}', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70, fontSize: 12))),
+                    SizedBox(width: 28, child: Text('${s['gd']}', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70, fontSize: 12))),
+                    SizedBox(width: 32, child: Text('${s['pts']}', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold))),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
