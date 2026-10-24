@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'screens/main_screen.dart';
+import 'screens/dashboard_screen.dart';
 import 'theme/app_colors.dart';
 
 void main() {
@@ -38,7 +38,7 @@ class DashMateApp extends StatelessWidget {
         useMaterial3: true,
         fontFamily: 'Roboto',
       ),
-      home: const MainScreen(),
+      home: const DashboardScreen(),
     );
   }
 }
