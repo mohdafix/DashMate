@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme/app_colors.dart';
 import '../theme/localization.dart';
+import 'background_screen.dart';
 import 'browse_screen.dart';
 import 'button_size_screen.dart';
 import 'car_card_screen.dart';
@@ -69,37 +70,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         });
       }
     } catch (_) {}
-  }
-
-  void _showBgPicker() {
-    const modes = ['Cover', 'Plain', 'Photo'];
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Car home background', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
-              const SizedBox(height: 12),
-              ...modes.map((m) => ListTile(
-                title: Text(m, style: const TextStyle(color: Colors.white)),
-                trailing: _bgMode == m ? const Icon(Icons.check, color: AppColors.accentTeal) : null,
-                onTap: () {
-                  setState(() => _bgMode = m);
-                  _channel.invokeMethod('setBgMode', {'mode': m.toLowerCase(), 'url': ''});
-                  Navigator.pop(context);
-                },
-              )),
-            ],
-          ),
-        );
-      },
-    );
   }
 
   @override
@@ -464,7 +434,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   icon: Icons.wallpaper_outlined,
                   title: 'Car home background',
                   subtitle: _bgMode,
-                  onTap: _showBgPicker,
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BackgroundScreen())),
                 ),
                 const Divider(height: 1, color: Colors.white10),
                 _buildSettingTile(

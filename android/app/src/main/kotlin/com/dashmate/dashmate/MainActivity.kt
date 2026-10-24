@@ -559,6 +559,44 @@ class MainActivity : FlutterActivity() {
                     DashMateStateBridge.notifyStateChanged(this)
                     result.success(true)
                 }
+                "getBgPrefs" -> {
+                    val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
+                    result.success(mapOf(
+                        "mode" to (DashMateStateBridge.bgMode.ifBlank { sp.getString("bg_mode", "cover") }),
+                        "url" to (DashMateStateBridge.bgUrl.ifBlank { sp.getString("bg_url", "") })
+                    ))
+                }
+                "getFootballPrefs" -> {
+                    val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
+                    val compsJson = sp.getString("football_comps", "[\"PL\", \"CL\"]")
+                    val teamsJson = sp.getString("football_teams", "[\"Arsenal\", \"Liverpool\"]")
+                    val key = sp.getString("football_api_key", "")
+                    val compsList = mutableListOf<String>()
+                    val teamsList = mutableListOf<String>()
+                    try {
+                        val arr1 = org.json.JSONArray(compsJson)
+                        for (i in 0 until arr1.length()) compsList.add(arr1.getString(i))
+                        val arr2 = org.json.JSONArray(teamsJson)
+                        for (i in 0 until arr2.length()) teamsList.add(arr2.getString(i))
+                    } catch (_: Exception) {}
+                    result.success(mapOf(
+                        "competitions" to compsList,
+                        "favouriteTeams" to teamsList,
+                        "apiKey" to key
+                    ))
+                }
+                "setFootballPrefs" -> {
+                    val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
+                    val comps = call.argument<List<String>>("competitions") ?: listOf("PL", "CL")
+                    val teams = call.argument<List<String>>("favouriteTeams") ?: listOf("Arsenal", "Liverpool")
+                    val key = call.argument<String>("apiKey") ?: ""
+                    sp.edit()
+                        .putString("football_comps", org.json.JSONArray(comps).toString())
+                        .putString("football_teams", org.json.JSONArray(teams).toString())
+                        .putString("football_api_key", key)
+                        .apply()
+                    result.success(true)
+                }
                 else -> {
                     result.notImplemented()
                 }

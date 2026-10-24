@@ -18,8 +18,10 @@ class _PrayerScreenState extends State<PrayerScreen> {
 
   String _zoneCode = "WLY01";
   String _zoneName = "Kuala Lumpur, Putrajaya";
+  bool _showPrayer = true;
   bool _playAzan = true;
   bool _notificationsEnabled = true;
+  int _notifyMinutes = 10;
 
   List<Map<String, String>> _allZones = [];
 
@@ -415,7 +417,7 @@ class _PrayerScreenState extends State<PrayerScreen> {
 
           const SizedBox(height: 12),
 
-          // Azan Playback & Notification Controls (AutoDeck parity)
+          // Prayer Settings Controls (AutoDeck parity)
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -426,9 +428,21 @@ class _PrayerScreenState extends State<PrayerScreen> {
             child: Column(
               children: [
                 SwitchListTile(
+                  secondary: const Icon(Icons.mosque_outlined, color: AppColors.accentTeal),
+                  title: const Text('Show prayer times', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
+                  subtitle: const Text('Prayer tab, car Prayer screen, home countdown and greeting', style: TextStyle(fontSize: 11, color: AppColors.textSub)),
+                  value: _showPrayer,
+                  activeColor: AppColors.accentTeal,
+                  onChanged: (val) {
+                    setState(() => _showPrayer = val);
+                    _channel.invokeMethod('setShowPrayer', {'show_prayer': val});
+                  },
+                ),
+                const Divider(height: 1, color: Colors.white10),
+                SwitchListTile(
                   secondary: const Icon(Icons.volume_up, color: AppColors.accentTeal),
                   title: const Text('Play the azan at prayer times', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
-                  subtitle: const Text('Mainkan azan pada waktu solat ini', style: TextStyle(fontSize: 11, color: AppColors.textSub)),
+                  subtitle: const Text('Play the azan at these prayer times (phone notification)', style: TextStyle(fontSize: 11, color: AppColors.textSub)),
                   value: _playAzan,
                   activeColor: AppColors.accentTeal,
                   onChanged: (val) => setState(() => _playAzan = val),
@@ -437,7 +451,7 @@ class _PrayerScreenState extends State<PrayerScreen> {
                 SwitchListTile(
                   secondary: const Icon(Icons.notifications_active, color: AppColors.accentTeal),
                   title: const Text('Prayer reminders', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
-                  subtitle: const Text('Pemberitahuan waktu solat', style: TextStyle(fontSize: 11, color: AppColors.textSub)),
+                  subtitle: Text('Reminder $_notifyMinutes minutes before each prayer time', style: const TextStyle(fontSize: 11, color: AppColors.textSub)),
                   value: _notificationsEnabled,
                   activeColor: AppColors.accentTeal,
                   onChanged: (val) => setState(() => _notificationsEnabled = val),

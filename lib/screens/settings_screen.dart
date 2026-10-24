@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme/app_colors.dart';
 import '../theme/localization.dart';
+import 'background_screen.dart';
 import 'button_size_screen.dart';
 import 'car_card_screen.dart';
 import 'floating_menu_screen.dart';
+import 'football_settings_screen.dart';
+import 'prayer_screen.dart';
 import 'welcome_sound_screen.dart';
 import 'widgets_screen.dart';
 
@@ -18,7 +21,6 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   static const MethodChannel _channel = MethodChannel('com.dashmate.dashmate/channel');
   static const MethodChannel _browserChannel = MethodChannel('drivedeck/car_browser');
-  static const MethodChannel _welcomeChannel = MethodChannel('drivedeck/welcome');
 
   String _bgMode = 'Cover';
   String _activeFont = 'Orbitron';
@@ -27,37 +29,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _is24Hour = true;
   bool _useKmh = true;
   bool _mediaButtonsOverride = true;
-
-  void _showBgPicker() {
-    const modes = ['Cover', 'Plain', 'Photo'];
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Car Home Background', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
-              const SizedBox(height: 12),
-              ...modes.map((m) => ListTile(
-                title: Text(m, style: const TextStyle(color: Colors.white)),
-                trailing: _bgMode == m ? const Icon(Icons.check, color: AppColors.tealAccent) : null,
-                onTap: () {
-                  setState(() => _bgMode = m);
-                  _channel.invokeMethod('setBgMode', {'mode': m.toLowerCase(), 'url': ''});
-                  Navigator.pop(context);
-                },
-              )),
-            ],
-          ),
-        );
-      },
-    );
-  }
 
   void _showFontPicker() {
     const fonts = ['orbitron', 'bebas', 'audiowide', 'monoton', 'teko', 'poiret'];
@@ -183,7 +154,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   icon: Icons.wallpaper_outlined,
                   title: 'Car home background',
                   subtitle: _bgMode,
-                  onTap: _showBgPicker,
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BackgroundScreen())),
                 ),
                 const Divider(height: 1, indent: 56, color: AppColors.glassBorder),
                 _buildSettingTile(
@@ -239,6 +210,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   value: _mediaButtonsOverride,
                   activeColor: AppColors.tealAccent,
                   onChanged: (val) => setState(() => _mediaButtonsOverride = val),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 24),
+          const Text('Apps Settings', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textMuted)),
+          const SizedBox(height: 12),
+
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.cardSurface,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppColors.glassBorder),
+            ),
+            child: Column(
+              children: [
+                _buildSettingTile(
+                  icon: Icons.mosque_outlined,
+                  title: 'Prayer settings',
+                  subtitle: 'Show prayer times, JAKIM zone, and Azan notifications',
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrayerScreen())),
+                ),
+                const Divider(height: 1, indent: 56, color: AppColors.glassBorder),
+                _buildSettingTile(
+                  icon: Icons.sports_soccer_outlined,
+                  title: 'Football settings',
+                  subtitle: 'Followed competitions, favourite teams, and API key',
+                  isLast: true,
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FootballSettingsScreen())),
                 ),
               ],
             ),
