@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme/app_colors.dart';
 import '../theme/localization.dart';
+import 'button_size_screen.dart';
 import 'car_card_screen.dart';
 import 'floating_menu_screen.dart';
+import 'welcome_sound_screen.dart';
 import 'widgets_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -88,48 +90,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _showButtonSizeDialog() {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              backgroundColor: AppColors.surface,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-              title: const Text('Car button size', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('Bigger car buttons, easier to tap while driving', style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
-                  const SizedBox(height: 16),
-                  Text('${_buttonSize.toInt()}%', style: const TextStyle(color: AppColors.tealAccent, fontSize: 24, fontWeight: FontWeight.bold)),
-                  Slider(
-                    value: _buttonSize,
-                    min: 80,
-                    max: 130,
-                    divisions: 5,
-                    activeColor: AppColors.tealAccent,
-                    onChanged: (val) {
-                      setDialogState(() => _buttonSize = val);
-                      setState(() => _buttonSize = val);
-                    },
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Done', style: TextStyle(color: AppColors.tealAccent)),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
   void _clearBrowserCache() async {
     try {
       await _browserChannel.invokeMethod('clearBrowserData');
@@ -142,10 +102,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         );
       }
     } catch (_) {}
-  }
-
-  void _playChimePreview() {
-    _welcomeChannel.invokeMethod('playChime');
   }
 
   @override
@@ -248,14 +204,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   icon: Icons.graphic_eq,
                   title: 'Welcome sound',
                   subtitle: 'A chime when AutoDeck opens in the car · $_sound',
-                  onTap: _playChimePreview,
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WelcomeSoundScreen())),
                 ),
                 const Divider(height: 1, indent: 56, color: AppColors.glassBorder),
                 _buildSettingTile(
                   icon: Icons.touch_app_outlined,
                   title: 'Car button size',
                   subtitle: '${_buttonSize.toInt()}% · Bigger car buttons, easier to tap while driving',
-                  onTap: _showButtonSizeDialog,
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ButtonSizeScreen())),
                 ),
                 const Divider(height: 1, indent: 56, color: AppColors.glassBorder),
                 SwitchListTile(

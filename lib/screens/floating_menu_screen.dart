@@ -1,7 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme/app_colors.dart';
-import '../theme/localization.dart';
+
+class MenuItemData {
+  final String id;
+  final String title;
+  final IconData icon;
+  bool enabled;
+
+  MenuItemData({
+    required this.id,
+    required this.title,
+    required this.icon,
+    this.enabled = true,
+  });
+}
 
 class FloatingMenuScreen extends StatefulWidget {
   const FloatingMenuScreen({super.key});
@@ -11,222 +24,199 @@ class FloatingMenuScreen extends StatefulWidget {
 }
 
 class _FloatingMenuScreenState extends State<FloatingMenuScreen> {
-  static const _channel = MethodChannel('com.dashmate.dashmate/channel');
+  static const MethodChannel _channel = MethodChannel('com.dashmate.dashmate/channel');
+  static const MethodChannel _browserChannel = MethodChannel('drivedeck/car_browser');
 
-  final List<Map<String, String>> _allAvailableShortcuts = [
-    {'name': 'YouTube', 'url': 'https://m.youtube.com', 'icon': 'dd_youtube.png'},
-    {'name': 'RTM Klik', 'url': 'https://rtmklik.rtm.gov.my', 'icon': 'dd_rtm.png'},
-    {'name': 'Google', 'url': 'https://www.google.com', 'icon': 'https://www.google.com/favicon.ico'},
-    {'name': 'Waze', 'url': 'https://www.waze.com/live-map', 'icon': 'https://www.waze.com/favicon.ico'},
-    {'name': 'Parking', 'url': 'dashmate://parking', 'icon': 'assets/icons/parking.svg'},
-    {'name': 'Waktu Solat', 'url': 'dashmate://prayer', 'icon': 'assets/icons/prayer.svg'},
-    {'name': 'Lyrics', 'url': 'dashmate://lyrics', 'icon': 'assets/icons/lyrics.svg'},
-  ];
-
-  late List<Map<String, String>> _activeShortcuts;
+  late List<MenuItemData> _items;
 
   @override
   void initState() {
     super.initState();
-    _activeShortcuts = [
-      _allAvailableShortcuts[0],
-      _allAvailableShortcuts[1],
-      _allAvailableShortcuts[2],
-      _allAvailableShortcuts[3],
-      _allAvailableShortcuts[4],
+    _items = [
+      MenuItemData(id: 'home', title: 'Home', icon: Icons.home_outlined, enabled: true),
+      MenuItemData(id: 'lyrics', title: 'Lyrics', icon: Icons.speaker_notes_outlined, enabled: true),
+      MenuItemData(id: 'prayer', title: 'Prayer', icon: Icons.mosque_outlined, enabled: true),
+      MenuItemData(id: 'custom', title: 'Custom page', icon: Icons.view_quilt_outlined, enabled: true),
+      MenuItemData(id: 'web', title: 'Browse', icon: Icons.public_outlined, enabled: true),
     ];
+    _loadPrefs();
   }
 
-  void _saveShortcuts() async {
+  void _loadPrefs() async {
     try {
-      await _channel.invokeMethod('setShortcuts', {'shortcuts': _activeShortcuts});
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: AppColors.cardSurface,
-            content: Text('Car shortcuts updated on vehicle deck!', style: TextStyle(color: AppColors.tealAccent)),
-            duration: Duration(seconds: 1),
-          ),
-        );
+      final res = await _channel.invokeMethod('getMenuItems');
+      if (res != null && res is List && mounted) {
+        final List<String> savedIds = res.map((e) => e.toString()).toList();
+        final List<MenuItemData> reordered = [];
+        for (final id in savedIds) {
+          final found = _items.firstWhere(
+            (item) => item.id == id,
+            orElse: () => MenuItemData(id: id, title: id, icon: Icons.circle_outlined),
+          );
+          found.enabled = true;
+          reordered.add(found);
+        }
+        for (final item in _items) {
+          if (!savedIds.contains(item.id)) {
+            item.enabled = false;
+            reordered.add(item);
+          }
+        }
+        setState(() {
+          _items = reordered;
+        });
       }
     } catch (_) {}
   }
 
-  void _toggleShortcut(Map<String, String> item) {
-    setState(() {
-      final exists = _activeShortcuts.any((e) => e['name'] == item['name']);
-      if (exists) {
-        if (_activeShortcuts.length > 1) {
-          _activeShortcuts.removeWhere((e) => e['name'] == item['name']);
-        }
-      } else {
-        if (_activeShortcuts.length < 5) {
-          _activeShortcuts.add(item);
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              backgroundColor: AppColors.cardSurface,
-              content: Text('Maximum 5 shortcuts allowed on car deck bar', style: TextStyle(color: Colors.orangeAccent)),
-              duration: Duration(seconds: 1),
-            ),
-          );
-        }
-      }
-    });
-    _saveShortcuts();
+  void _savePrefs() {
+    final activeIds = _items.where((i) => i.enabled).map((i) => i.id).toList();
+    _channel.invokeMethod('setMenuItems', {'items': activeIds});
+    _browserChannel.invokeMethod('setMenuItems', {'items': activeIds});
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.darkBackground,
+      backgroundColor: const Color(0xFF0C101A),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: Text(
-          AppLocalizations.get('floating_menu'),
-          style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 0.5),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          'Car menu',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
         ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Preview Bar Card
-            Container(
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: AppColors.cardSurface,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: AppColors.glassBorder),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Car Screen Dock Preview',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
-                      ),
-                      Text(
-                        '${_activeShortcuts.length} / 5',
-                        style: const TextStyle(color: AppColors.tealAccent, fontWeight: FontWeight.bold, fontSize: 13),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF070B14),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppColors.glassBorder),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: _activeShortcuts.map((item) {
-                        return Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: AppColors.cardSurface,
-                                shape: BoxShape.circle,
-                                border: Border.all(color: AppColors.tealAccent.withValues(alpha: 0.5)),
-                              ),
-                              child: const Icon(Icons.apps, color: AppColors.tealAccent, size: 20),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              item['name'] ?? '',
-                              style: const TextStyle(color: Colors.white, fontSize: 11),
-                            ),
-                          ],
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                ],
-              ),
+      body: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        children: [
+          // Subtitle / Header Description
+          const Text(
+            'What the floating AutoDeck menu on the car shows. Switch items on or off and drag to change the order.',
+            style: TextStyle(
+              fontSize: 13.5,
+              color: AppColors.textSub,
+              height: 1.4,
             ),
+          ),
+          const SizedBox(height: 16),
 
-            const SizedBox(height: 24),
-            const Text(
-              'Customize Shortcuts (Select up to 5)',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textMuted),
+          // Card with Reorderable List
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: AppColors.border),
             ),
-            const SizedBox(height: 12),
+            clipBehavior: Clip.antiAlias,
+            child: Theme(
+              data: Theme.of(context).copyWith(
+                canvasColor: Colors.transparent,
+                shadowColor: Colors.transparent,
+              ),
+              child: ReorderableListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                buildDefaultDragHandles: false,
+                itemCount: _items.length,
+                onReorder: (int oldIndex, int newIndex) {
+                  setState(() {
+                    if (oldIndex < newIndex) {
+                      newIndex -= 1;
+                    }
+                    final item = _items.removeAt(oldIndex);
+                    _items.insert(newIndex, item);
+                  });
+                  _savePrefs();
+                },
+                itemBuilder: (context, index) {
+                  final item = _items[index];
+                  final isLast = index == _items.length - 1;
 
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _allAvailableShortcuts.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 10),
-              itemBuilder: (context, index) {
-                final sc = _allAvailableShortcuts[index];
-                final isSelected = _activeShortcuts.any((e) => e['name'] == sc['name']);
-
-                return InkWell(
-                  onTap: () => _toggleShortcut(sc),
-                  borderRadius: BorderRadius.circular(16),
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: AppColors.cardSurface,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: isSelected ? AppColors.tealAccent : AppColors.glassBorder,
-                      ),
-                    ),
-                    child: Row(
+                  return Container(
+                    key: ValueKey(item.id),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: isSelected ? AppColors.tealAccent.withValues(alpha: 0.2) : Colors.transparent,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Icon(
-                            isSelected ? Icons.check_box : Icons.check_box_outline_blank,
-                            color: isSelected ? AppColors.tealAccent : AppColors.textMuted,
-                            size: 22,
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          child: Row(
                             children: [
-                              Text(
-                                sc['name'] ?? '',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 15,
-                                  color: isSelected ? Colors.white : AppColors.textMuted,
+                              // Drag Handle
+                              ReorderableDragStartListener(
+                                index: index,
+                                child: Container(
+                                  padding: const EdgeInsets.only(right: 12, left: 2, top: 4, bottom: 4),
+                                  color: Colors.transparent,
+                                  child: const Icon(
+                                    Icons.drag_indicator,
+                                    color: Colors.white38,
+                                    size: 22,
+                                  ),
                                 ),
                               ),
-                              const SizedBox(height: 2),
-                              Text(
-                                sc['url'] ?? '',
-                                style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+
+                              // Item Icon
+                              Icon(
+                                item.icon,
+                                color: Colors.white,
+                                size: 22,
+                              ),
+                              const SizedBox(width: 14),
+
+                              // Item Title
+                              Expanded(
+                                child: Text(
+                                  item.title,
+                                  style: const TextStyle(
+                                    fontSize: 15.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+
+                              // Toggle Switch
+                              Switch(
+                                value: item.enabled,
+                                activeColor: AppColors.accentTeal,
+                                activeTrackColor: const Color(0xFF0F766E),
+                                inactiveThumbColor: Colors.white38,
+                                inactiveTrackColor: Colors.white12,
+                                onChanged: (val) {
+                                  setState(() {
+                                    item.enabled = val;
+                                  });
+                                  _savePrefs();
+                                },
                               ),
                             ],
                           ),
                         ),
+                        if (!isLast)
+                          const Divider(
+                            height: 1,
+                            thickness: 1,
+                            indent: 14,
+                            endIndent: 14,
+                            color: Colors.white10,
+                          ),
                       ],
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

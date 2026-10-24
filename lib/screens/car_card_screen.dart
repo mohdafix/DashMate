@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme/app_colors.dart';
-import '../theme/localization.dart';
 
 class CarCardScreen extends StatefulWidget {
   const CarCardScreen({super.key});
@@ -11,202 +10,206 @@ class CarCardScreen extends StatefulWidget {
 }
 
 class _CarCardScreenState extends State<CarCardScreen> {
-  static const _channel = MethodChannel('com.dashmate.dashmate/channel');
-  String _selectedMode = 'music';
+  static const MethodChannel _channel = MethodChannel('com.dashmate.dashmate/channel');
+  static const MethodChannel _browserChannel = MethodChannel('drivedeck/car_browser');
 
-  final List<Map<String, dynamic>> _cardOptions = [
-    {
-      'id': 'music',
-      'title': 'Now Playing Music',
-      'subtitle': 'Displays dynamic album artwork, synchronized title and artist in Android Auto side-card.',
-      'icon': Icons.music_note,
-      'color': AppColors.tealAccent,
-    },
-    {
-      'id': 'prayer',
-      'title': 'Waktu Solat JAKIM',
-      'subtitle': 'Live prayer countdown meter, current and upcoming prayer times next to navigation map.',
-      'icon': Icons.access_time_filled,
-      'color': const Color(0xFF10B981),
-    },
-    {
-      'id': 'weather',
-      'title': 'Weather & Rain Radar',
-      'subtitle': 'RainViewer precipitation mini-radar, real-time temperature, and air quality index.',
-      'icon': Icons.cloudy_snowing,
-      'color': const Color(0xFF3B82F6),
-    },
-    {
-      'id': 'sports',
-      'title': 'Sports & Football',
-      'subtitle': 'Live Premier League, Champions League and match scores updated during your journey.',
-      'icon': Icons.sports_soccer,
-      'color': const Color(0xFFF59E0B),
-    },
+  bool _showCard = true;
+  String _selectedMode = 'Auto'; // 'Auto', 'Lyrics', 'Next prayer', 'Football'
+
+  final List<String> _modes = const [
+    'Auto',
+    'Lyrics',
+    'Next prayer',
+    'Football',
   ];
 
   @override
   void initState() {
     super.initState();
-    _loadCardMode();
+    _loadPrefs();
   }
 
-  void _loadCardMode() async {
+  void _loadPrefs() async {
     try {
       final res = await _channel.invokeMethod('getCarCardMode');
       if (res != null && mounted) {
-        setState(() {
-          _selectedMode = res.toString();
-        });
+        if (res is Map) {
+          setState(() {
+            _showCard = res['show'] ?? true;
+            _selectedMode = res['mode'] ?? 'Auto';
+          });
+        } else if (res is String) {
+          setState(() {
+            _selectedMode = res;
+          });
+        }
       }
     } catch (_) {}
   }
 
-  void _selectMode(String id) async {
-    setState(() {
-      _selectedMode = id;
+  void _savePrefs() {
+    _channel.invokeMethod('setCarCardMode', {
+      'show': _showCard,
+      'mode': _selectedMode,
     });
-    try {
-      await _channel.invokeMethod('setCarCardMode', {'mode': id});
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: AppColors.cardSurface,
-            content: Text('Car card set to ${_cardOptions.firstWhere((e) => e['id'] == id)['title']}', style: const TextStyle(color: AppColors.tealAccent)),
-            duration: const Duration(seconds: 1),
-          ),
-        );
-      }
-    } catch (_) {}
+    _browserChannel.invokeMethod('setCarCardMode', {
+      'show': _showCard,
+      'mode': _selectedMode,
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.darkBackground,
+      backgroundColor: const Color(0xFF0C101A),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: Text(
-          AppLocalizations.get('car_card'),
-          style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 0.5),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          'Car card (next to the map)',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
         ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Explanatory Banner
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppColors.cardSurface,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.glassBorder),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.dashboard_customize, color: AppColors.tealAccent, size: 28),
-                  SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Android Auto Split-Screen Card',
-                          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14),
-                        ),
-                        SizedBox(height: 3),
-                        Text(
-                          'Select which widget is served by CarArtProvider to Android Auto dashboard side-card.',
-                          style: TextStyle(fontSize: 12, color: AppColors.textMuted),
-                        ),
-                      ],
-                    ),
+      body: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        children: [
+          // 1. Top Card: Show AutoDeck Card toggle
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(top: 2, right: 14),
+                  child: Icon(
+                    Icons.featured_video_outlined,
+                    color: Colors.white,
+                    size: 24,
                   ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 24),
-            const Text(
-              'Select Active Card',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textMuted),
-            ),
-            const SizedBox(height: 12),
-
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _cardOptions.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
-              itemBuilder: (context, index) {
-                final opt = _cardOptions[index];
-                final isSelected = opt['id'] == _selectedMode;
-
-                return InkWell(
-                  onTap: () => _selectMode(opt['id']),
-                  borderRadius: BorderRadius.circular(16),
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: AppColors.cardSurface,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: isSelected ? AppColors.tealAccent : AppColors.glassBorder,
-                        width: isSelected ? 1.5 : 1.0,
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      Text(
+                        'Show AutoDeck Card',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
                       ),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: (opt['color'] as Color).withValues(alpha: 0.15),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(opt['icon'] as IconData, color: opt['color'] as Color, size: 22),
+                      SizedBox(height: 6),
+                      Text(
+                        "Media card next to the map (lyrics, prayer, scores). Turn off if your car's dashboard / meter map or media buttons stop working while AutoDeck is open.",
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppColors.textSub,
+                          height: 1.35,
                         ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                opt['title'] as String,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 15,
-                                  color: isSelected ? AppColors.tealAccent : Colors.white,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                opt['subtitle'] as String,
-                                style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Radio<String>(
-                          value: opt['id'] as String,
-                          groupValue: _selectedMode,
-                          activeColor: AppColors.tealAccent,
-                          onChanged: (val) {
-                            if (val != null) _selectMode(val);
-                          },
-                        ),
-                      ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Switch(
+                  value: _showCard,
+                  activeColor: AppColors.accentTeal,
+                  activeTrackColor: const Color(0xFF0F766E),
+                  inactiveThumbColor: Colors.white38,
+                  inactiveTrackColor: Colors.white12,
+                  onChanged: (val) {
+                    setState(() {
+                      _showCard = val;
+                    });
+                    _savePrefs();
+                  },
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // 2. Explanatory Subtitle
+          const Text(
+            "What Android Auto's media card shows beside Google Maps. Auto = lyrics while music plays, a live score when your teams play, otherwise the next prayer.",
+            style: TextStyle(
+              fontSize: 13.5,
+              color: AppColors.textSub,
+              height: 1.4,
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // 3. Choice Chips
+          Wrap(
+            spacing: 8,
+            runSpacing: 10,
+            children: _modes.map((mode) {
+              final isSelected = _selectedMode.toLowerCase() == mode.toLowerCase();
+              return GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _selectedMode = mode;
+                  });
+                  _savePrefs();
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? const Color(0xFF0F766E)
+                        : AppColors.surface,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: isSelected
+                          ? AppColors.accentTeal
+                          : AppColors.border,
+                      width: isSelected ? 1.5 : 1,
                     ),
                   ),
-                );
-              },
-            ),
-          ],
-        ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (isSelected) ...[
+                        const Icon(
+                          Icons.check,
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 6),
+                      ],
+                      Text(
+                        mode,
+                        style: TextStyle(
+                          color: isSelected ? Colors.white : Colors.white70,
+                          fontSize: 14,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
       ),
     );
   }

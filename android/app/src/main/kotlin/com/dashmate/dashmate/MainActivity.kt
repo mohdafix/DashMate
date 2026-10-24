@@ -43,6 +43,7 @@ class MainActivity : FlutterActivity() {
     private var flutterChannel: MethodChannel? = null
     private var carStateEventSink: EventChannel.EventSink? = null
     private var nowPlayingEventSink: EventChannel.EventSink? = null
+    private var tts: android.speech.tts.TextToSpeech? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -51,6 +52,14 @@ class MainActivity : FlutterActivity() {
         // 1. Legacy DashMate Channel for existing widgets & screens
         val legacyChan = MethodChannel(messenger, CHANNEL_LEGACY)
         flutterChannel = legacyChan
+
+        try {
+            tts = android.speech.tts.TextToSpeech(this) { status ->
+                if (status == android.speech.tts.TextToSpeech.SUCCESS) {
+                    tts?.language = java.util.Locale.getDefault()
+                }
+            }
+        } catch (_: Exception) {}
 
         // 2. AutoDeck Platform Channels
         val browserChan = MethodChannel(messenger, CH_CAR_BROWSER)
@@ -442,10 +451,124 @@ class MainActivity : FlutterActivity() {
                 "getState" -> {
                     result.success(DashMateStateBridge.buildStateJson(this))
                 }
+                "getButtonPrefs" -> {
+                    val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
+                    val scale = sp.getFloat("nav_scale", 1.0f) * 100
+                    val opacity = sp.getFloat("nav_opacity", 0.92f) * 100
+                    val colorIdx = sp.getInt("nav_color_idx", 0)
+                    result.success(mapOf(
+                        "size" to scale.toDouble(),
+                        "opacity" to opacity.toDouble(),
+                        "colorIndex" to colorIdx
+                    ))
+                }
+                "setNavScale" -> {
+                    val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
+                    val scale = call.argument<Any>("scale")?.toString()?.toFloatOrNull() ?: 1.0f
+                    val opacity = call.argument<Any>("opacity")?.toString()?.toFloatOrNull() ?: 0.92f
+                    val colorIdx = call.argument<Int>("colorIndex") ?: 0
+                    sp.edit()
+                        .putFloat("nav_scale", scale)
+                        .putFloat("nav_opacity", opacity)
+                        .putInt("nav_color_idx", colorIdx)
+                        .apply()
+                    result.success(true)
+                }
+                "getWelcomePrefs" -> {
+                    val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
+                    result.success(mapOf(
+                        "mode" to sp.getInt("welcome_mode", 1),
+                        "voiceGreeting" to sp.getBoolean("welcome_voice", true),
+                        "customText" to sp.getString("welcome_text", ""),
+                        "speed" to sp.getFloat("welcome_speed", 1.0f).toDouble(),
+                        "pitch" to sp.getFloat("welcome_pitch", 1.0f).toDouble(),
+                        "volume" to sp.getFloat("welcome_volume", 0.8f).toDouble()
+                    ))
+                }
+                "setWelcomePrefs" -> {
+                    val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
+                    val mode = call.argument<Int>("mode") ?: 1
+                    val voice = call.argument<Boolean>("voiceGreeting") ?: true
+                    val text = call.argument<String>("customText") ?: ""
+                    val speed = call.argument<Double>("speed")?.toFloat() ?: 1.0f
+                    val pitch = call.argument<Double>("pitch")?.toFloat() ?: 1.0f
+                    val vol = call.argument<Double>("volume")?.toFloat() ?: 0.8f
+                    sp.edit()
+                        .putInt("welcome_mode", mode)
+                        .putBoolean("welcome_voice", voice)
+                        .putString("welcome_text", text)
+                        .putFloat("welcome_speed", speed)
+                        .putFloat("welcome_pitch", pitch)
+                        .putFloat("welcome_volume", vol)
+                        .apply()
+                    result.success(true)
+                }
+                "testVoiceGreeting" -> {
+                    val rawText = call.argument<String>("text") ?: ""
+                    val speed = call.argument<Double>("speed")?.toFloat() ?: 1.0f
+                    val pitch = call.argument<Double>("pitch")?.toFloat() ?: 1.0f
+                    val text = if (rawText.isBlank()) "Welcome back, Mohamad Afix" else rawText
+                        .replace("{name}", "Mohamad Afix")
+                        .replace("{prayer_name}", "Maghrib")
+                        .replace("{prayer_time}", "6:59 PM")
+                        .replace("{time}", "7:15 PM")
+                        .replace("{rain}", "No rain expected")
+                    tts?.setSpeechRate(speed)
+                    tts?.setPitch(pitch)
+                    tts?.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "greeting_test")
+                    result.success(true)
+                }
+                "getMenuItems" -> {
+                    val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
+                    val json = sp.getString("menu_items", "[\"home\",\"lyrics\",\"prayer\",\"custom\",\"web\"]")
+                    try {
+                        val arr = org.json.JSONArray(json)
+                        val list = mutableListOf<String>()
+                        for (i in 0 until arr.length()) {
+                            list.add(arr.getString(i))
+                        }
+                        result.success(list)
+                    } catch (_: Exception) {
+                        result.success(listOf("home", "lyrics", "prayer", "custom", "web"))
+                    }
+                }
+                "setMenuItems" -> {
+                    val items = call.argument<List<String>>("items") ?: listOf("home", "lyrics", "prayer", "custom", "web")
+                    getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
+                        .edit()
+                        .putString("menu_items", org.json.JSONArray(items).toString())
+                        .apply()
+                    result.success(true)
+                }
+                "getCarCardMode" -> {
+                    val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
+                    result.success(mapOf(
+                        "show" to sp.getBoolean("car_card_show", true),
+                        "mode" to sp.getString("car_card_mode", "Auto")
+                    ))
+                }
+                "setCarCardMode" -> {
+                    val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
+                    val show = call.argument<Boolean>("show") ?: true
+                    val mode = call.argument<String>("mode") ?: "Auto"
+                    sp.edit()
+                        .putBoolean("car_card_show", show)
+                        .putString("car_card_mode", mode)
+                        .apply()
+                    DashMateStateBridge.carCardMode = mode
+                    DashMateStateBridge.notifyStateChanged(this)
+                    result.success(true)
+                }
                 else -> {
                     result.notImplemented()
                 }
             }
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        tts?.stop()
+        tts?.shutdown()
     }
 }
