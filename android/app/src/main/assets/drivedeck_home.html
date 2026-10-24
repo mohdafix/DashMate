@@ -1,0 +1,1567 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<style>
+  /* One base unit (--u) drives every size: scales with the smaller screen side.
+     --hs = Home text size, --ts = per-widget text size (both from the phone app). */
+  :root { --u: clamp(9px, min(2.3vh, 1.3vw), 24px); --hs: 1; --cols: 12; }
+  html { font-size: calc(var(--u) * var(--hs)); }
+  /* Text minimums follow the text-size settings too (--k = widget × Home text size), so the
+     phone's sliders always change what the car shows: 150% makes a 16px minimum 24px.
+     Never below 12px, the design system's hard minimum. Touch targets (48 / 56px) stay fixed. */
+  :root { --k: var(--hs, 1); }
+  :root, .w {
+    --f12: max(12px, calc(12px * var(--k))); --f13: max(12px, calc(13px * var(--k)));
+    --f14: max(12px, calc(14px * var(--k))); --f15: max(12px, calc(15px * var(--k)));
+    --f16: max(12px, calc(16px * var(--k))); --f17: max(12px, calc(17px * var(--k)));
+  }
+  :root {
+    --accent: #5EF2D6; --violet: #2BB9A3; /* deep teal: one accent hue */ --red: #FF7A85; --green: #6EE7A0;
+    --ink: #FFFFFF; --dim: rgba(255,255,255,.74);
+    --glass: rgba(255,255,255,.12); --edge: rgba(255,255,255,.16);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; color: var(--ink); background: #0B0F1A;
+    font-family: "Google Sans", Roboto, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+
+  /* ---------- Background: photo / song cover / plain ---------- */
+  body:not(.ready) #grid { visibility: hidden; }
+  #plain { position: fixed; inset: 0; background:
+      radial-gradient(circle at 15% 15%, #133A44 0%, transparent 45%),
+      radial-gradient(circle at 85% 85%, #13243A 0%, transparent 50%), #0B0F1A; } /* teal + navy, no purple */
+  #photo, #bg { position: fixed; inset: 0; background: center/cover no-repeat; opacity: 0; transition: opacity 1.2s ease; }
+  #bg { filter: brightness(.6); }
+  body.mode-photo #photo, body.mode-upload #photo { opacity: 1; }
+  body.mode-cover.art #bg { opacity: 1; }
+  #dim { position: fixed; inset: 0; background: #000; opacity: .35; transition: opacity .6s; }
+  /* Darken only the edges where text sits; the middle stays clear. */
+  #shade { position: fixed; inset: 0; background:
+      linear-gradient(180deg, rgba(0,0,0,.45) 0%, transparent 32%, transparent 62%, rgba(0,0,0,.5) 100%); }
+  #credit { position: fixed; right: 1.4rem; bottom: .3rem; font-size: .66rem; color: rgba(255,255,255,.5); }
+
+  /* No backdrop blur (too costly on head units): a darker tint keeps text readable. */
+  .dim { color: var(--dim); }
+  .ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .shadow { text-shadow: 0 .1rem 1.2rem rgba(0,0,0,.45); }
+
+  /* Even margin all round: the AutoDeck button floats and can be moved anywhere. */
+  #app { position: relative; height: 100%; padding: calc(var(--u) * 1.2) calc(var(--u) * 1.4); }
+
+  /* ---------- Tablet-style widget grid (12 × 8 cells): always fits one screen. 8 rows by default;
+     more widgets add rows and every row shares the height (no scrolling, nothing cut off). ---------- */
+  #grid { height: 100%; display: grid; gap: max(8px, calc(var(--u) * .7)); grid-auto-flow: row dense;
+          grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+          grid-template-rows: repeat(var(--rows, 8), minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); overflow: hidden; }
+  /* ---------- Widgets ----------
+     Each tile is a size container: text, icons and covers scale with the tile itself
+     (cqw / cqh), times --k = this widget's text size × whole-Home text size. Tall or
+     narrow tiles switch layout with @container rules. Pure CSS: no JS, no timers. */
+  .w { display: none; container: tile / size; min-width: 0; min-height: 0; overflow: hidden;
+       border-radius: calc(var(--u) * 1.4); --k: calc(var(--ts, 1) * var(--hs, 1)); }
+  .w.on { display: block; }
+  .w.sq { border-radius: calc(var(--u) * .2); }
+  .in { width: 100%; height: 100%; display: flex; min-width: 0; min-height: 0;
+        padding: clamp(10px, min(13cqh, 5.5cqw), 22px) clamp(14px, min(15cqh, 6.5cqw), 26px); }
+  /* Glass plate: hairline edge, subtle gradient surface, top highlight, navy-tinted soft shadow. */
+  .tile { background: linear-gradient(145deg, rgba(22,28,44,.74) 0%, rgba(13,17,28,.82) 100%);
+          border: 1px solid var(--edge); box-shadow: inset 0 1px 0 rgba(255,255,255,.16), 0 8px 24px rgba(4,10,24,.35);
+          backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+  .w[data-ta="center"] .in { text-align: center; }
+  .w[data-ta="right"] .in { text-align: right; }
+  /* Phone widget editor only (never on the car). */
+  .w.hl { outline: calc(var(--u) * .25) solid var(--accent); outline-offset: calc(var(--u) * -.25); }
+
+  /* Clock: no tile, floats on the background */
+  .w[data-w="clock"] .in { flex-direction: column; justify-content: center; align-items: flex-start; }
+  .w[data-w="clock"][data-ta="center"] .in { align-items: center; }
+  .w[data-w="clock"][data-ta="right"] .in { align-items: flex-end; }
+  #time { font-size: calc(min(58cqh, 27cqw) * var(--k)); line-height: .95; letter-spacing: -.03em;
+          font-variant-numeric: tabular-nums; white-space: nowrap; text-shadow: 0 2px 16px rgba(0,0,0,.6); }
+  #time .ap { font-size: .32em; font-weight: 500; margin-left: .25em; letter-spacing: .02em; }
+  #date { font-size: max(var(--f14), calc(min(11cqh, 5.5cqw) * var(--k))); margin-top: .35em; opacity: .88; white-space: nowrap; font-weight: 500; text-shadow: 0 2px 10px rgba(0,0,0,.6); }
+  body.cf-thin #time { font-weight: 200; }
+  body.cf-bold #time { font-weight: 700; letter-spacing: -.05em; }
+  body.cf-serif #time { font-family: serif; font-weight: 400; }
+  body.cf-mono #time { font-family: monospace; font-weight: 400; letter-spacing: 0; }
+  body.cf-script #time { font-family: cursive; font-weight: 400; letter-spacing: 0; }
+  /* More clock styles: Android system font families + static CSS effects (no downloads, no animation). */
+  body.cf-black #time { font-weight: 900; letter-spacing: -.05em; }
+  body.cf-condensed #time { font-family: sans-serif-condensed; font-weight: 400; letter-spacing: -.02em; }
+  body.cf-wide #time { font-weight: 300; letter-spacing: .12em; }
+  body.cf-italic #time { font-weight: 200; font-style: italic; }
+  body.cf-casual #time { font-family: casual; font-weight: 400; letter-spacing: 0; }
+  body.cf-outline #time { font-weight: 800; color: transparent; -webkit-text-stroke: .025em #fff; }
+  /* Google Fonts (bundled subsets, see fonts/README.txt). */
+  @font-face { font-family: 'dd-orbitron'; src: url('fonts/orbitron.woff2') format('woff2'); }
+  body.cf-orbitron #time { font-family: 'dd-orbitron', sans-serif; font-weight: 400; letter-spacing: 0; }
+  @font-face { font-family: 'dd-bebas'; src: url('fonts/bebas.woff2') format('woff2'); }
+  body.cf-bebas #time { font-family: 'dd-bebas', sans-serif; font-weight: 400; letter-spacing: 0; }
+  @font-face { font-family: 'dd-audiowide'; src: url('fonts/audiowide.woff2') format('woff2'); }
+  body.cf-audiowide #time { font-family: 'dd-audiowide', sans-serif; font-weight: 400; letter-spacing: 0; }
+  @font-face { font-family: 'dd-teko'; src: url('fonts/teko.woff2') format('woff2'); }
+  body.cf-teko #time { font-family: 'dd-teko', sans-serif; font-weight: 400; letter-spacing: 0; }
+  @font-face { font-family: 'dd-poiret'; src: url('fonts/poiret.woff2') format('woff2'); }
+  body.cf-poiret #time { font-family: 'dd-poiret', sans-serif; font-weight: 400; letter-spacing: 0; }
+  @font-face { font-family: 'dd-monoton'; src: url('fonts/monoton.woff2') format('woff2'); }
+  body.cf-monoton #time { font-family: 'dd-monoton', sans-serif; font-weight: 400; letter-spacing: 0; }
+  body.cf-bebas #time, body.cf-teko #time { font-size: calc(min(70cqh, 33cqw) * var(--k)); }
+  body.cf-neon #time { font-weight: 300; color: #e9fffb; text-shadow: 0 0 .06em #fff, 0 0 .18em var(--accent), 0 0 .4em var(--accent); }
+
+  /* Info tiles (prayer, weather, football, fuel): icon + text in a row; stacked when tall */
+  .info { align-items: center; gap: max(10px, min(8cqh, 4.5cqw)); }
+  .w[data-ta="center"] .info { justify-content: center; }
+  .w[data-ta="right"] .info { flex-direction: row-reverse; }
+  .info .ic { font-size: calc(min(44cqh, 17cqw) * var(--k)); line-height: 1; flex: none; display: flex; align-items: center; justify-content: center; }
+  .info .txt { min-width: 0; max-width: 100%; overflow: hidden; display: flex; flex-direction: column; gap: .22em; }
+  .w[data-ta="left"] .info .txt, .w:not([data-ta]) .info .txt { flex: 1; }
+  .t1 { font-size: max(var(--f16), calc(min(17cqh, 6.5cqw) * var(--k))); font-weight: 600; letter-spacing: -0.01em; }
+  .big { font-size: calc(min(36cqh, 11cqw) * var(--k)); font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums;
+         white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; color: #FFFFFF; }
+  .sub { font-size: max(var(--f15), calc(min(16cqh, 6cqw) * var(--k))); color: var(--dim); font-weight: 500; }
+  #scoreText { font-weight: 600; }
+  #scoreSub .lv { color: #ff8a94; font-weight: 700; }
+  #fuelText { display: flex; gap: 1.4em; overflow: hidden; align-items: center; }
+  #fuelText .fu { display: flex; flex-direction: column; min-width: 0; }
+  #fuelText .fu small { font-size: .85em; color: var(--dim); white-space: nowrap; font-weight: 600; letter-spacing: 0.02em; }
+  #fuelText .fu b { font-size: 1.3em; font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; line-height: 1.15; }
+  .w[data-w="football"] { background: linear-gradient(145deg, rgba(64,20,28,.74) 0%, rgba(20,14,20,.82) 100%); border-color: rgba(255,122,133,.28); }
+  @container tile (max-aspect-ratio: 1/1) {
+    .info { flex-direction: column; justify-content: center; text-align: center; }
+    .info .txt { align-items: center; }
+    .info .ic { font-size: calc(min(26cqh, 34cqw) * var(--k)); }
+    .big { font-size: calc(min(16cqh, 22cqw) * var(--k)); }
+    .t1, .sub { font-size: max(var(--f14), calc(min(8cqh, 11cqw) * var(--k))); }
+  }
+
+  /* Music — three layouts picked by the tile's shape:
+       block (default, up to ~2.6:1): cover left; text, progress and controls stacked on the right
+       strip (wider than 2.6:1):      cover · text · controls in one row
+       tall  (taller than wide):      cover / text / controls stacked
+     Text sizes follow the text column itself (#music is its own inline-size container),
+     so it can't get squeezed into "Play s…". */
+  .mus { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto;
+         column-gap: max(10px, min(8cqh, 4cqw)); row-gap: max(6px, min(5cqh, 2.5cqw)); align-items: center; }
+  /* --as: album art size from the phone (1 = default); rows cap it at the tile height. */
+  #cover { grid-row: 1 / span 2; height: calc(100% * min(1, var(--as, 1))); max-width: calc(42cqw * var(--as, 1)); aspect-ratio: 1; border-radius: clamp(10px, min(12cqh, 5cqw), 20px);
+           background: rgba(255,255,255,.1) center/cover no-repeat; box-shadow: 0 8px 24px rgba(0,0,0,.45), inset 0 0 0 1px rgba(255,255,255,.14);
+           display: grid; place-items: center; font-size: calc(min(28cqh, 9cqw) * var(--k)); color: var(--dim); }
+  .w.noart .mus { grid-template-columns: minmax(0, 1fr); }
+  .w.noart #cover { display: none; }
+  #music { container-type: inline-size; min-width: 0; min-height: 0; max-height: 100%; overflow: hidden; align-self: end;
+           display: flex; flex-direction: column; gap: .3em; }
+  #songRow { display: flex; gap: .6em; align-items: baseline; font-size: max(var(--f14), calc(min(7.5cqw, 10cqh) * var(--k))); }
+  .w[data-ta="center"] #songRow { justify-content: center; }
+  .w[data-ta="right"] #songRow { justify-content: flex-end; }
+  #song { font-weight: 700; color: #FFFFFF; min-width: 0; flex: 0 1 auto; }
+  #artist { color: var(--dim); min-width: 0; flex: 0 1 auto; font-weight: 500; }
+  #line { font-size: max(var(--f17), calc(min(13cqw, 17cqh) * var(--k))); font-weight: 700; line-height: 1.25; color: #FFFFFF;
+          text-shadow: 0 2px 8px rgba(0,0,0,.6); /* readability on photos, not a glow */
+          white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  #next { font-size: max(var(--f14), calc(min(8cqw, 10cqh) * var(--k))); color: var(--dim); font-weight: 500; }
+  #progress { height: max(3px, 3cqh); border-radius: 99px; background: rgba(255,255,255,.16); overflow: hidden; margin-top: .35em; }
+  #progressFill { height: 100%; width: 0; border-radius: 99px; background: linear-gradient(90deg, var(--accent), var(--violet)); box-shadow: 0 0 8px rgba(94,242,214,.5); }
+  #controls { grid-column: 2; align-self: start; display: flex; align-items: center; gap: max(8px, min(6cqh, 2.8cqw)); }
+  .w[data-ta="center"] #controls { justify-content: center; }
+  .w[data-ta="right"] #controls { justify-content: flex-end; }
+  .w.noart #controls { grid-column: 1; }
+  .ctl { width: max(48px, min(18cqh, 10cqw)); height: max(48px, min(18cqh, 10cqw)); border-radius: 50%; border: 1px solid rgba(255,255,255,.18);
+         background: linear-gradient(135deg, rgba(255,255,255,.14), rgba(255,255,255,.05)); box-shadow: 0 4px 12px rgba(0,0,0,.25);
+         display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; flex: none; transition: transform .12s ease; }
+  .ctl svg { width: 50%; height: 50%; fill: #fff; }
+  .ctl.play { width: max(56px, min(24cqh, 13cqw)); height: max(56px, min(24cqh, 13cqw)); background: #fff; border-color: #fff; box-shadow: 0 6px 20px rgba(255,255,255,.25); }
+  .ctl.play svg { fill: #0B0F1A; width: 48%; height: 48%; }
+  .ctl:active { transform: scale(.92); }
+  #music > * { flex: none; }   /* drop whole lines, never squash one */
+  @container tile (max-height: 180px) { #next { display: none; } }
+  @container tile (max-height: 200px) { #line { -webkit-line-clamp: 1; } }
+  /* Small block: the text gets the whole tile (a tiny cover helps nobody). */
+  @container tile (max-width: 260px) and (min-aspect-ratio: 1/1) {
+    .mus { grid-template-columns: minmax(0, 1fr); }
+    #cover { display: none; }
+    #controls { grid-column: 1; }
+    .ctl { width: min(24cqh, 16cqw); height: min(24cqh, 16cqw); }
+    .ctl.play { width: min(30cqh, 20cqw); height: min(30cqh, 20cqw); }
+  }
+
+  /* Strip: one row. */
+  @container tile (min-aspect-ratio: 13/5) {
+    .mus { display: flex; align-items: center; gap: max(12px, min(6cqh, 3cqw)); }
+    .w.noart .mus { display: flex; align-items: center; gap: max(12px, min(6cqh, 3cqw)); }
+    #cover { height: 100%; width: auto; max-width: none; flex: none; }
+    #music { flex: 1; min-width: 0; align-self: center; }
+    #line { -webkit-line-clamp: 1; }
+    #controls { align-self: center; flex: none; }
+    .ctl { width: max(48px, min(34cqh, 8cqw)); height: max(48px, min(34cqh, 8cqw)); }
+    .ctl.play { width: max(56px, min(44cqh, 10cqw)); height: max(56px, min(44cqh, 10cqw)); }
+  }
+  @container tile (min-aspect-ratio: 13/5) and (max-width: 430px) { .ctl:not(.play) { display: none; } }
+
+  /* Tall: album on top, lyrics in the middle, controls at the bottom. */
+  @container tile (max-aspect-ratio: 1/1) {
+    .mus { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; justify-items: center; text-align: center; }
+    /* Bigger art is capped at half the tile so the song and a full lyric line still fit. */
+    #cover { grid-row: 1; height: auto; width: min(calc(min(80cqw, 40cqh) * var(--as, 1)), 50cqh, 92cqw); max-width: none; }
+    #music { width: 100%; align-self: center; }
+    #songRow { justify-content: center; }
+    #line { -webkit-line-clamp: 3; }
+    #controls { grid-column: 1; justify-content: center; }
+    .ctl { width: min(12cqh, 22cqw); height: min(12cqh, 22cqw); }
+    .ctl.play { width: min(15cqh, 27cqw); height: min(15cqh, 27cqw); }
+  }
+
+
+  /* ---------- Custom-page widgets ---------- */
+  .tl { font-size: max(var(--f14), calc(min(9cqh, 4.5cqw) * var(--k))); color: var(--dim); letter-spacing: .01em; font-weight: 600; }
+  .na { margin: auto; text-align: center; color: var(--dim); font-size: max(var(--f14), calc(min(10cqh, 5cqw) * var(--k))); }
+
+  /* Forecast: now · next hours · 7 days (rows drop as the tile gets smaller) */
+  .fc { flex-direction: column; gap: min(4cqh, 2cqw); }
+  #fcNow { display: flex; align-items: center; gap: .5em; font-size: max(var(--f14), calc(min(11cqh, 4.5cqw) * var(--k))); }
+  #fcNow .ic { font-size: 2.6em; line-height: 1; }
+  #fcNow .t { font-size: 2.4em; font-weight: 300; line-height: 1; }
+  #fcNow .d { display: flex; flex-direction: column; color: var(--dim); }
+  #fcHours { display: flex; justify-content: space-between; gap: .2em; font-size: max(var(--f14), calc(min(6.5cqh, 3.2cqw) * var(--k))); }
+  #fcHours .h { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: .15em;
+                padding: .4em 0; border-radius: .8em; background: rgba(255,255,255,.05); }
+  #fcHours .h .i { font-size: 1.6em; line-height: 1; }
+  #fcHours .h .r, #fcDays .r { color: #8fd0ff; font-size: max(var(--f13), .85em); }
+  /* Rows that don't fit wrap into a hidden second column: a day shows whole or not at all. */
+  #fcDays { display: flex; flex-direction: column; flex-wrap: wrap; align-content: flex-start; gap: .15em; font-size: max(var(--f14), calc(min(6.2cqh, 3.4cqw) * var(--k))); min-height: 0; overflow: hidden; }
+  #fcDays .d { width: 100%; display: grid; grid-template-columns: 3.2em 1.8em 3em 2.6em 1fr 2.6em; align-items: center; gap: .4em; }
+  #fcDays .d .i { font-size: 1.3em; text-align: center; }
+  #fcDays .lo { color: var(--dim); text-align: right; }
+  #fcDays .bar { height: .35em; border-radius: 99px; background: rgba(255,255,255,.12); position: relative; }
+  #fcDays .bar b { position: absolute; top: 0; bottom: 0; border-radius: 99px; background: linear-gradient(90deg, #7cc4ff, #ffd36e); }
+  @container tile (max-height: 300px) { #fcDays { display: none; } }
+  @container tile (max-height: 150px) { #fcHours { display: none; } }
+  @container tile (max-width: 520px) { #fcHours .h:nth-child(n+7) { display: none; } }
+  @container tile (max-width: 360px) { #fcHours .h:nth-child(n+5) { display: none; } #fcDays .bar { display: none; }
+                                       #fcDays .d { grid-template-columns: 3.2em 1.8em 3em 2.6em 2.6em; } }
+
+  /* Weather dashboard (big tile, e.g. the Custom page): hero card · hourly strip · day cards */
+  .card { background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.12); border-radius: 1.1em; }
+  #fcNow .hl, #fcNow .note { display: none; }
+  @container tile (min-width: 440px) and (min-height: 280px) {
+    .w[data-w="forecast"].big { background: none; border: 0; box-shadow: none; border-radius: 0; overflow: visible; }
+    .w[data-w="forecast"].big .in { padding: 0; }
+    .fc { gap: min(2.4cqh, 1.4cqw); font-size: max(var(--f15), calc(min(3.2cqh, 1.9cqw) * var(--k))); }
+    #fcNow { flex: 1.35; min-height: 0; position: relative; overflow: hidden; padding: .8em 1.4em; font-size: inherit;
+             display: grid; grid-template-columns: auto 1fr auto; grid-template-rows: 1fr auto auto; column-gap: 1em;
+             background: linear-gradient(135deg, rgba(255,255,255,.12), rgba(255,255,255,.03)); }
+    #fcNow .t { grid-column: 1; grid-row: 1; font-size: 4em; font-weight: 200; align-self: center; line-height: 1; }
+    #fcNow .ic { grid-column: 2; grid-row: 1; align-self: center; width: 5em; height: 5em; margin: -1.2em 0; }
+    #fcNow.sun { background: linear-gradient(135deg, rgba(255,196,84,.28), rgba(255,255,255,.04)); }
+    #fcNow.cloud { background: linear-gradient(135deg, rgba(170,190,215,.22), rgba(255,255,255,.04)); }
+    #fcNow.rain { background: linear-gradient(135deg, rgba(66,134,238,.3), rgba(255,255,255,.04)); }
+    #fcNow.storm { background: linear-gradient(135deg, rgba(126,87,194,.34), rgba(255,255,255,.04)); }
+    #fcNow.night { background: linear-gradient(135deg, rgba(60,70,140,.32), rgba(255,255,255,.04)); }
+    #fcNow .d { grid-column: 1 / 3; grid-row: 2; color: var(--ink); }
+    #fcNow .d b { font-size: 1.7em; font-weight: 600; }
+    #fcNow .d span { color: var(--dim); font-size: 1.1em; }
+    #fcNow .hl { display: flex; gap: .6em; grid-column: 1 / 3; grid-row: 3; margin-top: .5em; }
+    #fcNow .hl span { padding: .3em .9em; border-radius: 99px; background: rgba(255,255,255,.1); color: var(--dim); }
+    #fcNow .hl b { color: var(--ink); margin-left: .3em; }
+    #fcNow .note { display: block; grid-column: 3; grid-row: 1 / 4; align-self: center; width: 12em; padding: 1em 1.1em; white-space: normal;
+                   font-size: 1em; line-height: 1.45; color: var(--dim); }
+    #fcNow .note b { display: block; color: var(--ink); font-size: 1.15em; margin-bottom: .3em; }
+    #fcHours { flex: none; padding: .7em .6em; gap: .3em; font-size: inherit; }
+    #fcHours .h { background: none; padding: .5em 0; gap: .35em; }
+    #fcHours .h:first-child { background: rgba(255,255,255,.1); }
+    #fcHours .h .i { font-size: 1.9em; }
+    #fcHours .h b { font-size: 1.25em; font-weight: 500; }
+    #fcDays { flex: 1; flex-direction: row; flex-wrap: nowrap; gap: .45em; font-size: inherit; overflow: hidden; width: 100%; padding: 0 2px 2px 0; }
+    #fcDays .d { flex: 1 1 0; min-width: 0; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .3em;
+                 background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.12); border-radius: 1.1em; }
+    #fcDays .d:first-child { background: rgba(255,255,255,.14); }
+    #fcDays .d > span:first-child { font-weight: 600; }
+    #fcDays .d .i { order: 1; font-size: 2em; }
+    #fcDays .d .hi { order: 2; font-size: 1.35em; font-weight: 500; }
+    #fcDays .d .lo { order: 3; text-align: center; }
+    #fcDays .d .r { order: 4; }
+    #fcDays .bar { display: none; }
+  }
+  /* Short car screens (≈480 px): drop the least useful bits instead of shrinking text. */
+  @container tile (min-width: 440px) and (min-height: 280px) and (max-height: 460px) {
+    #fcDays .d .r, #fcDays .d .lo { display: none; }
+    #fcHours .h .r { display: none; }
+    #fcNow .ic { width: 4.2em; height: 4.2em; }
+  }
+
+  /* Air quality + UV */
+  .aq { flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: min(3cqh, 2cqw); }
+  #aqVal { font-size: calc(min(30cqh, 26cqw) * var(--k)); font-weight: 700; line-height: 1; }
+  #aqCat { font-size: max(var(--f13), calc(min(8cqh, 8cqw) * var(--k))); font-weight: 700; padding: .25em .8em; border-radius: 99px; }
+  #aqMore { display: flex; flex-wrap: wrap; justify-content: center; gap: .4em 1em; font-size: max(var(--f14), calc(min(7cqh, 7cqw) * var(--k))); color: var(--dim); }
+  #aqMore b { color: var(--ink); }
+  @container tile (min-aspect-ratio: 2/1) { .aq { flex-direction: row; gap: 1.2em; } #aqVal { font-size: calc(min(45cqh, 14cqw) * var(--k)); } }
+
+  /* Rain radar: map tiles + radar overlay, centred on the prayer zone */
+  .w[data-w="radar"] .in { padding: 0; position: relative; }
+  #rdMap { position: absolute; inset: 0; overflow: hidden; background: #1b2230; }
+  #rdMap img { position: absolute; width: 256px; height: 256px; }
+  #rdMap img.base { filter: invert(.92) hue-rotate(180deg) saturate(.4) brightness(.9); }
+  #rdMap img.rain { opacity: .8; }
+  #rdDot { position: absolute; left: 50%; top: 50%; width: 12px; height: 12px; margin: -6px; border-radius: 50%;
+           background: var(--accent); box-shadow: 0 0 0 4px rgba(94,242,214,.35); }
+  #rdInfo { position: absolute; left: .6em; top: .5em; font-size: max(var(--f14), calc(min(7cqh, 3.5cqw) * var(--k))); font-weight: 700;
+            text-shadow: 0 1px 4px #000; }
+  #rdAttr { position: absolute; right: .4em; bottom: .2em; font-size: 9px; color: rgba(255,255,255,.6); text-shadow: 0 1px 2px #000; }
+
+  /* YouTube: search + quick pages; opens YouTube in the car browser (video plays only when parked). */
+  .yt { flex-direction: column; justify-content: center; gap: .7em; font-size: max(var(--f16), calc(min(9cqh, 3.6cqw) * var(--k))); }
+  .yt button { all: unset; cursor: pointer; box-sizing: border-box; min-height: 48px; display: flex; align-items: center; border-radius: 99px; transition: background .15s ease, transform .12s ease; }
+  .yt .yt-s { gap: .8em; padding: 0 1.2em; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18); color: rgba(255,255,255,.8); box-shadow: 0 2px 8px rgba(0,0,0,.2); }
+  .yt-s svg { width: 1.7em; height: 1.2em; flex: none; }
+  .yt-s span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+  .yt-c { display: flex; gap: .6em; }
+  .yt .yt-c button { flex: 1; min-width: 0; justify-content: center; padding: 0 .6em; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.12); font-weight: 600; font-size: .82em;
+                 white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dim); }
+  .yt button:active { background: rgba(255,255,255,.2); color: #fff; transform: scale(.96); }
+  @container tile (max-height: 120px) { .yt-c { display: none; } }
+
+  /* EV charging (Open Charge Map): list of nearest chargers; map beside it on wide tiles */
+  .evw { flex-direction: column; gap: min(2.5cqh, 1.4cqw); }
+  .ev-b { flex: 1; min-height: 0; display: flex; gap: 1em; }
+  #evList { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .6em; overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain;
+            font-size: max(var(--f16), calc(min(6cqh, 3.6cqw) * var(--k)));
+            -webkit-mask-image: linear-gradient(#000 calc(100% - 1.5em), transparent); mask-image: linear-gradient(#000 calc(100% - 1.5em), transparent); }
+  .ch { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: .3em 1em; align-items: center; padding: .75em 1em;
+        border-radius: 1.1em; background: linear-gradient(135deg, rgba(255,255,255,.07), rgba(255,255,255,.03));
+        border: 1px solid rgba(255,255,255,.12); box-shadow: 0 2px 8px rgba(0,0,0,.2); cursor: pointer; flex: none; transition: background .15s ease; }
+  .ch:active { background: rgba(255,255,255,.16); }
+  .ch .n { grid-row: 1 / 3; width: 2em; height: 2em; border-radius: 50%; display: grid; place-items: center; font-weight: 800;
+           background: var(--accent); color: #0B0F1A; font-size: .85em; }
+  .ch.down .n { background: #ff5f6d; }
+  /* Name + access pill on line 1; plugs then operator (cut with …) on line 2: a card stays two lines. */
+  .ch .nm { display: flex; align-items: center; gap: .6em; min-width: 0; }
+  .ch b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; font-weight: 600; }
+  .ch .nm .acc { flex: none; font-size: max(var(--f13), .78em); }
+  .ch .km { font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; }
+  .ch .sub { grid-column: 2 / 4; display: flex; flex-wrap: nowrap; align-items: center; gap: .4em; min-width: 0; overflow: hidden; font-size: max(var(--f13), .82em); }
+  .ch .sub .plug { flex: none; }
+  .ch .op { color: var(--dim); margin-left: .2em; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .plug { padding: .15em .6em; border-radius: 99px; background: rgba(94,242,214,.14); color: var(--accent); font-weight: 700; white-space: nowrap; }
+  #evMap .pin.no { background: #ff5f6d; }
+  .acc { padding: .15em .6em; border-radius: 99px; font-weight: 700; white-space: nowrap; }
+  .acc.no { background: rgba(255,77,94,.2); color: #ff8a94; }
+  .acc.mb { background: rgba(245,158,11,.2); color: #ffc15a; }
+  .plug.fast { background: rgba(255,196,84,.18); color: #ffc454; }
+  #evMap { display: none; position: relative; overflow: hidden; border-radius: 1.1em; background: #1b2230; border: 1px solid rgba(255,255,255,.1); }
+  #evMap img { position: absolute; width: 256px; height: 256px; filter: invert(.92) hue-rotate(180deg) saturate(.4) brightness(.9); }
+  #evMap .pin { position: absolute; width: 1.6em; height: 1.6em; margin: -.8em; border-radius: 50%; display: grid; place-items: center; font-size: .75em;
+                font-weight: 800; background: var(--accent); color: #0B0F1A; box-shadow: 0 0 0 3px rgba(11,15,26,.7); }
+  #evMap .me { position: absolute; width: 12px; height: 12px; margin: -6px; border-radius: 50%; background: #4f8cff; box-shadow: 0 0 0 5px rgba(79,140,255,.3); }
+  #evAttr { font-size: 12px; /* legal credit: fixed caption, not scaled */ color: rgba(255,255,255,.5); text-align: right; flex: none; }
+  .evw .tl { font-size: max(var(--f14), calc(min(6cqh, 3.2cqw) * var(--k))); }
+  /* Wide: list (≈45%) + map, so the list's text is sized for its own column. */
+  @container tile (min-width: 620px) and (min-height: 300px) {
+    #evMap { display: block; flex: 1.1; }
+    #evList { font-size: max(var(--f16), calc(min(4.6cqh, 2.1cqw) * var(--k))); }
+  }
+
+  /* Sports: grouped by league; each game a card (crest · name | score + status pill | crest · name) */
+  .sp { flex-direction: column; gap: min(3cqh, 1.4cqw); }
+  .sp-h { display: flex; align-items: center; gap: .8em; font-size: max(var(--f14), calc(min(7cqh, 3.2cqw) * var(--k))); }
+  .sp-h .tl { font-size: 1em; }
+  .sp-live { display: none; align-items: center; gap: .4em; padding: .2em .8em; border-radius: 99px; font-size: .8em; font-weight: 700;
+             color: #ff6b7a; background: rgba(255,107,122,.16); }
+  .sp-live.on { display: inline-flex; }
+  .sp-live i { width: .5em; height: .5em; border-radius: 50%; background: #ff6b7a; box-shadow: 0 0 0 3px rgba(255,107,122,.25); }
+  #spList { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: .9em;
+            font-size: max(var(--f14), calc(min(6cqh, 3.6cqw) * var(--k))); }
+  .lg { break-inside: avoid; display: flex; flex-direction: column; gap: .55em; }
+  .lh { font-size: max(var(--f13), .82em); font-weight: 700; letter-spacing: .02em; color: var(--dim);
+        display: flex; align-items: center; gap: .6em; }
+  .lh::after { content: ''; flex: 1; height: 1px; background: rgba(255,255,255,.12); }
+  .g { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: .8em;
+       padding: .75em 1em; border-radius: 1.1em; background: linear-gradient(135deg, rgba(255,255,255,.08), rgba(255,255,255,.03));
+       border: 1px solid rgba(255,255,255,.12); box-shadow: 0 2px 8px rgba(0,0,0,.2); }
+  .g.live { border-color: rgba(255,107,122,.5); background: linear-gradient(135deg, rgba(255,107,122,.18), rgba(255,255,255,.04)); }
+  .g.post { opacity: .78; }
+  .g .tm { display: flex; align-items: center; gap: .6em; min-width: 0; font-weight: 600; }
+  .g .tm.a { flex-direction: row-reverse; text-align: right; }
+  .g .tm span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .g .tm img { width: 1.9em; height: 1.9em; flex: none; object-fit: contain; filter: drop-shadow(0 2px 4px rgba(0,0,0,.4)); }
+  .g .mid { display: flex; flex-direction: column; align-items: center; gap: .3em; min-width: 4.4em; }
+  .g .sc { font-size: 1.45em; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: .02em; line-height: 1; }
+  .g .sc.vs { font-size: .9em; font-weight: 600; color: var(--dim); }
+  .pill { font-size: max(var(--f13), .78em); font-weight: 700; padding: .25em .75em; border-radius: 99px; background: rgba(255,255,255,.1); color: var(--dim);
+          white-space: nowrap; }
+  .g.live .pill { background: #ff4d5e; color: #fff; box-shadow: 0 2px 8px rgba(255,77,94,.4); }
+  .g.pre .pill { background: rgba(94,242,214,.15); color: var(--accent); }
+  .g.title { grid-template-columns: minmax(0, 1fr) auto; }
+  .g.title .tm span { white-space: normal; }
+  @container tile (max-width: 300px) { .g .tm img { display: none; } .g .mid { min-width: 3em; } }
+  /* Crest above the name, so long club names get the whole column. */
+  @container tile (min-width: 300px) {
+    .g .tm, .g .tm.a { flex-direction: column; text-align: center; gap: .3em; font-size: max(var(--f14), .92em); }
+    .g .tm span { max-width: 100%; }
+    .g .tm img { width: 2.1em; height: 2.1em; }
+    .g.title .tm { flex-direction: row; text-align: left; }
+  }
+  /* Tabs (Games · My teams · Tables) on big tiles; football tables from football-data.org */
+  /* .cv.sp-tabs: must beat the later .cv { display: flex } */
+  .cv.sp-tabs { margin-left: auto; display: none; font-size: .85em; }
+  @container tile (min-width: 520px) and (min-height: 260px) { .cv.sp-tabs { display: flex; } }
+  /* Short tile (e.g. the 6x2 template slot): games only, no header / league titles. */
+  @container tile (max-height: 160px) {
+    .sp-h, .lh { display: none; }
+    .sp { justify-content: center; }
+    .g { padding: .35em .7em; }
+    .g .tm, .g .tm.a { flex-direction: row; text-align: left; }
+    .g .tm.a { flex-direction: row-reverse; text-align: right; }
+    .g .tm img { width: 1.5em; height: 1.5em; }
+    .lg + .lg, .lg .g + .g { display: none; } /* one game, never a cut-off second card */
+  }
+  #spChips { display: none; gap: .4em; flex-wrap: wrap; font-size: max(var(--f14), calc(min(4.4cqh, 2.4cqw) * var(--k))); }
+  #spChips.on { display: flex; }
+  #spChips button { all: unset; cursor: pointer; padding: .3em .9em; border-radius: 99px; background: rgba(255,255,255,.07);
+                    border: 1px solid rgba(255,255,255,.12); color: var(--dim); font-weight: 600; }
+  #spChips button.on { background: rgba(94,242,214,.16); border-color: rgba(94,242,214,.5); color: var(--accent); }
+  .tb { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .tb th { font-size: .72em; font-weight: 700; letter-spacing: .08em; color: var(--dim); text-align: center; padding: .3em .2em; }
+  .tb td { text-align: center; padding: .32em .25em; border-top: 1px solid rgba(255,255,255,.06); }
+  .tb td.tn { text-align: left; }
+  .tb td.tn div { display: flex; align-items: center; gap: .5em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 14em; }
+  .tb td.tn img { width: 1.3em; height: 1.3em; object-fit: contain; flex: none; }
+  .tb td.pts { font-weight: 800; }
+  .tb tr.q1 td:first-child { box-shadow: inset 3px 0 0 #3ecf8e; }
+  .tb tr.q2 td:first-child { box-shadow: inset 3px 0 0 #f5a524; }
+  .tb tr.rel td:first-child { box-shadow: inset 3px 0 0 #ff5f6d; }
+  #spList.flat { column-count: 1 !important; overflow-y: hidden; }
+  .tb-g { font-size: .75em; font-weight: 700; letter-spacing: .01em; color: var(--dim); margin: .6em 0 .2em; }
+
+  /* Big tile: leagues flow into two columns */
+  @container tile (min-width: 640px) {
+    #spList { display: block; column-count: 2; column-gap: 1.2em; font-size: max(var(--f16), calc(min(4.6cqh, 2.3cqw) * var(--k))); }
+    .lg { margin-bottom: .9em; }
+  }
+
+  /* Calendar week view (big tile): days across, hours down, events as coloured blocks, a "now" line */
+  #calWeek { display: none; }
+  @container tile (min-width: 620px) and (min-height: 300px) {
+    .cal #calMonth, .cal #calEvents { display: none; }
+    #calWeek { display: flex; flex-direction: column; width: 100%; min-height: 0; font-size: max(var(--f16), calc(min(3.6cqh, 1.9cqw) * var(--k))); }
+  }
+  .wk-h { display: flex; align-items: center; gap: .9em; margin-bottom: .9em; }
+  .wk-b { display: flex; flex-direction: column; align-items: center; width: 3.6em; padding: .35em 0; border-radius: .9em;
+          background: linear-gradient(160deg, var(--accent), #3bb6a3); color: #0B0F1A; line-height: 1.05;
+          box-shadow: 0 .4em 1.2em rgba(94,242,214,.25); }
+  .wk-b small { font-size: .8em; font-weight: 700; letter-spacing: .1em; opacity: .75; }
+  .wk-b b { font-size: 1.6em; }
+  .wk-t { flex: 1; min-width: 0; }
+  .wk-t b { display: block; font-size: 1.45em; letter-spacing: -.01em; }
+  .wk-t span { color: var(--dim); font-size: .9em; }
+  .wk-nx { flex: none; max-width: 45%; display: flex; align-items: center; gap: .6em; padding: .45em .9em .45em .5em; border-radius: 99px;
+           background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.1); font-size: .9em; }
+  .wk-nx i { width: .7em; height: .7em; border-radius: 50%; flex: none; }
+  .wk-nx span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wk-nx em { font-style: normal; color: var(--dim); white-space: nowrap; }
+  .wk-g { flex: 1; min-height: 0; display: grid; grid-template-columns: 3.4em repeat(7, minmax(0, 1fr));
+          grid-template-rows: auto auto minmax(0, 1fr); border-radius: 1.1em; overflow: hidden;
+          background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.08); }
+  .wk-dh { padding: .45em 0 .5em; text-align: center; display: flex; flex-direction: column; align-items: center; gap: .1em; }
+  .wk-dh small { font-size: .7em; letter-spacing: .1em; color: var(--dim); font-weight: 600; }
+  .wk-dh b { font-size: 1.25em; font-weight: 600; width: 1.9em; line-height: 1.9em; border-radius: 50%; }
+  .wk-dh.we small, .wk-dh.we b { opacity: .55; }
+  .wk-dh.td small { color: var(--accent); }
+  .wk-dh.td b { background: var(--accent); color: #0B0F1A; opacity: 1; }
+  .wk-ad { min-height: 1.5em; padding: .15em .2em; display: flex; flex-direction: column; gap: .15em; overflow: hidden;
+           border-bottom: 1px solid rgba(255,255,255,.08); }
+  .wk-tm { position: relative; }
+  .wk-tm span { position: absolute; right: .55em; transform: translateY(-50%); font-size: .8em; color: rgba(255,255,255,.6); white-space: nowrap; }
+  .wk-col { position: relative; border-left: 1px solid rgba(255,255,255,.05);
+            background-image: linear-gradient(rgba(255,255,255,.06) 1px, transparent 1px); background-size: 100% var(--hr); }
+  .wk-col.td { background-color: rgba(94,242,214,.05); }
+  .wk-col.we { background-color: rgba(0,0,0,.12); }
+  .wk-e { position: absolute; left: 3px; right: 3px; padding: .3em .45em; border-radius: .55em; overflow: hidden;
+          border-left: 3px solid; font-size: .88em; line-height: 1.25; box-shadow: 0 .2em .8em rgba(0,0,0,.25); }
+  .wk-e b { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wk-e span { color: rgba(255,255,255,.7); font-size: .9em; }
+  .wk-e.past { opacity: .45; }
+  .wk-ad .wk-e { position: static; padding: .12em .45em; box-shadow: none; }
+  /* Day / Week / Month switch */
+  .cv { display: flex; flex: none; padding: .2em; border-radius: 99px; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.1); }
+  .cv button { all: unset; cursor: pointer; padding: .4em 1.1em; min-height: 48px; box-sizing: border-box; display: inline-flex; align-items: center; border-radius: 99px; font-size: .9em; font-weight: 600; color: var(--dim); }
+  .cv button.on { background: var(--accent); color: #0B0F1A; }
+  /* Day view: one wide column */
+  .wk-g.day { grid-template-columns: 3.4em minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .wk-g.day .wk-e { left: .6em; right: .6em; font-size: 1.05em; padding: .45em .8em; }
+  .wk-g.day .wk-e { display: flex; align-items: baseline; gap: .9em; }
+  .wk-g.day .wk-e b { flex: 0 1 auto; min-width: 0; }
+  .wk-g.day .wk-e span { white-space: nowrap; }
+  .wk-g.day .wk-ad { flex-direction: row; flex-wrap: wrap; }
+  /* Week board: 7 day columns, events stacked in time order (readable at car size) */
+  .wb { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .45em; }
+  .wb-c { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: .4em; padding: .55em .45em;
+          border-radius: 1em; background: rgba(255,255,255,.045); border: 1px solid rgba(255,255,255,.07); overflow: hidden;
+          -webkit-mask-image: linear-gradient(#000 calc(100% - 1.6em), transparent); mask-image: linear-gradient(#000 calc(100% - 1.6em), transparent); }
+  .wb-c.td { background: rgba(94,242,214,.08); border-color: rgba(94,242,214,.35); }
+  .wb-c.we { background: rgba(0,0,0,.15); }
+  .wb-h { display: flex; flex-direction: column; align-items: center; gap: .1em; padding-bottom: .35em; margin-bottom: .1em;
+          border-bottom: 1px solid rgba(255,255,255,.08); flex: none; }
+  .wb-h small { font-size: .85em; font-weight: 700; letter-spacing: .1em; color: rgba(255,255,255,.6); }
+  .wb-h b { font-size: 1.35em; font-weight: 700; width: 1.9em; line-height: 1.9em; text-align: center; border-radius: 50%; }
+  .wb-c.td .wb-h small { color: var(--accent); }
+  .wb-c.td .wb-h b { background: var(--accent); color: #0B0F1A; }
+  .wb-e { flex: none; padding: .4em .5em; border-radius: .6em; border-left: 3px solid; line-height: 1.25; }
+  .wb-e .t { font-size: .88em; font-weight: 700; font-variant-numeric: tabular-nums; opacity: .9; }
+  .wb-e b { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-weight: 600; font-size: .92em; }
+  .wb-e.past { opacity: .45; }
+  .wb-e.now { box-shadow: 0 0 0 2px var(--accent); }
+  .wb-none { margin: auto 0; text-align: center; font-size: .8em; color: rgba(255,255,255,.35); }
+
+  /* Day view: today's events as big cards */
+  .dv { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(15em, 1fr)); grid-auto-rows: min-content;
+        gap: .7em; align-content: start; overflow: hidden;
+        -webkit-mask-image: linear-gradient(#000 calc(100% - 1.6em), transparent); mask-image: linear-gradient(#000 calc(100% - 1.6em), transparent); }
+  .dv-e { display: flex; gap: .9em; padding: .9em 1em; border-radius: 1em; border-left: 4px solid; line-height: 1.3; }
+  .dv-e .tm { flex: none; display: flex; flex-direction: column; font-variant-numeric: tabular-nums; }
+  .dv-e .tm b { font-size: 1.35em; font-weight: 700; }
+  .dv-e .tm span { font-size: .85em; color: rgba(255,255,255,.6); }
+  .dv-e .bd { min-width: 0; }
+  .dv-e .bd b { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 1.1em; font-weight: 600; }
+  .dv-e .bd span { display: block; font-size: .85em; color: rgba(255,255,255,.65); margin-top: .2em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dv-e.now { box-shadow: 0 0 0 2px var(--accent); }
+  .dv-e.now .bd span:first-of-type { color: var(--accent); }
+  .dv-e.past { opacity: .45; }
+  .dv-none { grid-column: 1 / -1; padding: 3em 0; text-align: center; color: rgba(255,255,255,.5); font-size: 1.1em; }
+
+  /* Event details popup (tap an event) */
+  #calPop { position: fixed; inset: 0; z-index: 50; display: none; align-items: center; justify-content: center;
+            background: rgba(4,6,12,.62); font-size: max(var(--f14), calc(2.6vh * var(--hs, 1))); }
+  #calPop.on { display: flex; }
+  .cp { width: min(34em, 86vw); max-height: 84vh; overflow: hidden; display: flex; flex-direction: column; border-radius: 1.3em;
+        background: #171b2b; border: 1px solid rgba(255,255,255,.12); box-shadow: 0 1.5em 4em rgba(0,0,0,.55); }
+  .cp-bar { height: .45em; flex: none; }
+  .cp-in { padding: 1.1em 1.3em 1.2em; display: flex; flex-direction: column; gap: .7em; min-height: 0; overflow: hidden; }
+  .cp-top { display: flex; align-items: flex-start; gap: .8em; }
+  .cp-top b { flex: 1; font-size: 1.45em; line-height: 1.2; }
+  .cp-x { all: unset; cursor: pointer; flex: none; width: 2.2em; height: 2.2em; border-radius: 50%; display: grid; place-items: center;
+          background: rgba(255,255,255,.1); font-size: 1em; }
+  .cp-row { display: flex; gap: .7em; align-items: baseline; color: rgba(255,255,255,.85); }
+  .cp-row i { font-style: normal; width: 1.4em; flex: none; text-align: center; }
+  .cp-row .sub { color: rgba(255,255,255,.55); }
+  .cp-notes { white-space: pre-line; color: rgba(255,255,255,.75); font-size: .92em; line-height: 1.45; padding: .8em 1em; border-radius: .8em;
+              background: rgba(255,255,255,.05); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; }
+  .cp-now { align-self: flex-start; font-size: .8em; font-weight: 700; padding: .25em .8em; border-radius: 99px; background: var(--accent); color: #0B0F1A; }
+  .cp-list { display: flex; flex-direction: column; gap: .5em; overflow: hidden; }
+  .cp-li { display: flex; gap: .7em; padding: .6em .8em; border-radius: .8em; background: rgba(255,255,255,.05); cursor: pointer; }
+  .cp-li i { width: .3em; border-radius: 99px; flex: none; }
+  .cp-li .tm { font-weight: 700; font-variant-numeric: tabular-nums; width: 3.3em; flex: none; }
+  [data-ev], [data-day] { cursor: pointer; }
+
+  /* Month view */
+  .mo { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-template-rows: auto;
+        grid-auto-rows: minmax(0, 1fr); border-radius: 1.1em; overflow: hidden; background: rgba(255,255,255,.035);
+        border: 1px solid rgba(255,255,255,.08); }
+  .mo .mw { padding: .45em 0; text-align: center; font-size: .78em; letter-spacing: .1em; font-weight: 600; color: var(--dim);
+            border-bottom: 1px solid rgba(255,255,255,.08); }
+  .mo .mc { min-width: 0; min-height: 0; padding: .25em .3em; overflow: hidden; display: flex; flex-direction: column; gap: .15em;
+            border-left: 1px solid rgba(255,255,255,.05); border-top: 1px solid rgba(255,255,255,.05); }
+  .mo .mc:nth-child(7n+1) { border-left: 0; }
+  .mo .mc.o { opacity: .3; }
+  .mo .mc.we { background: rgba(0,0,0,.12); }
+  .mo .mc.td { background: rgba(94,242,214,.06); }
+  .mo .mc > b { font-size: .95em; font-weight: 600; width: 1.8em; line-height: 1.8em; text-align: center; border-radius: 50%; flex: none; }
+  .mo .mc.td > b { background: var(--accent); color: #0B0F1A; }
+  .mo .me { font-size: max(var(--f12), .85em); padding: .1em .4em; border-radius: .35em; border-left: 2px solid; white-space: nowrap; overflow: hidden;
+            text-overflow: ellipsis; flex: none; }
+  .mo .mm { font-size: .7em; color: var(--dim); padding-left: .4em; }
+
+  .wk-now { position: absolute; left: 0; right: 0; border-top: 2px solid #ff6b7a; z-index: 2; }
+  .wk-now::before { content: ''; position: absolute; left: -5px; top: -6px; width: 10px; height: 10px; border-radius: 50%;
+                    background: #ff6b7a; box-shadow: 0 0 0 4px rgba(255,107,122,.25); }
+
+  /* Custom page: no Home photo; each function has its own calm background, tiles are glass on top. */
+  body.pg-custom .tile { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.1); box-shadow: none; }
+  body.pg-custom #dim, body.pg-custom #shade, body.pg-custom #credit { display: none; }
+  body.fn-weather #plain { background: radial-gradient(circle at 20% 0%, #2c5a8a 0%, transparent 55%),
+                                       radial-gradient(circle at 90% 100%, #1d3557 0%, transparent 60%), #0e1a2b; }
+  body.fn-calendar #plain { background: radial-gradient(circle at 0% 0%, #1d2c40 0%, transparent 55%),
+                                        radial-gradient(circle at 100% 100%, #161b33 0%, transparent 60%), #0d0f1c; }
+  body.fn-sports #plain { background: radial-gradient(circle at 50% 120%, #11402c 0%, transparent 60%), #0a1210; }
+  body.fn-radar #plain { background: #0b0f16; }
+
+  /* Agenda (small / medium tiles): date header · week strip · events grouped by day.
+     Readable minimums: nothing under ~12px on the car. */
+  #calHead { display: none; align-items: center; gap: .6em; flex: none; font-size: max(var(--f13), calc(min(7cqh, 4.6cqw) * var(--k))); }
+  #calHead .dn { font-size: 2.6em; font-weight: 700; line-height: 1; color: var(--accent); letter-spacing: -.03em; }
+  #calHead .dw { display: flex; flex-direction: column; line-height: 1.2; }
+  #calHead .dw b { font-size: 1.1em; }
+  #calHead .dw span { color: rgba(255,255,255,.65); font-size: .9em; }
+  #calEvents { font-size: max(var(--f13), calc(min(7.5cqh, 4.8cqw) * var(--k))) !important; gap: .55em !important;
+               -webkit-mask-image: linear-gradient(#000 calc(100% - 2em), transparent); mask-image: linear-gradient(#000 calc(100% - 2em), transparent); }
+  .ag-d { font-size: max(var(--f12), .8em); font-weight: 700; letter-spacing: .01em; color: rgba(255,255,255,.7); margin-top: .3em; }
+  .ag-d:first-child { margin-top: 0; }
+  .ag-d.td { color: var(--accent); }
+  .ag { display: grid; grid-template-columns: 3.3em .25em minmax(0, 1fr); gap: .65em; align-items: stretch; }
+  .ag .at { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; padding-top: .05em; line-height: 1.25; }
+  .ag .at small { display: block; font-weight: 500; font-size: max(var(--f12), .82em); color: rgba(255,255,255,.55); }
+  .ag i { border-radius: 99px; }
+  .ag .ab { min-width: 0; line-height: 1.25; }
+  .ag .ab b { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ag .ab span { display: block; font-size: max(var(--f13), .85em); color: rgba(255,255,255,.62); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ag.now .ab b { color: var(--accent); }
+  .ag.past { opacity: .5; }
+  #calStrip { display: none; gap: .3em; font-size: max(var(--f12), calc(min(7cqh, 4.4cqw) * var(--k))); }
+  #calStrip .sd { flex: 1; display: flex; flex-direction: column; align-items: center; gap: .15em; padding: .35em 0; border-radius: .7em; }
+  #calStrip .sd small { font-size: .72em; color: var(--dim); font-weight: 600; letter-spacing: .06em; }
+  #calStrip .sd b { font-size: 1.15em; }
+  #calStrip .sd.td { background: var(--accent); color: #0B0F1A; }
+  #calStrip .sd.td small { color: #0B0F1A; }
+  #calStrip .sd i { width: .35em; height: .35em; border-radius: 50%; background: rgba(255,255,255,.75); visibility: hidden; }
+  #calStrip .sd.ev i { visibility: visible; }
+  .sd.td i { background: #0B0F1A; }
+  /* Not tall enough for a readable month grid: week strip + events. */
+  @container tile (max-height: 360px) and (max-width: 619px), (max-height: 299px) {
+    .cal { flex-direction: column; }
+    .cal #calMonth { display: none; }
+    #calStrip { display: flex; flex: none; }
+    #calHead { display: flex; }
+  }
+  @container tile (max-height: 230px) { #calHead { display: none !important; } }
+  @container tile (max-height: 150px) { #calStrip { display: none !important; } }
+
+  /* Calendar: month grid + upcoming events (side by side when wide) */
+  .cal { gap: min(5cqh, 3cqw); }
+  #calMonth { flex: none; display: flex; flex-direction: column; font-size: max(var(--f13), calc(min(5.4cqh, 3.2cqw) * var(--k))); }
+  #calMonth .mh { font-weight: 700; margin-bottom: .4em; }
+  #calMonth .grid { display: grid; grid-template-columns: repeat(7, 2.1em); gap: .15em; text-align: center; }
+  #calMonth .wd { color: var(--dim); font-size: .8em; }
+  #calMonth .dy { line-height: 2em; border-radius: 50%; position: relative; }
+  #calMonth .dy.o { color: rgba(255,255,255,.25); }
+  #calMonth .dy.td { background: var(--accent); color: #0B0F1A; font-weight: 700; }
+  #calMonth .dy.ev::after { content: ''; position: absolute; left: 50%; bottom: .15em; width: .3em; height: .3em; margin-left: -.15em;
+                             border-radius: 50%; background: rgba(255,255,255,.75); }
+  #calEvents { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .4em; font-size: max(var(--f14), calc(min(6cqh, 3.4cqw) * var(--k)));
+               min-height: 0; overflow: hidden; }
+  .ev { display: flex; gap: .6em; align-items: stretch; }
+  .ev i { width: .3em; border-radius: 99px; flex: none; }
+  .ev .et { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ev .ew { color: var(--dim); font-size: .85em; }
+  /* Not wide: month on top (sized by width), the next events under it. */
+  @container tile (max-aspect-ratio: 13/10) {
+    .cal { flex-direction: column; }
+    #calMonth { align-self: center; font-size: max(var(--f13), calc(min(4cqh, 5.2cqw) * var(--k))); }
+    #calEvents { font-size: max(var(--f14), calc(min(5.5cqh, 6cqw) * var(--k))); }
+  }
+  /* Too small for a month grid: events only. */
+  @container tile (max-width: 180px), (max-height: 150px) { #calMonth { display: none; } }
+
+  /* Speed */
+  .spd { flex-direction: column; align-items: center; justify-content: center; }
+  .w[data-ta="left"] .spd { align-items: flex-start; }
+  .w[data-ta="right"] .spd { align-items: flex-end; }
+  #speed { font-size: calc(min(55cqh, 38cqw) * var(--k)); font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; color: #FFFFFF; }
+  #speedUnit { font-size: max(var(--f13), calc(min(13cqh, 10cqw) * var(--k))); color: var(--dim); margin-top: .3em; font-weight: 500; letter-spacing: 0.05em; }
+
+  /* Shortcuts: icons sized to fit the tile (--n = how many) */
+  #shortcuts { flex-wrap: wrap; align-content: center; justify-content: center; gap: max(8px, min(8cqh, 3.5cqw));
+               --ic: max(48px, min(60cqh, calc(76cqw / var(--n, 2)))); }
+  .w[data-ta="left"] #shortcuts { justify-content: flex-start; }
+  .w[data-ta="right"] #shortcuts { justify-content: flex-end; }
+  .app { width: var(--ic); height: var(--ic); border-radius: 28%; border: 1px solid rgba(255,255,255,.18);
+         background: linear-gradient(135deg, rgba(255,255,255,.14), rgba(255,255,255,.05));
+         box-shadow: 0 4px 14px rgba(0,0,0,.3); display: grid; place-items: center; cursor: pointer;
+         font-weight: 700; font-size: calc(var(--ic) * .42); transition: transform .15s ease, background .15s ease; }
+  .app:active { transform: scale(.92); background: rgba(255,255,255,.24); }
+  .app img { width: 64%; height: 64%; border-radius: 22%; object-fit: contain; }
+</style>
+</head>
+<body>
+<div id="plain"></div><div id="photo"></div><div id="bg"></div><div id="dim"></div><div id="shade"></div>
+<div id="credit"></div>
+
+<div id="app"><div id="grid">
+  <div class="w" data-w="clock"><div class="in shadow"><div id="time">--:--</div><div id="date"></div></div></div>
+  <div class="w tile" data-w="prayer"><div class="in info"><span class="ic">🕌</span>
+    <div class="txt"><span class="t1 ellipsis"><b id="pName">–</b> <span id="pTime" class="dim"></span></span><span class="big" id="pCount"></span></div></div></div>
+  <div class="w tile" data-w="weather"><div class="in info"><span class="ic" id="wIcon">☁️</span>
+    <div class="txt"><span class="big" id="wTemp"></span><span id="wDesc" class="sub ellipsis"></span></div></div></div>
+  <div class="w tile" data-w="football"><div class="in info"><span class="ic">⚽</span>
+    <div class="txt"><span id="scoreText" class="t1 ellipsis"></span><span id="scoreSub" class="sub ellipsis"></span></div></div></div>
+  <div class="w tile" data-w="fuel"><div class="in info"><span class="ic">⛽</span>
+    <div class="txt"><span id="fuelText" class="sub">Fuel prices…</span></div></div></div>
+  <div class="w tile" data-w="music"><div class="in mus">
+    <div id="cover">♪</div>
+    <div id="music">
+      <div id="songRow"><span id="song" class="ellipsis">Waiting for music…</span><span id="artist" class="ellipsis"></span></div>
+      <div id="line" class="ellipsis"></div>
+      <div id="next" class="ellipsis"></div>
+      <div id="progress"><div id="progressFill"></div></div>
+    </div>
+    <div id="controls">
+      <button class="ctl" id="ctlPrev" data-media="prev" aria-label="Previous"></button>
+      <button class="ctl play" id="ctlToggle" data-media="toggle" aria-label="Play or pause"></button>
+      <button class="ctl" id="ctlNext" data-media="next" aria-label="Next"></button>
+    </div>
+  </div></div>
+  <div class="w tile" data-w="speed"><div class="in spd"><div id="speed">–</div><div id="speedUnit">km/h</div></div></div>
+  <div class="w tile" data-w="shortcuts"><div class="in" id="shortcuts"></div></div>
+  <div class="w tile" data-w="forecast"><div class="in fc">
+    <div id="fcNow"></div><div id="fcHours"></div><div id="fcDays"></div></div></div>
+  <div class="w tile" data-w="air"><div class="in aq">
+    <div class="tl" id="aqTitle">Air quality</div><div id="aqVal">–</div><div id="aqCat"></div><div id="aqMore"></div></div></div>
+  <div class="w tile" data-w="radar"><div class="in"><div id="rdMap"></div><div id="rdDot"></div>
+    <div id="rdInfo"></div><div id="rdAttr">© OpenStreetMap · RainViewer</div></div></div>
+  <div class="w tile" data-w="sports"><div class="in sp"><div class="sp-h"><div class="tl" id="spTitle">Sports</div><span class="sp-live" id="spLive"><i></i><span></span></span><div class="cv sp-tabs" id="spTabs"></div></div><div id="spChips"></div><div id="spList"></div></div></div>
+  <div class="w tile" data-w="ev"><div class="in evw"><div class="tl" id="evTitle">EV charging nearby</div>
+    <div class="ev-b"><div id="evList"></div><div id="evMap"></div></div><div id="evAttr">© Open Charge Map · OpenStreetMap</div></div></div>
+  <div class="w tile" data-w="calendar"><div class="in cal"><div id="calHead"></div><div id="calMonth"></div><div id="calStrip"></div><div id="calEvents"></div><div id="calWeek"></div></div></div>
+  <div class="w tile" data-w="yt"><div class="in yt">
+    <button class="yt-s" data-yt="search"><svg viewBox="0 0 28 20" aria-hidden="true"><rect width="28" height="20" rx="5" fill="#FF0033"/><path d="M11 6l7 4-7 4z" fill="#fff"/></svg><span id="ytHint">Search YouTube</span></button>
+    <div class="yt-c"><button data-yt="/" id="ytHome">Home</button><button data-yt="/feed/subscriptions" id="ytSubs">Subscriptions</button><button data-yt="/feed/history" id="ytHist">History</button></div></div></div>
+  <div id="calPop"></div>
+</div></div>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+  // Translated labels sent by the app with every update (labels.<key>).
+  var L = {}, LANG = 'en';
+  var tr = function (k, fallback) { return L[k] || fallback; };
+
+  var state = { lines: [], basePos: 0, baseAt: 0, playing: false, duration: 0, idx: -2, nextEpoch: 0, songKey: '' };
+
+  // ---- Weather (WMO codes) ----
+  function weatherOf(code, isDay) {
+    if (code === 0) return [isDay ? '☀️' : '🌙', tr('clear', 'Clear')];
+    if (code <= 2) return [isDay ? '🌤️' : '☁️', tr('partlyCloudy', 'Partly cloudy')];
+    if (code === 3) return ['☁️', tr('cloudy', 'Cloudy')];
+    if (code === 45 || code === 48) return ['🌫️', tr('hazy', 'Hazy')];
+    if (code >= 51 && code <= 57) return ['🌦️', tr('drizzle', 'Drizzle')];
+    if (code >= 61 && code <= 67) return ['🌧️', tr('rain', 'Rain')];
+    if (code >= 80 && code <= 82) return ['🌦️', tr('showers', 'Showers')];
+    if (code >= 95) return ['⛈️', tr('thunder', 'Thunderstorm')];
+    return ['🌥️', tr('cloudy', 'Cloudy')];
+  }
+
+  // ---- Clock + prayer countdown (local, every second) ----
+  function clock() {
+    var d = new Date();
+    var hr = d.getHours();
+    $('time').innerHTML = lastL.clock24 === false
+      ? ((hr % 12) || 12) + ':' + pad(d.getMinutes()) + '<small class="ap">' + (hr < 12 ? 'AM' : 'PM') + '</small>'
+      : pad(hr) + ':' + pad(d.getMinutes());
+    var date = DAYS[d.getDay()] + ', ' + d.getDate() + ' ' + MONTHS[d.getMonth()];
+    if (LANG !== 'en') {
+      try { date = d.toLocaleDateString(LANG + '-MY', { weekday: 'long', day: 'numeric', month: 'short' }); } catch (_) {}
+    }
+    $('date').textContent = date;
+    if (state.nextEpoch) {
+      var left = Math.max(0, Math.floor((state.nextEpoch - Date.now()) / 1000));
+      var h = Math.floor(left / 3600), m = Math.floor(left % 3600 / 60), s = left % 60;
+      $('pCount').textContent = (h ? h + ':' + pad(m) : m) + ':' + pad(s);
+    }
+  }
+
+  // ---- Lyric line (same clock idea as the Lyrics view) ----
+  var LEAD = 200;
+  function position() {
+    var p = state.basePos + (state.playing ? performance.now() - state.baseAt : 0);
+    if (state.duration > 0) p = Math.min(p, state.duration);
+    return Math.max(0, p);
+  }
+  function findIndex(pos) {
+    var lo = 0, hi = state.lines.length - 1, found = -1;
+    while (lo <= hi) { var mid = (lo + hi) >> 1; if (state.lines[mid][0] <= pos) { found = mid; lo = mid + 1; } else hi = mid - 1; }
+    return found;
+  }
+  function frame() {
+    if (!layout.music) { setTimeout(frame, 1000); return; }
+    var pos = position();
+    if (state.duration > 0) $('progressFill').style.width = (100 * pos / state.duration).toFixed(2) + '%';
+    if (state.lines.length) {
+      var i = findIndex(pos + LEAD);
+      if (i !== state.idx) {
+        state.idx = i;
+        var cur = i >= 0 ? (state.lines[i][1] || '').trim() : '';
+        $('line').textContent = cur || '♪';
+        var nx = state.lines[i + 1];
+        $('next').textContent = nx ? (nx[1] || '').trim() : '';
+      }
+    }
+    // 10 fps is plenty for a progress bar + line swap; idle at 1 fps when the Music widget is off.
+    setTimeout(frame, layout.music ? 100 : 1000);
+  }
+
+
+  var ICON = {
+    prev: '<svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zM9.5 12l8.5 6V6z"/></svg>',
+    next: '<svg viewBox="0 0 24 24"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>',
+    play: '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>',
+    pause: '<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6zm8-14v14h4V5z"/></svg>'
+  };
+  var isPlaying = false;
+  function setPlayIcon(playing) {
+    isPlaying = playing;
+    var b = document.getElementById('ctlToggle');
+    if (b) b.innerHTML = playing ? ICON.pause : ICON.play;
+  }
+  function initControls() {
+    document.getElementById('ctlPrev').innerHTML = ICON.prev;
+    document.getElementById('ctlNext').innerHTML = ICON.next;
+    setPlayIcon(false);
+    Array.prototype.forEach.call(document.querySelectorAll('[data-media]'), function (b) {
+      b.addEventListener('click', function () {
+        var a = b.getAttribute('data-media');
+        if (a === 'toggle') setPlayIcon(!isPlaying);   // flip now; the app's state follows
+        if (window.AutoDeck && window.AutoDeck.media) window.AutoDeck.media(a);
+      });
+    });
+  }
+
+  function setSpeed(kmh, gps) {
+    $('speed').textContent = gps && kmh != null ? kmh : '–';
+    $('speedUnit').textContent = gps ? 'km/h' : tr('noGps', 'no GPS');
+  }
+
+  function renderMusic(m) {
+    if (!m) return;
+    var waiting = !m.title;
+    $('song').textContent = waiting ? tr('waiting', 'Waiting for music…') : m.title;
+    $('artist').textContent = m.artist || '';
+    // Re-sent with every update; only repaint (re-decode + 42px blur) when it changes.
+    if ('art' in m && m.art !== state.art) {
+      state.art = m.art;
+      var art = m.art ? 'url("' + m.art + '")' : '';
+      $('cover').style.backgroundImage = art;
+      $('cover').textContent = m.art ? '' : '♪';
+      $('bg').style.backgroundImage = art;
+      document.body.classList.toggle('art', !!m.art);
+    }
+    var transit = m.sentAtMs ? Math.min(Math.max(0, Date.now() - m.sentAtMs), 1500) : 0;
+    state.basePos = (m.positionMs || 0) + (m.playing ? transit : 0);
+    state.baseAt = performance.now();
+    state.playing = !!m.playing;
+    setPlayIcon(state.playing);
+    state.duration = m.durationMs || 0;
+    var key = (m.title || '') + '|' + (m.lines ? m.lines.length : 0);
+    if (key !== state.songKey) {
+      state.songKey = key;
+      state.lines = m.lines || [];
+      state.idx = -2;
+      $('next').textContent = '';
+      if (!state.lines.length) {
+        $('line').textContent = waiting ? (m.app ? '' : tr('playSomething', 'Play something in Spotify')) :
+          ({ loading: tr('findingLyrics', 'Finding lyrics…'), notFound: m.playing ? '♪' : tr('paused', 'Paused'),
+             instrumental: tr('instrumental', 'Instrumental'), offline: tr('offline', 'Offline') }[m.status] || '♪');
+      }
+    }
+  }
+
+  function renderPrayer(p) {
+    var next = p && p.next;
+    if (!next) { state.nextEpoch = 0; $('pName').textContent = '–'; $('pTime').textContent = ''; $('pCount').textContent = ''; return; }
+    $('pName').textContent = next.name;
+    $('pTime').textContent = next.time;
+    state.nextEpoch = next.epochMs;
+  }
+
+  function renderWeather(w) {
+    if (!w) return;
+    var wi = weatherOf(w.code, w.isDay);
+    $('wIcon').textContent = w.rain ? '☔' : wi[0];
+    var tVal = w.temp != null ? parseFloat(w.temp) : 31;
+    $('wTemp').textContent = (!isNaN(tVal) ? Math.round(tVal) : 31) + '°';
+    $('wDesc').textContent = w.rain || wi[1];
+  }
+
+  function renderScores(label, list) {
+    var m = list && list[0];
+    if (!m) { $('scoreText').textContent = tr('noLiveMatch', 'No live match'); $('scoreSub').textContent = ''; return; }
+    $('scoreText').textContent = m.home + ' ' + (m.score || 'vs') + ' ' + m.away;
+    // A running minute / half-time / LIVE = game in progress: red dot + text, not just a number.
+    var live = /^(\d+(\+\d+)?'|HT|LIVE|IN PLAY)/i.test(m.status || '');
+    $('scoreSub').innerHTML = (live ? '<span class="lv">● ' + esc(tr('live', 'Live')) + '</span> ' : '') + esc(m.status || '') +
+      (list.length > 1 ? '  +' + (list.length - 1) : '');
+  }
+
+  function renderFuel(f) {
+    if (!f || !f.items) return;
+    // One column per fuel: name above, price below (prices line up and never wrap mid-item).
+    $('fuelText').innerHTML = f.items.filter(function (i) { return i.label !== 'RON95'; }).map(function (i) {
+      return '<span class="fu"><small>' + esc(i.label.replace('RON95 BUDI', 'RON95')) + '</small><b>' + Number(i.price).toFixed(2) + '</b></span>';
+    }).join('');
+  }
+
+  var bgUrl = null;
+  function renderBg(b) {
+    b = b || { mode: 'cover', dim: .35 };
+    document.body.className = document.body.className.replace(/\bmode-\w+/g, '').trim() + ' mode-' + b.mode;
+    $('dim').style.opacity = b.mode === 'plain' ? 0 : (b.dim == null ? .35 : b.dim);
+    if (b.url && b.url !== bgUrl) {
+      bgUrl = b.url;
+      // Swap only once loaded, so it never flashes empty.
+      var img = new Image();
+      img.onload = function () { if (bgUrl === b.url) $('photo').style.backgroundImage = 'url("' + b.url + '")'; };
+      img.src = b.url;
+    }
+    $('credit').textContent = b.credit || '';
+  }
+
+  // ---- Widget layout (from the phone app; same defaults as home_layout.dart) ----
+  // Only used if the phone sends nothing (see the 1.5 s fallback below). Same as HomeLayout.defaults.
+  var DEFAULT_LAYOUT = { v: 2, textScale: 1, clockFont: 'thin', widgets: [
+    { id: 'clock', x: 1, y: 1, w: 6, h: 4 }, { id: 'prayer', x: 7, y: 1, w: 3, h: 2 }, { id: 'weather', x: 10, y: 1, w: 3, h: 2 },
+    { id: 'sports', x: 7, y: 3, w: 6, h: 2 }, { id: 'music', x: 1, y: 5, w: 8, h: 2 }, { id: 'speed', x: 9, y: 5, w: 2, h: 2, ta: 'center' },
+    { id: 'shortcuts', x: 11, y: 5, w: 2, h: 2, ta: 'center' }, { id: 'fuel', x: 1, y: 7, w: 6, h: 2 }] };
+  var DEFAULT_PORTRAIT_LAYOUT = { v: 2, textScale: 1, clockFont: 'thin', widgets: [
+    { id: 'clock', x: 1, y: 1, w: 12, h: 3 },
+    { id: 'music', x: 1, y: 4, w: 12, h: 4 },
+    { id: 'prayer', x: 1, y: 8, w: 6, h: 3 },
+    { id: 'weather', x: 7, y: 8, w: 6, h: 3 },
+    { id: 'football', x: 1, y: 11, w: 12, h: 2 },
+    { id: 'fuel', x: 1, y: 13, w: 12, h: 3 },
+    { id: 'speed', x: 1, y: 16, w: 5, h: 3, ta: 'center' },
+    { id: 'shortcuts', x: 6, y: 16, w: 7, h: 3, ta: 'center' }
+  ] };
+  var DEFAULT_SPLIT_LAYOUT = { v: 2, textScale: 1, clockFont: 'thin', widgets: [
+    { id: 'clock', x: 1, y: 1, w: 6, h: 2 },
+    { id: 'prayer', x: 7, y: 1, w: 6, h: 2 },
+    { id: 'weather', x: 1, y: 3, w: 6, h: 2 },
+    { id: 'sports', x: 7, y: 3, w: 6, h: 2 },
+    { id: 'music', x: 1, y: 5, w: 12, h: 2 },
+    { id: 'fuel', x: 1, y: 7, w: 6, h: 2 },
+    { id: 'speed', x: 7, y: 7, w: 3, h: 2, ta: 'center' },
+    { id: 'shortcuts', x: 10, y: 7, w: 3, h: 2, ta: 'center' }
+  ] };
+  var layout = { music: true }, layoutKey = null, lastL = DEFAULT_LAYOUT, layoutLand = null, layoutPort = null;
+  function pickLayout() {
+    var ar = window.innerWidth / Math.max(1, window.innerHeight);
+    if (window.innerHeight > window.innerWidth * 1.05) {
+      return layoutPort || DEFAULT_PORTRAIT_LAYOUT;
+    }
+    if (ar < 1.35) {
+      return DEFAULT_SPLIT_LAYOUT;
+    }
+    return layoutLand || DEFAULT_LAYOUT;
+  }
+  var DEFAULT_TA = { speed: 'center', shortcuts: 'center' };   // same as home_layout.dart
+  function applyLayout(l) {
+    l = l || DEFAULT_LAYOUT;
+    var cols = 12;   // same grid on every screen, so the phone editor matches the car
+    // Portrait screens use their own layout on an 18-row grid (see home_layout.dart).
+    var isPort = l === layoutPort || l === DEFAULT_PORTRAIT_LAYOUT || (window.innerHeight > window.innerWidth * 1.05);
+    var gridRows = isPort ? 18 : 8;
+    var key = JSON.stringify(l) + cols + 'x' + gridRows;
+    if (key === layoutKey) return;                // unchanged: no restyle, no relayout
+    layoutKey = key; lastL = l;
+    var root = document.documentElement.style;
+    root.setProperty('--hs', l.textScale || 1);
+    root.setProperty('--cols', cols);
+    root.setProperty('--rows', gridRows);
+    document.body.className = document.body.className.replace(/\bcf-\w+/g, '').trim() + ' cf-' + (l.clockFont || 'thin');
+    var pos = {};
+    // Layouts saved before the 12×8 grid (no v) used 6×4 cells.
+    var k = l.v === 2 ? 1 : 2;
+    (l.widgets || []).forEach(function (w, i) { pos[w.id] = { i: i, w: w }; });
+    layout = { music: !!pos.music };
+    Array.prototype.forEach.call(document.querySelectorAll('.w'), function (el) {
+      var p = pos[el.getAttribute('data-w')];
+      el.classList.toggle('on', !!p);
+      if (!p) return;
+      el.style.order = p.i;
+      var span = Math.min((p.w.w || 1) * k, cols), hSpan = (p.w.h || 1) * k;
+      // Placed by the phone editor (column / row); older layouts just flow in order.
+      el.style.gridColumn = p.w.x ? p.w.x + ' / span ' + span : 'span ' + span;
+      el.style.gridRow = p.w.y ? p.w.y + ' / span ' + hSpan : 'span ' + hSpan;
+      el.classList.toggle('sq', p.w.shape === 'square');
+      el.style.setProperty('--ts', p.w.text || 1);
+      el.classList.toggle('noart', p.w.art === false);
+      el.style.setProperty('--as', p.w.as || 1);
+      el.setAttribute('data-ta', p.w.ta || DEFAULT_TA[p.w.id] || 'left');
+    });
+    renderShortcuts(l.shortcuts);
+    postGeometry();
+  }
+  window.addEventListener('resize', function () { applyLayout(pickLayout()); radarKey = null; evKey = null; renderExtras(); postGeometry(); });
+
+  // Phone widget editor only (never on the car): report where the grid sits so
+  // the editor's drag-and-drop board lines up with the cells exactly.
+  var editing = false;
+  window.ddEdit = function (on) { editing = !!on; document.body.classList.toggle('editing', editing); postGeometry(); };
+  function postGeometry() {
+    if (!editing || !window.DDEdit) return;
+    var g = $('grid'), r = g.getBoundingClientRect(), cs = getComputedStyle(g);
+    window.DDEdit.postMessage(JSON.stringify({ l: r.left, t: r.top, w: r.width, h: r.height,
+      gx: parseFloat(cs.columnGap) || 0, gy: parseFloat(cs.rowGap) || 0, vw: window.innerWidth, vh: window.innerHeight }));
+  }
+
+  // Shortcuts widget: the user's links with each site's own icon.
+  var DEFAULT_SHORTCUTS = [
+    { name: 'YouTube', url: 'https://www.youtube.com/', icon: 'dd_youtube.png' },
+    { name: 'RTM Klik', url: 'https://rtmklik.rtm.gov.my/', icon: 'dd_rtm.png' }];
+  function renderShortcuts(list) {
+    var box = $('shortcuts');
+    box.textContent = '';
+    list = list || DEFAULT_SHORTCUTS;
+    box.style.setProperty('--n', Math.max(1, list.length));
+    if (!list.length) { box.innerHTML = '<div class="na">' + esc(tr('noShortcuts', 'Add shortcuts in the AutoDeck app')) + '</div>'; return; }
+    list.forEach(function (sc) {
+      var a = document.createElement('div');
+      a.className = 'app';
+      var img = document.createElement('img');
+      img.src = sc.icon; img.alt = sc.name;
+      // No icon (offline / unknown site): the name's first letter.
+      img.onerror = function () { a.textContent = (sc.name || '?').charAt(0).toUpperCase(); };
+      a.appendChild(img);
+      a.addEventListener('click', function () { if (window.AutoDeck && window.AutoDeck.site) window.AutoDeck.site(sc.url); });
+      box.appendChild(a);
+    });
+  }
+  /** Phone widget editor only: outline the widget being edited. */
+  window.ddHighlight = function (id) {
+    Array.prototype.forEach.call(document.querySelectorAll('.w'), function (el) {
+      el.classList.toggle('hl', el.getAttribute('data-w') === id);
+    });
+  };
+
+
+  // ---- Custom-page widgets (render only when the widget is on the page) ----
+  function on(id) { var el = document.querySelector('.w[data-w="' + id + '"]'); return el && el.classList.contains('on'); }
+  function esc(t) { var d = document.createElement('div'); d.textContent = t == null ? '' : String(t); return d.innerHTML; }
+  function r0(n) { return n == null ? '–' : Math.round(n); }
+  var WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  function renderForecast(f) {
+    if (!on('forecast')) return;
+    if (!f) { $('fcNow').innerHTML = '<div class="na">' + esc(tr('noData', 'No forecast yet')) + '</div>'; return; }
+    var n = f.now || {}, wi = weatherOf(n.code, n.isDay), d0 = (f.days || [])[0] || {};
+    var el = document.querySelector('.w[data-w="forecast"]');
+    el.classList.toggle('big', el.offsetWidth >= 440 && el.offsetHeight >= 280);
+    var art = wxArt(n.code, n.isDay);
+    $('fcNow').className = 'card ' + art[1];
+    var big = el.classList.contains('big');
+    $('fcNow').innerHTML = '<span class="t">' + r0(n.temp) + '°</span>' +
+      (big ? '<img class="ic" src="wx/' + art[0] + '.svg" alt="">' : '<span class="ic">' + wi[0] + '</span>') + '<span class="d"><b>' + esc(wi[1]) +
+      '</b><br><span>' + esc(tr('feelsLike', 'Feels like')) + ' ' + r0(n.feels) + '° · UV ' + (n.uv == null ? '–' : Math.round(n.uv)) +
+      '</span></span><span class="hl"><span>H<b>' + r0(d0.max) + '°</b></span><span>L<b>' + r0(d0.min) + '°</b></span></span>' +
+      '<span class="note card"><b>' + esc(rainNote || tr('noRainSoon', 'No rain expected soon')) + '</b>' +
+      esc(tr('humidity', 'Humidity')) + ' ' + r0(n.humidity) + '%<br>' + esc(tr('wind', 'Wind')) + ' ' + r0(n.wind) + ' km/h</span>';
+    $('fcHours').className = 'card';
+    $('fcHours').innerHTML = (f.hours || []).map(function (h) {
+      return '<div class="h"><span>' + esc(h === f.hours[0] ? tr('now', 'Now') : h.t) + '</span><span class="i">' + weatherOf(h.code, h.isDay)[0] + '</span><b>' + r0(h.temp) +
+        '°</b><span class="r">' + (h.rain ? h.rain + '%' : '') + '</span></div>';
+    }).join('');
+    var days = f.days || [], lo = Math.min.apply(null, days.map(function (d) { return d.min; })), hi = Math.max.apply(null, days.map(function (d) { return d.max; }));
+    $('fcDays').innerHTML = days.map(function (d, i) {
+      var name = i === 0 ? tr('today', 'Today') : WD[new Date(d.d + 'T00:00').getDay()];
+      var l = hi > lo ? (d.min - lo) / (hi - lo) * 100 : 0, w = hi > lo ? (d.max - d.min) / (hi - lo) * 100 : 100;
+      return '<div class="d"><span>' + esc(name) + '</span><span class="i">' + weatherOf(d.code, true)[0] + '</span><span class="r">' +
+        (d.rain ? d.rain + '%' : '') + '</span><span class="lo">' + r0(d.min) + '°</span><span class="bar"><b style="left:' + l +
+        '%;width:' + w + '%"></b></span><span class="hi">' + r0(d.max) + '°</span></div>';
+    }).join('');
+  }
+
+  // Animated condition art (Meteocons, MIT, bundled in assets/wx) + the hero tint.
+  function wxArt(code, isDay) {
+    var dn = isDay ? 'day' : 'night', tint = isDay ? null : 'night';
+    if (code == null) return ['partly-cloudy-' + dn, tint || 'cloud'];
+    if (code === 0) return ['clear-' + dn, tint || 'sun'];
+    if (code <= 2) return ['partly-cloudy-' + dn, tint || 'sun'];
+    if (code === 3) return ['overcast-' + dn, tint || 'cloud'];
+    if (code === 45 || code === 48) return ['fog-' + dn, 'cloud'];
+    if (code >= 51 && code <= 57) return ['drizzle', 'rain'];
+    if (code >= 80 && code <= 82) return ['partly-cloudy-' + dn + '-rain', 'rain'];
+    if (code >= 95) return ['thunderstorms-' + dn + '-rain', 'storm'];
+    if (code >= 61) return ['rain', 'rain'];
+    return ['overcast-' + dn, 'cloud'];
+  }
+
+  // US AQI bands (EPA)
+  function aqiBand(v) {
+    return v <= 50 ? ['Good', '#3ecf8e'] : v <= 100 ? ['Moderate', '#f5c542'] : v <= 150 ? ['Sensitive', '#ff9f43'] :
+      v <= 200 ? ['Unhealthy', '#ff5f6d'] : v <= 300 ? ['Very unhealthy', '#b06cff'] : ['Hazardous', '#a0303a'];
+  }
+  function uvBand(u) { return u < 3 ? 'Low' : u < 6 ? 'Moderate' : u < 8 ? 'High' : u < 11 ? 'Very high' : 'Extreme'; }
+  function renderAir(a) {
+    if (!on('air')) return;
+    $('aqTitle').textContent = tr('airQuality', 'Air quality');
+    var n = (extras.forecast && extras.forecast.now) || {};
+    if (!a || a.aqi == null) { $('aqVal').textContent = '–'; $('aqCat').textContent = ''; $('aqMore').textContent = ''; return; }
+    var b = aqiBand(a.aqi);
+    $('aqVal').textContent = Math.round(a.aqi);
+    $('aqVal').style.color = b[1];
+    $('aqCat').textContent = tr('aqi_' + b[0], b[0]);
+    $('aqCat').style.background = b[1] + '26'; $('aqCat').style.color = '#fff'; $('aqCat').style.boxShadow = 'inset 0 0 0 1.5px ' + b[1];
+    $('aqMore').innerHTML = '<span>PM2.5 <b>' + r0(a.pm25) + '</b></span><span>UV <b>' + (a.uv == null ? '–' : Math.round(a.uv)) +
+      '</b> ' + esc(a.uv == null ? '' : tr('uv_' + uvBand(a.uv), uvBand(a.uv))) + '</span>' +
+      (n.humidity == null ? '' : '<span>💧 <b>' + r0(n.humidity) + '%</b></span><span>💨 <b>' + r0(n.wind) + '</b> km/h</span>');
+  }
+
+  // Slippy-map tiles (z/x/y) around the place, base map + latest radar frame.
+  var radarKey = null;
+  function renderRadar(r) {
+    if (!on('radar')) return;
+    var box = $('rdMap'), W = box.clientWidth, H = box.clientHeight;
+    var key = r ? r.path + '|' + W + 'x' + H : 'none';
+    if (key === radarKey) return;           // same frame, same size: keep the images
+    radarKey = key;
+    box.textContent = '';
+    if (!r || !W) { $('rdInfo').textContent = tr('noRadar', 'Radar unavailable'); return; }
+    var z = 7, n = Math.pow(2, z), lat = r.lat * Math.PI / 180;
+    var fx = (r.lon + 180) / 360 * n, fy = (1 - Math.log(Math.tan(lat) + 1 / Math.cos(lat)) / Math.PI) / 2 * n;
+    var cx = Math.floor(fx), cy = Math.floor(fy), ox = W / 2 - (fx - cx) * 256, oy = H / 2 - (fy - cy) * 256;
+    var rx = Math.ceil(W / 512) + 1, ry = Math.ceil(H / 512) + 1;
+    for (var dy = -ry; dy <= ry; dy++) for (var dx = -rx; dx <= rx; dx++) {
+      var x = ((cx + dx) % n + n) % n, y = cy + dy;
+      if (y < 0 || y >= n) continue;
+      [['base', 'https://tile.openstreetmap.org/' + z + '/' + x + '/' + y + '.png'],
+       ['rain', r.host + r.path + '/256/' + z + '/' + x + '/' + y + '/2/1_1.png']].forEach(function (t) {
+        var img = document.createElement('img');
+        img.className = t[0]; img.src = t[1]; img.loading = 'lazy';
+        img.style.left = (ox + dx * 256) + 'px'; img.style.top = (oy + dy * 256) + 'px';
+        img.onerror = function () { img.remove(); };
+        box.appendChild(img);
+      });
+    }
+    var d = new Date(r.time * 1000);
+    $('rdInfo').textContent = tr('rainRadar', 'Rain radar') + ' · ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  }
+
+  var spTab = 'games', spComp = null;
+  try { spTab = localStorage.getItem('dd_sp_tab') || 'games'; spComp = localStorage.getItem('dd_sp_comp'); } catch (_) {}
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest && e.target.closest('[data-sptab],[data-spcomp]');
+    if (!t) return;
+    if (t.hasAttribute('data-sptab')) spTab = t.getAttribute('data-sptab'); else spComp = t.getAttribute('data-spcomp');
+    try { localStorage.setItem('dd_sp_tab', spTab); if (spComp) localStorage.setItem('dd_sp_comp', spComp); } catch (_) {}
+    renderSports(extras.sports);
+  });
+
+  function renderSports(sp) {
+    if (!on('sports')) return;
+    var fb = extras.football && extras.football.status === 'ok' ? extras.football : null;
+    var tabs = [['games', tr('games', 'Games')]].concat(fb ? [['mine', tr('myTeams', 'My teams')], ['tables', tr('table', 'Tables')]] : []);
+    if (!tabs.some(function (x) { return x[0] === spTab; })) spTab = 'games';
+    $('spTabs').innerHTML = tabs.length > 1 ? tabs.map(function (x) {
+      return '<button data-sptab="' + x[0] + '"' + (x[0] === spTab ? ' class="on"' : '') + '>' + esc(x[1]) + '</button>';
+    }).join('') : '';
+    $('spChips').classList.toggle('on', spTab === 'tables');
+    $('spList').classList.toggle('flat', spTab === 'tables');   // a table stays one piece (no 2 columns)
+    if (spTab === 'mine') return renderMine(fb);
+    if (spTab === 'tables') return renderTables(fb);
+    $('spTitle').textContent = tr('sports', 'Sports');
+    var games = (sp && sp.games) || [], live = games.filter(function (g) { return g.state === 'in'; }).length;
+    $('spLive').classList.toggle('on', live > 0);
+    $('spLive').lastChild.textContent = live + ' ' + tr('live', 'Live').toLowerCase();
+    if (!games.length) { $('spList').innerHTML = '<div class="na">' + esc(tr('noGames', 'No games today')) + '</div>'; return; }
+    var leagues = [], by = {};
+    games.forEach(function (g) { if (!by[g.league]) { by[g.league] = []; leagues.push(g.league); } by[g.league].push(g); });
+    var logo = function (u) { return u ? '<img src="' + esc(u) + '" onerror="this.remove()">' : ''; };
+    $('spList').innerHTML = leagues.map(function (l) {
+      return '<div class="lg"><div class="lh">' + esc(l) + '</div>' + by[l].map(function (g) {
+        var pill = g.state === 'in' ? '● ' + (g.detail || tr('live', 'Live')) : g.state === 'pre' ? fmtTime(g.time) : (g.detail || 'FT');
+        var cls = 'g ' + (g.state === 'in' ? 'live' : g.state === 'pre' ? 'pre' : 'post');
+        if (g.title) return '<div class="' + cls + ' title"><span class="tm"><span>' + esc(g.title) + '</span></span><span class="pill">' + esc(pill) + '</span></div>';
+        var sc = g.state === 'pre' ? '<span class="sc vs">vs</span>' : '<span class="sc">' + esc(g.hs) + ' – ' + esc(g.as) + '</span>';
+        return '<div class="' + cls + '"><span class="tm">' + logo(g.homeLogo) + '<span>' + esc(g.home) + '</span></span><span class="mid">' + sc +
+          '<span class="pill">' + esc(pill) + '</span></span><span class="tm a">' + logo(g.awayLogo) + '<span>' + esc(g.away) + '</span></span></div>';
+      }).join('') + '</div>';
+    }).join('');
+  }
+  // My teams: football-data.org matches as the same game cards.
+  function renderMine(fb) {
+    var list = (fb && fb.mine) || [];
+    $('spLive').classList.remove('on');
+    if (!list.length) { $('spList').innerHTML = '<div class="na">' + esc(tr('pickTeams', 'Pick favourite teams in AutoDeck settings')) + '</div>'; return; }
+    var logo = function (u) { return u ? '<img src="' + esc(u) + '" onerror="this.remove()">' : ''; };
+    $('spList').innerHTML = '<div class="lg">' + list.map(function (m) {
+      var st = m.live ? 'live' : m.score ? 'post' : 'pre';
+      return '<div class="g ' + st + '"><span class="tm">' + logo(m.homeCrest) + '<span>' + esc(m.home) + '</span></span><span class="mid">' +
+        (m.score ? '<span class="sc">' + esc(m.score) + '</span>' : '<span class="sc vs">vs</span>') + '<span class="pill">' +
+        esc((m.live ? '● ' : '') + (m.status || '') + (m.date ? ' · ' + m.date : '')) + '</span></span><span class="tm a">' + logo(m.awayCrest) +
+        '<span>' + esc(m.away) + '</span></span></div>';
+    }).join('') + '</div>';
+  }
+
+  // Tables: one competition at a time (chips), coloured edges for the top / relegation places.
+  function renderTables(fb) {
+    var comps = (fb && fb.comps) || [];
+    $('spLive').classList.remove('on');
+    if (!comps.some(function (c) { return c.code === spComp; })) spComp = comps.length ? comps[0].code : null;
+    $('spChips').innerHTML = comps.map(function (c) {
+      return '<button data-spcomp="' + esc(c.code) + '"' + (c.code === spComp ? ' class="on"' : '') + '>' + esc(c.name) + '</button>';
+    }).join('');
+    var groups = spComp && fb.tables ? fb.tables[spComp] : null;
+    if (!groups || !groups.length) { $('spList').innerHTML = '<div class="na">' + esc(tr('noTable', 'No table yet')) + '</div>'; return; }
+    $('spList').innerHTML = groups.map(function (g) {
+      var n = g.rows.length;
+      return (groups.length > 1 ? '<div class="tb-g">' + esc(g.name) + '</div>' : '') + '<table class="tb"><tr><th>#</th><th style="text-align:left">' +
+        esc(tr('team', 'Team')) + '</th><th>P</th><th>W</th><th>D</th><th>L</th><th>GD</th><th>Pts</th></tr>' + g.rows.map(function (r) {
+          var cls = !g.league ? (r.pos <= 2 ? 'q1' : '') : (r.pos <= 4 ? 'q1' : r.pos <= 6 ? 'q2' : (n >= 16 && r.pos > n - 3 ? 'rel' : ''));
+          return '<tr class="' + cls + '"><td>' + r.pos + '</td><td class="tn"><div>' + (r.crest ? '<img src="' + esc(r.crest) + '" onerror="this.remove()">' : '') +
+            esc(r.team) + '</div></td><td>' + r.p + '</td><td>' + r.w + '</td><td>' + r.d + '</td><td>' + r.l + '</td><td>' + (r.gd > 0 ? '+' : '') + r.gd +
+            '</td><td class="pts">' + r.pts + '</td></tr>';
+        }).join('') + '</table>';
+    }).join('');
+  }
+
+  function fmtTime(iso) { var d = new Date(iso); return isNaN(d) ? '' : pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+
+  var calKey = null;
+  function renderCalendar(c) {
+    if (!on('calendar')) return;
+    var now = new Date(), key = now.toDateString() + JSON.stringify(c || {});
+    if (key === calKey) return;            // once a day or when events change
+    calKey = key;
+    var evs = (c && c.events) || [], has = {};
+    calAll = evs;
+    evs.forEach(function (e) { has[new Date(e.begin).toDateString()] = 1; });
+    var y = now.getFullYear(), m = now.getMonth(), first = new Date(y, m, 1).getDay(), days = new Date(y, m + 1, 0).getDate();
+    var h = '<div class="mh">' + esc(now.toLocaleDateString(LANG === 'en' ? 'en-MY' : LANG + '-MY', { month: 'long', year: 'numeric' })) +
+      '</div><div class="grid">' + ['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(function (w) { return '<span class="wd">' + w + '</span>'; }).join('');
+    for (var i = 0; i < first; i++) h += '<span class="dy o"></span>';
+    for (var d = 1; d <= days; d++) {
+      var ds = new Date(y, m, d).toDateString();
+      h += '<span class="dy' + (d === now.getDate() ? ' td' : '') + (has[ds] ? ' ev' : '') + '">' + d + '</span>';
+    }
+    $('calMonth').innerHTML = h + '</div>';
+    var st = '';
+    for (var k = 0; k < 7; k++) {
+      var sd = new Date(y, m, now.getDate() + k);
+      st += '<div class="sd' + (k === 0 ? ' td' : '') + (has[sd.toDateString()] ? ' ev' : '') + '"><small>' + esc(WD[sd.getDay()].toUpperCase()) +
+        '</small><b>' + sd.getDate() + '</b><i></i></div>';
+    }
+    $('calStrip').innerHTML = st;
+    renderWeek(evs, now, c && c.access === false);
+    if (c && c.access === false) { $('calEvents').innerHTML = '<div class="na">' + esc(tr('calAccess', 'Allow calendar access in the AutoDeck app')) + '</div>'; return; }
+    var loc = LANG === 'en' ? 'en-MY' : LANG + '-MY';
+    $('calHead').innerHTML = '<span class="dn">' + now.getDate() + '</span><span class="dw"><b>' +
+      esc(now.toLocaleDateString(loc, { weekday: 'long' })) + '</b><span>' + esc(now.toLocaleDateString(loc, { month: 'long', year: 'numeric' })) + '</span></span>';
+    var upcoming = evs.filter(function (e) { return e.end >= now.getTime(); });
+    if (!upcoming.length) { $('calEvents').innerHTML = '<div class="na">' + esc(tr('noEvents', 'No events this week')) + '</div>'; return; }
+    // Agenda grouped by day: TODAY / TOMORROW / SUN 18 OCT, then time · bar · title + place.
+    var t0 = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime(), lastDay = null, out = '';
+    upcoming.slice(0, 30).forEach(function (e) {
+      var b = new Date(e.begin), dayIdx = Math.round((new Date(b.getFullYear(), b.getMonth(), b.getDate()).getTime() - t0) / 864e5);
+      if (dayIdx < 0) dayIdx = 0;
+      if (dayIdx !== lastDay) {
+        lastDay = dayIdx;
+        var label = dayIdx === 0 ? tr('today', 'Today') : dayIdx === 1 ? tr('tomorrow', 'Tomorrow')
+          : b.toLocaleDateString(loc, { weekday: 'short', day: 'numeric', month: 'short' });
+        out += '<div class="ag-d' + (dayIdx === 0 ? ' td' : '') + '">' + esc(label) + '</div>';
+      }
+      var en = new Date(e.end), nowE = !e.allDay && e.begin <= now.getTime() && e.end > now.getTime();
+      var time = e.allDay ? '<span class="at">' + esc(tr('allDay', 'All day')) + '</span>'
+        : '<span class="at">' + pad(b.getHours()) + ':' + pad(b.getMinutes()) + '<small>' + pad(en.getHours()) + ':' + pad(en.getMinutes()) + '</small></span>';
+      out += '<div class="ag' + (nowE ? ' now' : '') + '" data-ev="' + calAll.indexOf(e) + '">' + time + '<i style="background:' + esc(e.color || '#5EF2D6') + '"></i><div class="ab"><b>' +
+        esc(e.title) + '</b>' + (e.where ? '<span>' + esc(e.where) + '</span>' : (nowE ? '<span>' + esc(tr('happeningNow', 'Happening now')) + '</span>' : '')) + '</div></div>';
+    });
+    $('calEvents').innerHTML = out;
+  }
+  // Big calendar (Custom page): Day / Week / Month, picked on the car and remembered.
+  var calView = 'week';
+  try { calView = localStorage.getItem('dd_cal_view') || 'week'; } catch (_) {}
+  var calLast = null;
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-cv]');
+    if (!b) return;
+    calView = b.getAttribute('data-cv');
+    try { localStorage.setItem('dd_cal_view', calView); } catch (_) {}
+    if (calLast) renderWeek.apply(null, calLast);
+  });
+
+  function renderWeek(evs, now, noAccess) {
+    calLast = [evs, now, noAccess];
+    var loc = LANG === 'en' ? 'en-MY' : LANG + '-MY', DAY = 864e5;
+    var day0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    var dayIdx = function (e) { return Math.floor((new Date(e.begin).setHours(0, 0, 0, 0) - day0.getTime()) / DAY); };
+    var title, range;
+    if (calView === 'day') {
+      title = now.toLocaleDateString(loc, { weekday: 'long', day: 'numeric', month: 'long' });
+      range = now.toLocaleDateString(loc, { year: 'numeric' });
+    } else if (calView === 'month') {
+      title = now.toLocaleDateString(loc, { month: 'long', year: 'numeric' });
+      range = evs.filter(function (e) { return new Date(e.begin).getMonth() === now.getMonth(); }).length + ' ' + tr('eventsWord', 'events');
+    } else {
+      var end = new Date(day0.getTime() + 6 * DAY);
+      title = now.toLocaleDateString(loc, { month: 'long', year: 'numeric' });
+      range = day0.getDate() + ' ' + day0.toLocaleDateString(loc, { month: 'short' }) + ' – ' + end.getDate() + ' ' + end.toLocaleDateString(loc, { month: 'short' });
+    }
+    var tog = '<div class="cv">' + [['day', tr('calDay', 'Day')], ['week', tr('calWeek', 'Week')], ['month', tr('calMonth', 'Month')]].map(function (v) {
+      return '<button data-cv="' + v[0] + '"' + (calView === v[0] ? ' class="on"' : '') + '>' + esc(v[1]) + '</button>';
+    }).join('') + '</div>';
+    var h = '<div class="wk-h"><div class="wk-b"><small>' + esc(now.toLocaleDateString(loc, { month: 'short' }).toUpperCase()) + '</small><b>' +
+      now.getDate() + '</b></div><div class="wk-t"><b>' + esc(title) + '</b><span>' + esc(range) +
+      (noAccess ? ' · ' + esc(tr('calAccess', 'Allow calendar access in the AutoDeck app')) : '') + '</span></div>' + nextChip(evs, now) + tog + '</div>';
+    var block = function (e, style) {
+      var c = e.color || '#5EF2D6', b = new Date(e.begin), en = new Date(e.end);
+      return '<div class="wk-e' + (e.end < now.getTime() ? ' past' : '') + '" data-ev="' + calAll.indexOf(e) + '" style="' + style + 'background:linear-gradient(135deg,' + esc(c) + '55,' +
+        esc(c) + '26);border-color:' + esc(c) + '"><b>' + esc(e.title) + '</b>' +
+        (e.allDay ? '' : '<span>' + pad(b.getHours()) + ':' + pad(b.getMinutes()) +
+          (calView === 'day' ? '–' + pad(en.getHours()) + ':' + pad(en.getMinutes()) : '') + '</span>') +
+        (calView === 'day' && e.where ? '<span>📍 ' + esc(e.where) + '</span>' : '') + '</div>';
+    };
+
+    if (calView === 'month') {
+      var y = now.getFullYear(), m = now.getMonth(), first = new Date(y, m, 1), start = new Date(y, m, 1 - first.getDay());
+      var weeks = Math.ceil((first.getDay() + new Date(y, m + 1, 0).getDate()) / 7);
+      var byDay = {};
+      evs.forEach(function (e) { var k = new Date(e.begin).toDateString(); (byDay[k] = byDay[k] || []).push(e); });
+      h += '<div class="mo">' + WD.map(function (w) { return '<div class="mw">' + esc(w.toUpperCase()) + '</div>'; }).join('');
+      for (var i = 0; i < weeks * 7; i++) {
+        var d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i), list = byDay[d.toDateString()] || [];
+        var cls = (d.getMonth() !== m ? ' o' : '') + (d.getDay() === 0 || d.getDay() === 6 ? ' we' : '') + (d.toDateString() === now.toDateString() ? ' td' : '');
+        h += '<div class="mc' + cls + '" data-day="' + d.getTime() + '"><b>' + d.getDate() + '</b>' + list.slice(0, 2).map(function (e) {
+          var c = e.color || '#5EF2D6';
+          return '<div class="me" data-ev="' + calAll.indexOf(e) + '" style="background:' + esc(c) + '33;border-color:' + esc(c) + '">' + esc(e.title) + '</div>';
+        }).join('') + (list.length > 2 ? '<div class="mm">+' + (list.length - 2) + '</div>' : '') + '</div>';
+      }
+      $('calWeek').innerHTML = h + '</div>';
+      return;
+    }
+
+    if (calView === 'day') {
+      var today = evs.filter(function (e) { return dayIdx(e) === 0; })
+        .sort(function (a, b) { return (b.allDay ? 1 : 0) - (a.allDay ? 1 : 0) || a.begin - b.begin; });
+      h += '<div class="dv">' + (today.length ? today.map(function (e) {
+        var c = e.color || '#5EF2D6', b = new Date(e.begin), en = new Date(e.end);
+        var st = e.end < now.getTime() ? ' past' : (!e.allDay && e.begin <= now.getTime() ? ' now' : '');
+        var mins = Math.round((e.end - e.begin) / 6e4), dur = mins >= 60 ? Math.floor(mins / 60) + 'h' + (mins % 60 ? ' ' + mins % 60 + 'm' : '') : mins + 'm';
+        var tm = e.allDay ? '<b>' + esc(tr('allDay', 'All day')) + '</b>' : '<b>' + pad(b.getHours()) + ':' + pad(b.getMinutes()) + '</b><span>' +
+          pad(en.getHours()) + ':' + pad(en.getMinutes()) + '</span>';
+        return '<div class="dv-e' + st + '" data-ev="' + calAll.indexOf(e) + '" style="background:linear-gradient(135deg,' + esc(c) + '40,' + esc(c) + '14);border-color:' + esc(c) + '">' +
+          '<div class="tm">' + tm + '</div><div class="bd"><b>' + esc(e.title) + '</b>' +
+          (st === ' now' ? '<span>' + esc(tr('happeningNow', 'Happening now')) + '</span>' : (e.allDay ? '' : '<span>' + dur + '</span>')) +
+          (e.where ? '<span>📍 ' + esc(e.where) + '</span>' : '') + '</div></div>';
+      }).join('') : '<div class="dv-none">' + esc(tr('noEventsToday', 'Nothing on today')) + '</div>') + '</div>';
+      $('calWeek').innerHTML = h;
+      return;
+    }
+
+    if (calView === 'week') {
+      h += '<div class="wb">';
+      for (var wi = 0; wi < 7; wi++) {
+        var wd = new Date(day0.getTime() + wi * DAY), we = wd.getDay() === 0 || wd.getDay() === 6;
+        var list = evs.filter(function (e) { return dayIdx(e) === wi; })
+          .sort(function (a, b) { return (b.allDay ? 1 : 0) - (a.allDay ? 1 : 0) || a.begin - b.begin; });
+        h += '<div class="wb-c' + (wi === 0 ? ' td' : '') + (we ? ' we' : '') + '"><div class="wb-h"><small>' + esc(WD[wd.getDay()].toUpperCase()) +
+          '</small><b>' + wd.getDate() + '</b></div>';
+        h += list.length ? list.map(function (e) {
+          var c = e.color || '#5EF2D6', b = new Date(e.begin);
+          var st = e.end < now.getTime() ? ' past' : (!e.allDay && e.begin <= now.getTime() ? ' now' : '');
+          return '<div class="wb-e' + st + '" data-ev="' + calAll.indexOf(e) + '" style="background:' + esc(c) + '33;border-color:' + esc(c) + '"><div class="t">' +
+            (e.allDay ? esc(tr('allDay', 'All day')) : pad(b.getHours()) + ':' + pad(b.getMinutes())) + '</div><b>' + esc(e.title) + '</b></div>';
+        }).join('') : '<div class="wb-none">—</div>';
+        h += '</div>';
+      }
+      $('calWeek').innerHTML = h + '</div>';
+      return;
+    }
+
+    var n = calView === 'day' ? 1 : 7, h0 = 8, h1 = 20, cols = [];
+    for (var i = 0; i < n; i++) {
+      var d = new Date(day0.getTime() + i * DAY);
+      cols.push({ d: d, start: d.getTime(), allDay: [], timed: [], we: d.getDay() === 0 || d.getDay() === 6 });
+    }
+    evs.forEach(function (e) {
+      var i = dayIdx(e);
+      if (i < 0 || i >= n) return;
+      (e.allDay ? cols[i].allDay : cols[i].timed).push(e);
+      if (!e.allDay) {
+        var b = new Date(e.begin), en = new Date(e.end);
+        h0 = Math.min(h0, b.getHours()); h1 = Math.max(h1, Math.min(24, en.getHours() + (en.getMinutes() ? 1 : 0)));
+      }
+    });
+    var span = h1 - h0;
+    h += '<div class="wk-g' + (n === 1 ? ' day' : '') + '" style="--hr:' + (100 / span) + '%">';
+    if (n > 1) {
+      h += '<div class="wk-dh"></div>' + cols.map(function (c, i) {
+        return '<div class="wk-dh' + (i === 0 ? ' td' : '') + (c.we ? ' we' : '') + '"><small>' + esc(WD[c.d.getDay()].toUpperCase()) +
+          '</small><b>' + c.d.getDate() + '</b></div>';
+      }).join('');
+    }
+    h += '<div class="wk-ad"></div>' + cols.map(function (c) {
+      return '<div class="wk-ad">' + c.allDay.map(function (e) { return block(e, ''); }).join('') + '</div>';
+    }).join('');
+    h += '<div class="wk-tm">';
+    for (var t = h0 + 1; t < h1; t++) h += '<span style="top:' + ((t - h0) / span * 100) + '%">' + (t % 12 || 12) + (t < 12 ? ' AM' : ' PM') + '</span>';
+    h += '</div>';
+    var nowPct = ((now.getHours() + now.getMinutes() / 60) - h0) / span * 100;
+    cols.forEach(function (c, i) {
+      h += '<div class="wk-col' + (i === 0 && n > 1 ? ' td' : '') + (c.we && n > 1 ? ' we' : '') + '">' +
+        (i === 0 && nowPct >= 0 && nowPct <= 100 ? '<div class="wk-now" style="top:' + nowPct + '%"></div>' : '');
+      // shortcut: overlapping events stack on top of each other; add side-by-side columns if people have busy calendars.
+      c.timed.forEach(function (e) {
+        var b = new Date(e.begin), en = new Date(e.end);
+        var top = Math.max(0, (b.getHours() + b.getMinutes() / 60 - h0) / span * 100);
+        var bot = Math.min(100, ((en - c.start) / 36e5 - h0) / span * 100);
+        h += block(e, 'top:' + top + '%;height:' + Math.max(4, bot - top) + '%;');
+      });
+      h += '</div>';
+    });
+    $('calWeek').innerHTML = h + '</div>';
+  }
+
+  // "Next: Meeting · in 45 min" chip for the week header.
+  function nextChip(evs, now) {
+    var n = evs.filter(function (e) { return !e.allDay && e.begin > now.getTime(); })
+      .sort(function (a, b) { return a.begin - b.begin; })[0];
+    if (!n) return '';
+    var mins = Math.round((n.begin - now.getTime()) / 6e4), b = new Date(n.begin);
+    var when = mins < 60 ? tr('inMin', 'in') + ' ' + mins + ' min' : mins < 1440 && b.getDate() === now.getDate() ? pad(b.getHours()) + ':' + pad(b.getMinutes())
+      : WD[b.getDay()] + ' ' + pad(b.getHours()) + ':' + pad(b.getMinutes());
+    return '<div class="wk-nx"><i style="background:' + esc(n.color || '#5EF2D6') + '"></i><span>' + esc(n.title) + '</span><em>' + esc(when) + '</em></div>';
+  }
+
+  // ---- Event details popup ----
+  var calAll = [], popTimer = null;
+  function fmtRange(e) {
+    var loc = LANG === 'en' ? 'en-MY' : LANG + '-MY', b = new Date(e.begin), en = new Date(e.end);
+    var day = b.toLocaleDateString(loc, { weekday: 'long', day: 'numeric', month: 'long' });
+    if (e.allDay) return [day, tr('allDay', 'All day')];
+    var mins = Math.round((e.end - e.begin) / 6e4), dur = mins >= 60 ? Math.floor(mins / 60) + 'h' + (mins % 60 ? ' ' + mins % 60 + 'm' : '') : mins + 'm';
+    return [day, pad(b.getHours()) + ':' + pad(b.getMinutes()) + ' – ' + pad(en.getHours()) + ':' + pad(en.getMinutes()) + '  ·  ' + dur];
+  }
+  function closePop() { $('calPop').className = ''; $('calPop').innerHTML = ''; clearTimeout(popTimer); }
+  function openPop(html, color) {
+    $('calPop').innerHTML = '<div class="cp"><div class="cp-bar" style="background:' + esc(color || '#5EF2D6') + '"></div><div class="cp-in">' + html + '</div></div>';
+    $('calPop').className = 'on';
+    clearTimeout(popTimer);
+    popTimer = setTimeout(closePop, 20000);   // never left over the screen while driving
+  }
+  function showEvent(e) {
+    var now = Date.now(), r = fmtRange(e), live = !e.allDay && e.begin <= now && e.end > now;
+    // Notes may hold HTML from Google invites: show as plain text only.
+    var notes = (e.notes || '').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').trim();
+    openPop('<div class="cp-top"><b>' + esc(e.title || '—') + '</b><button class="cp-x" data-close>✕</button></div>' +
+      (live ? '<span class="cp-now">' + esc(tr('happeningNow', 'Happening now')) + '</span>' : '') +
+      '<div class="cp-row"><i>🗓</i><span>' + esc(r[0]) + '<br><span class="sub">' + esc(r[1]) + '</span></span></div>' +
+      (e.where ? '<div class="cp-row"><i>📍</i><span>' + esc(e.where) + '</span></div>' : '') +
+      (e.calendar ? '<div class="cp-row"><i style="color:' + esc(e.color || '#5EF2D6') + '">●</i><span class="sub">' + esc(e.calendar) + '</span></div>' : '') +
+      (notes ? '<div class="cp-notes">' + esc(notes) + '</div>' : ''), e.color);
+  }
+  function showDay(ms) {
+    var d = new Date(+ms), loc = LANG === 'en' ? 'en-MY' : LANG + '-MY';
+    var list = calAll.filter(function (e) { return new Date(e.begin).toDateString() === d.toDateString(); });
+    openPop('<div class="cp-top"><b>' + esc(d.toLocaleDateString(loc, { weekday: 'long', day: 'numeric', month: 'long' })) +
+      '</b><button class="cp-x" data-close>✕</button></div>' + (list.length ? '<div class="cp-list">' + list.map(function (e) {
+        var b = new Date(e.begin);
+        return '<div class="cp-li" data-ev="' + calAll.indexOf(e) + '"><i style="background:' + esc(e.color || '#5EF2D6') + '"></i><span class="tm">' +
+          (e.allDay ? esc(tr('allDay', 'All day')) : pad(b.getHours()) + ':' + pad(b.getMinutes())) + '</span><span>' + esc(e.title) + '</span></div>';
+      }).join('') + '</div>' : '<div class="cp-row"><span class="sub">' + esc(tr('noEventsDay', 'No events')) + '</span></div>'));
+  }
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    if (!t.closest) return;
+    if (t.closest('[data-close]') || t.id === 'calPop') { closePop(); return; }
+    var a = t.closest('[data-ev]');
+    if (a && calAll[+a.getAttribute('data-ev')]) { showEvent(calAll[+a.getAttribute('data-ev')]); return; }
+    var d = t.closest('[data-day]');
+    if (d) showDay(d.getAttribute('data-day'));
+  });
+
+  // ---- EV charging ----
+  var evKey = null;
+  // Who can charge here, in words (colour only repeats it): red = can't use, amber = conditions.
+  function evAccess(c) {
+    if (c.status === 'down') return '<span class="acc no">' + esc(tr('evOffline', 'Out of service')) + '</span>';
+    if (c.access === 'restricted') return '<span class="acc no">' + esc(tr('evRestricted', 'Restricted')) + '</span>';
+    if (c.access === 'members') return '<span class="acc mb">' + esc(tr('evMembers', 'Members')) + '</span>';
+    return '';
+  }
+  function renderEv(e) {
+    if (!on('ev')) return;
+    $('evTitle').textContent = tr('evTitle', 'EV charging nearby');
+    var items = (e && e.items) || [];
+    if (!items.length) { $('evList').innerHTML = '<div class="na">' + esc(tr('noChargers', 'No chargers found nearby')) + '</div>'; $('evMap').textContent = ''; return; }
+    $('evList').innerHTML = items.map(function (c, i) {
+      var km = c.km == null ? '' : c.km < 1 ? Math.round(c.km * 1000) + ' m' : c.km.toFixed(1) + ' km';
+      var plugs = (c.plugs || []).slice(0, 3).map(function (p) {
+        return '<span class="plug' + (p.kw >= 40 ? ' fast' : '') + '">' + esc(p.type) + (p.kw ? ' ' + p.kw + 'kW' : '') + (p.n > 1 ? ' ×' + p.n : '') + '</span>';
+      }).join('');
+      return '<div class="ch' + (c.status === 'down' ? ' down' : '') + '" data-nav-lat="' + c.lat + '" data-nav-lng="' + c.lng + '"><span class="n">' + (i + 1) +
+        '</span><span class="nm"><b>' + esc(c.name) + '</b>' + evAccess(c) + '</span><span class="km">' + km + '</span><span class="sub">' + plugs +
+        (c.operator || c.kind ? '<span class="op">' + esc([c.operator, c.kind].filter(Boolean).join(' · ')) + '</span>' : '') + '</span></div>';
+    }).join('');
+    renderEvMap(e);
+  }
+  // Map only when the tile is big enough (CSS shows #evMap); tiles + numbered pins, rebuilt only when data or size changes.
+  function renderEvMap(e) {
+    var box = $('evMap'), W = box.clientWidth, H = box.clientHeight;
+    if (!W || !H) return;
+    var key = JSON.stringify(e.items.map(function (c) { return [c.lat, c.lng]; })) + W + 'x' + H;
+    if (key === evKey) return;
+    evKey = key;
+    var lats = e.items.map(function (c) { return c.lat; }).concat([e.lat]), lngs = e.items.map(function (c) { return c.lng; }).concat([e.lng]);
+    var span = Math.max(Math.max.apply(null, lats) - Math.min.apply(null, lats), Math.max.apply(null, lngs) - Math.min.apply(null, lngs), .01);
+    var z = Math.max(8, Math.min(15, Math.floor(Math.log2(360 * Math.min(W, H) / 256 / span / 1.4))));
+    var n = Math.pow(2, z), px = function (lat, lng) {
+      var r = lat * Math.PI / 180;
+      return [(lng + 180) / 360 * n * 256, (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n * 256];
+    };
+    var c = px((Math.max.apply(null, lats) + Math.min.apply(null, lats)) / 2, (Math.max.apply(null, lngs) + Math.min.apply(null, lngs)) / 2);
+    var ox = W / 2 - c[0], oy = H / 2 - c[1], h = '';
+    for (var ty = Math.floor(-oy / 256); ty * 256 + oy < H; ty++) for (var tx = Math.floor(-ox / 256); tx * 256 + ox < W; tx++) {
+      if (ty < 0 || ty >= n) continue;
+      h += '<img src="https://tile.openstreetmap.org/' + z + '/' + (((tx % n) + n) % n) + '/' + ty + '.png" style="left:' + (tx * 256 + ox) + 'px;top:' + (ty * 256 + oy) + 'px" onerror="this.remove()">';
+    }
+    var me = px(e.lat, e.lng);
+    h += '<span class="me" style="left:' + (me[0] + ox) + 'px;top:' + (me[1] + oy) + 'px"></span>';
+    e.items.forEach(function (it, i) {
+      var p = px(it.lat, it.lng);
+      h += '<span class="pin' + (it.status === 'down' || it.access === 'restricted' ? ' no' : '') + '" style="left:' + (p[0] + ox) + 'px;top:' + (p[1] + oy) + 'px">' + (i + 1) + '</span>';
+    });
+    box.innerHTML = h;
+  }
+  document.addEventListener('click', function (ev) {
+    var y = ev.target.closest && ev.target.closest('[data-yt]');
+    if (y && window.AutoDeck && window.AutoDeck.youtube) window.AutoDeck.youtube(y.getAttribute('data-yt'));
+    var c = ev.target.closest && ev.target.closest('[data-nav-lat]');
+    if (c && window.AutoDeck && window.AutoDeck.navigate) window.AutoDeck.navigate(+c.getAttribute('data-nav-lat'), +c.getAttribute('data-nav-lng'));
+  });
+
+  var extras = {}, rainNote = null;
+  function renderExtras() {
+    renderForecast(extras.forecast); renderAir(extras.air); renderRadar(extras.radar);
+    renderSports(extras.sports); renderCalendar(extras.calendar); renderEv(extras.ev);
+    $('ytHint').textContent = tr('ytSearch', 'Search YouTube'); $('ytHome').textContent = tr('ytHome', 'Home');
+    $('ytSubs').textContent = tr('ytSubs', 'Subscriptions'); $('ytHist').textContent = tr('ytHistory', 'History');
+  }
+
+  /** Called from Kotlin with the JSON payload built in Dart. */
+  window.ddUpdate = function (p) {
+    if (typeof p === 'string') p = JSON.parse(p);
+    setSpeed(p.speed, p.gps);
+    if (p.speedOnly) return;
+    if (p.labels) L = p.labels;
+    if (p.lang) LANG = p.lang;
+    layoutLand = p.layout; layoutPort = p.layoutP || null;
+    applyLayout(pickLayout());
+    document.body.classList.add('ready');
+    renderBg(p.bg);
+    renderMusic(p.music);
+    renderPrayer(p.prayer);
+    renderWeather(p.weather);
+    renderScores(p.scoresLabel || 'Today', p.scores);
+    if (p.fuel == null) $('fuelText').textContent = tr('fuelLoading', 'Fuel prices…');
+    renderFuel(p.fuel);
+    ['forecast', 'air', 'radar', 'sports', 'calendar', 'football', 'ev'].forEach(function (k) { extras[k] = p[k]; });
+    rainNote = p.weather && p.weather.rain;
+    document.body.classList.toggle('pg-custom', p.page === 'custom');
+    document.body.className = document.body.className.replace(/\bfn-\w+/g, '').trim() + (p.fn ? ' fn-' + p.fn : '');
+    renderExtras();
+    clock();
+  };
+  window.ddRelayout = function () { state.idx = -2; };
+
+
+  initControls();
+  // Tiles stay hidden until the phone's data arrives (pushed right after load), so a
+  // default layout never flashes first. Fallback if nothing comes: the default template.
+  setTimeout(function () { if (!document.body.classList.contains('ready')) { applyLayout(null); document.body.classList.add('ready'); } }, 1500);
+  clock();
+  setInterval(clock, 1000);
+  frame();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,378 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<style>
+  :root {
+    --teal: #14E0C1;
+    --violet: #0B9E8A; /* deep teal: one accent hue */
+    --night: #0B0F1A;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: var(--night); color: #fff;
+    font-family: "Google Sans", Roboto, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Dimmed album art behind everything (no blur: too costly on head units) */
+  #bg {
+    position: fixed; inset: 0;
+    background: radial-gradient(circle at 20% 20%, #1c2a52, var(--night) 70%) center/cover;
+    filter: brightness(.4);
+    transition: background-image .8s ease;
+  }
+  #shade {
+    position: fixed; inset: 0;
+    background: linear-gradient(90deg, rgba(11,15,26,.55) 0%, rgba(11,15,26,.25) 45%, rgba(11,15,26,.65) 100%);
+  }
+
+  #app {
+    position: relative; height: 100%;
+    display: grid; grid-template-columns: 36% 1fr; gap: 4vw;
+    padding: calc(4.5vh + var(--dd-extra, 0px)) 5vw 4.5vh;
+  }
+  /* Compact "now playing card" for Android Auto's split panes and small screens. */
+  @media (max-aspect-ratio: 13/10), (max-width: 620px) {
+    #app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; gap: 2.4vh; padding: calc(4.5vh + var(--dd-extra, 0px)) 5vw 4.5vh; }
+    #side { flex-direction: row; align-items: center; gap: 4vw; justify-content: flex-start; }
+    #cover { width: 17vh !important; max-width: 17vh; flex: none; border-radius: 2.2vh; }
+    #title { font-size: 6vh; }
+    #artist { font-size: 4.2vh; }
+    .chip { font-size: 3vh; }
+    #progress { display: none; }
+    #controls { margin-left: auto; gap: 1.6vh; }
+    .ctl { width: max(48px, 9vh); height: max(48px, 9vh); }
+    .ctl.play { width: max(56px, 11vh); height: max(56px, 11vh); }
+    #stage {
+      -webkit-mask-image: linear-gradient(transparent 0%, #000 12%, #000 72%, transparent 100%);
+              mask-image: linear-gradient(transparent 0%, #000 12%, #000 72%, transparent 100%);
+    }
+    .line { font-size: 8.5vh; padding: 1.2vh 0; }
+    .line.now { text-shadow: 0 0 24px rgba(20,224,193,.7), 0 2px 6px rgba(0,0,0,.7); }
+    .line.past { opacity: .2; }
+    #plain { font-size: 5.5vh; }
+    #message { font-size: 6vh; }
+  }
+  /* Left: cover + track info */
+  #side { display: flex; flex-direction: column; justify-content: center; gap: 2.4vh; min-width: 0; }
+  #cover {
+    width: 100%; max-width: 44vh; aspect-ratio: 1; border-radius: 2.8vh;
+    background: linear-gradient(135deg, var(--teal), var(--violet)) center/cover;
+    box-shadow: 0 16px 48px rgba(0,0,0,.65), inset 0 0 0 1px rgba(255,255,255,.16);
+    transition: background-image .6s ease;
+  }
+  #meta { min-width: 0; }
+  #title { font-size: 5.4vh; font-weight: 800; line-height: 1.2; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #artist { font-size: 3.8vh; opacity: .8; margin-top: .8vh; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #chips { display: flex; gap: 1.2vh; margin-top: 1.8vh; flex-wrap: wrap; }
+  .chip {
+    font-size: 2.4vh; font-weight: 600; padding: .6vh 1.6vh; border-radius: 99px;
+    background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.16);
+  }
+  .chip.live { background: linear-gradient(90deg, var(--teal), var(--violet)); border: 0; color: #0b0f1a; font-weight: 700; box-shadow: 0 2px 12px rgba(20,224,193,.4); }
+  #progress { height: .9vh; min-height: 4px; border-radius: 99px; background: rgba(255,255,255,.16); overflow: hidden; }
+  #bar { height: 100%; width: 0; background: linear-gradient(90deg, var(--teal), var(--violet)); box-shadow: 0 0 10px rgba(20,224,193,.5); }
+
+  /* Player buttons */
+  #controls { display: flex; align-items: center; gap: 2.4vh; }
+  .ctl { width: max(48px, 8.5vh); height: max(48px, 8.5vh); border-radius: 50%; border: 1px solid rgba(255,255,255,.2);
+         background: linear-gradient(135deg, rgba(255,255,255,.14), rgba(255,255,255,.05)); box-shadow: 0 4px 14px rgba(0,0,0,.3);
+         display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; flex: none; transition: transform .12s ease; }
+  .ctl svg { width: 46%; height: 46%; fill: #fff; }
+  .ctl.play { width: max(56px, 11vh); height: max(56px, 11vh); background: #fff; border-color: #fff; box-shadow: 0 6px 20px rgba(255,255,255,.25); }
+  .ctl.play svg { width: 48%; height: 48%; fill: #0B0F1A; }
+  .ctl:active { transform: scale(.92); }
+
+  /* Right: lyrics */
+  #stage {
+    position: relative; overflow: hidden; min-width: 0;
+    -webkit-mask-image: linear-gradient(transparent 0%, #000 15%, #000 78%, transparent 100%);
+            mask-image: linear-gradient(transparent 0%, #000 15%, #000 78%, transparent 100%);
+  }
+  #lines {
+    position: absolute; left: 0; right: 0; top: 0;
+    transition: transform .65s cubic-bezier(.22,.61,.36,1);
+    will-change: transform;
+  }
+  .line {
+    font-size: 6.2vh; font-weight: 800; line-height: 1.35;
+    padding: 1.5vh 0;
+    transform-origin: left center;
+    transform: scale(.84);
+    opacity: .38;
+    transition: transform .45s cubic-bezier(0.16, 1, 0.3, 1), opacity .45s ease, color .45s ease, text-shadow .45s ease;
+  }
+  .line.next { opacity: .68; transform: scale(.9); }
+  .line.past { opacity: .26; }
+  .line.now {
+    transform: scale(1.05); opacity: 1; color: #FFFFFF; font-weight: 900;
+    text-shadow: 0 0 24px rgba(20,224,193,.65), 0 2px 6px rgba(0,0,0,.7);
+  }
+  .line.gap { font-size: 5vh; letter-spacing: .4em; }
+
+  #plain { font-size: 4.8vh; line-height: 1.6; white-space: pre-wrap; opacity: .9; padding: 14vh 2vw; }
+
+  #message {
+    position: absolute; inset: 0; display: none; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    font-size: 5.2vh; font-weight: 700; opacity: .88; padding: 0 4vw;
+  }
+  #message small { display: block; font-size: 3.2vh; font-weight: 400; opacity: .72; margin-top: 1.4vh; }
+  .eq { display: inline-flex; gap: .6vh; height: 4vh; align-items: flex-end; margin-bottom: 2vh; }
+  .eq i { width: .9vh; background: var(--teal); border-radius: 1vh; animation: eq 1s infinite ease-in-out; }
+  .eq i:nth-child(2) { animation-delay: .2s; background: #3fc8d8; }
+  .eq i:nth-child(3) { animation-delay: .4s; background: var(--violet); }
+  @keyframes eq { 0%,100% { height: 30%; } 50% { height: 100%; } }
+</style>
+</head>
+<body>
+<div id="bg"></div><div id="shade"></div>
+<div id="app">
+  <div id="side">
+    <div id="cover"></div>
+    <div id="meta">
+      <div id="title">AutoDeck</div>
+      <div id="artist">Waiting for music…</div>
+      <div id="chips"></div>
+    </div>
+    <div id="progress"><div id="bar"></div></div>
+    <div id="controls">
+      <button class="ctl" id="ctlPrev" data-media="prev" aria-label="Previous"></button>
+      <button class="ctl play" id="ctlToggle" data-media="toggle" aria-label="Play or pause"></button>
+      <button class="ctl" id="ctlNext" data-media="next" aria-label="Next"></button>
+    </div>
+  </div>
+  <div id="stage">
+    <div id="lines"></div>
+    <div id="plain" style="display:none"></div>
+    <div id="message"></div>
+  </div>
+</div>
+<script>
+(function () {
+  var lastArt;
+  var state = {
+    lines: [],          // [[ms, text], ...]
+    plain: '',
+    key: '',
+    basePos: 0, baseAt: 0, playing: false, duration: 0,
+    index: -2
+  };
+  var $ = function (id) { return document.getElementById(id); };
+  var linesEl = $('lines'), plainEl = $('plain'), msgEl = $('message'), stage = $('stage');
+
+  // Translated labels sent by the app with every update.
+  var L = {};
+  var tr = function (k, fallback) { return L[k] || fallback; };
+  function messages() {
+    return {
+      waiting: [tr('waiting', 'Waiting for music…'), tr('playSomethingAny', 'Play something in Spotify, YouTube Music or any app')],
+      access: [tr('allowAccess', 'Allow notification access'), tr('allowAccessHint', 'Open AutoDeck on your phone to grant it')],
+      loading: ['<span class="eq"><i></i><i></i><i></i></span><br>' + escapeHtml(tr('findingLyrics', 'Finding lyrics…')), ''],
+      notFound: [escapeHtml(tr('noLyricsFound', 'No lyrics found')), ''],
+      instrumental: ['♪ ' + escapeHtml(tr('instrumental', 'Instrumental')) + ' ♪', ''],
+      offline: [escapeHtml(tr('offline', 'Offline')), '']
+    };
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; });
+  }
+
+  // Clock: basePos at baseAt, advancing while playing. Small resync errors are
+  // glided in over SLEW_MS instead of snapping, so lines never jitter.
+  var SLEW_MS = 800;      // how long a small correction takes
+  var SNAP_MS = 1200;     // bigger differences (seek, skip) jump immediately
+  var LEAD_MS = 200;      // light lines up slightly early, like karaoke
+
+  function rawPosition(now) {
+    var p = state.basePos;
+    if (state.playing) p += now - state.baseAt;
+    if (state.slew) p += state.slew * Math.min(1, (now - state.slewAt) / SLEW_MS);
+    return p;
+  }
+
+
+  var ICON = {
+    prev: '<svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zM9.5 12l8.5 6V6z"/></svg>',
+    next: '<svg viewBox="0 0 24 24"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>',
+    play: '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>',
+    pause: '<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6zm8-14v14h4V5z"/></svg>'
+  };
+  var isPlaying = false;
+  function setPlayIcon(playing) {
+    isPlaying = playing;
+    var b = document.getElementById('ctlToggle');
+    if (b) b.innerHTML = playing ? ICON.pause : ICON.play;
+  }
+  function initControls() {
+    document.getElementById('ctlPrev').innerHTML = ICON.prev;
+    document.getElementById('ctlNext').innerHTML = ICON.next;
+    setPlayIcon(false);
+    Array.prototype.forEach.call(document.querySelectorAll('[data-media]'), function (b) {
+      b.addEventListener('click', function () {
+        var a = b.getAttribute('data-media');
+        if (a === 'toggle') setPlayIcon(!isPlaying);   // flip now; the app's state follows
+        if (window.AutoDeck && window.AutoDeck.media) window.AutoDeck.media(a);
+      });
+    });
+  }
+
+  function position() {
+    var p = rawPosition(performance.now());
+    if (state.duration > 0) p = Math.min(p, state.duration);
+    return Math.max(0, p);
+  }
+
+  /** Re-anchors the clock to `target` ms: glide if close, jump otherwise. */
+  function syncClock(target, playing, hard) {
+    var now = performance.now();
+    var current = rawPosition(now);
+    var diff = target - current;
+    if (hard || !playing || !state.playing || Math.abs(diff) > SNAP_MS) {
+      state.basePos = target;
+      state.slew = 0;
+    } else {
+      // Bake in what's been applied so far, then glide the rest.
+      state.basePos = current;
+      state.slew = diff;
+      state.slewAt = now;
+    }
+    state.baseAt = now;
+    state.playing = playing;
+  }
+
+  function findIndex(pos) {
+    var lo = 0, hi = state.lines.length - 1, found = -1;
+    while (lo <= hi) {
+      var mid = (lo + hi) >> 1;
+      if (state.lines[mid][0] <= pos) { found = mid; lo = mid + 1; } else hi = mid - 1;
+    }
+    return found;
+  }
+
+  function showMessage(kind, custom) {
+    var m = custom ? [custom, ''] : (messages()[kind] || messages().waiting);
+    msgEl.innerHTML = m[0] + (m[1] ? '<small>' + escapeHtml(m[1]) + '</small>' : '');
+    msgEl.style.display = 'flex';
+    linesEl.style.display = 'none';
+    plainEl.style.display = 'none';
+  }
+
+  function renderLines() {
+    msgEl.style.display = 'none';
+    plainEl.style.display = 'none';
+    linesEl.style.display = 'block';
+    linesEl.innerHTML = state.lines.map(function (l, i) {
+      var t = (l[1] || '').trim();
+      return '<div class="line' + (t ? '' : ' gap') + '" data-i="' + i + '">' + (t ? escapeHtml(t) : '♪ ♪ ♪') + '</div>';
+    }).join('');
+    state.index = -2;
+  }
+
+  function renderPlain() {
+    msgEl.style.display = 'none';
+    linesEl.style.display = 'none';
+    plainEl.style.display = 'block';
+    plainEl.textContent = state.plain;
+  }
+
+  function highlight(i) {
+    if (i === state.index) return;
+    state.index = i;
+    var nodes = linesEl.children;
+    for (var k = 0; k < nodes.length; k++) {
+      var n = nodes[k];
+      n.className = 'line' + (n.classList.contains('gap') ? ' gap' : '') +
+        (k === i ? ' now' : k < i ? ' past' : (k <= i + 2 ? ' next' : ''));
+    }
+    // Keep the current line ~40% down the stage.
+    var target = nodes[Math.max(i, 0)];
+    if (!target) return;
+    var anchor = window.innerWidth < window.innerHeight * 1.3 || window.innerWidth < 620 ? 0.3 : 0.4;
+    var offset = target.offsetTop + target.offsetHeight / 2 - stage.clientHeight * anchor;
+    linesEl.style.transform = 'translateY(' + (-Math.max(offset, -stage.clientHeight * anchor)) + 'px)';
+  }
+
+  function tick() {
+    var pos = position();
+    if (state.duration > 0) $('bar').style.width = (100 * pos / state.duration).toFixed(2) + '%';
+    if (linesEl.style.display === 'block' && state.lines.length) {
+      var i = findIndex(pos + LEAD_MS);
+      // A tiny backwards correction must not flash the previous line.
+      if (i === state.index - 1 && state.lines[state.index] && pos + LEAD_MS > state.lines[state.index][0] - 600) i = state.index;
+      highlight(i);
+    } else if (plainEl.style.display === 'block' && state.duration > 0) {
+      // Unsynced lyrics: scroll gently with song progress.
+      var max = plainEl.scrollHeight - stage.clientHeight;
+      plainEl.style.transform = 'translateY(' + (-max * Math.min(pos / state.duration, 1)) + 'px)';
+    }
+    requestAnimationFrame(tick);
+  }
+
+  /** Called from Kotlin with the JSON payload built in Dart. */
+  window.ddUpdate = function (p) {
+    if (typeof p === 'string') p = JSON.parse(p);
+    if (p && p.music) {
+      var labels = p.labels;
+      p = Object.assign({}, p.music);
+      if (labels && !p.labels) p.labels = labels;
+    }
+    if (p.labels) L = p.labels;
+
+    $('title').textContent = p.title || 'AutoDeck';
+    $('artist').textContent = p.artist || (p.status === 'waiting' ? tr('waiting', 'Waiting for music…') : '');
+    var chips = '';
+    if (p.app) chips += '<span class="chip">' + escapeHtml(p.app) + '</span>';
+    if (p.playing) chips += '<span class="chip live">▶ ' + escapeHtml(tr('playing', 'Playing')) + '</span>';
+    if (p.cached) chips += '<span class="chip">' + escapeHtml(tr('cached', 'Cached')) + '</span>';
+    if (p.approx) chips += '<span class="chip">' + escapeHtml(tr('approx', 'approx. sync')) + '</span>';
+    $('chips').innerHTML = chips;
+
+    // Cover is re-sent with every update; only repaint (re-decode + 48px blur) when it changes.
+    if ('art' in p && p.art !== lastArt) {
+      lastArt = p.art;
+      var art = p.art ? 'url("' + p.art + '")' : '';
+      $('cover').style.backgroundImage = art;
+      $('bg').style.backgroundImage = art;
+    }
+
+    var key = (p.title || '') + '|' + (p.artist || '') + '|' + p.status + '|' + (p.lines ? p.lines.length : 0);
+    var transit = p.sentAtMs ? Math.min(Math.max(0, Date.now() - p.sentAtMs), 1500) : 0;
+    var target = (p.positionMs || 0) + (p.playing ? transit : 0);
+    syncClock(target, !!p.playing, key !== state.key);
+    setPlayIcon(!!p.playing);
+    state.duration = p.durationMs || 0;
+
+    if (key === state.key) return;   // same song & state: only the clock was resynced
+    state.key = key;
+
+    if (p.status === 'found' && p.lines && p.lines.length) {
+      state.lines = p.lines;
+      renderLines();
+    } else if (p.status === 'found' && p.plain) {
+      state.lines = [];
+      state.plain = p.plain;
+      renderPlain();
+    } else {
+      state.lines = [];
+      showMessage(p.status, p.message);
+    }
+  };
+
+  /** Recompute scroll offsets (view was hidden, or the car pane resized). */
+  window.ddRelayout = function () { state.index = -2; };
+  window.addEventListener('resize', window.ddRelayout);
+  document.addEventListener('visibilitychange', window.ddRelayout);
+
+  initControls();
+  showMessage('waiting');
+  requestAnimationFrame(tick);
+  if (window.DriveDeck && window.DriveDeck.ready) window.DriveDeck.ready();
+})();
+</script>
+</body>
+</html>
