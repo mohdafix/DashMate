@@ -220,10 +220,12 @@ class _SportsScreenState extends State<SportsScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
+        leading: Navigator.canPop(context)
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                onPressed: () => Navigator.pop(context),
+              )
+            : null,
         title: const Text('Sports', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
         actions: [
           IconButton(

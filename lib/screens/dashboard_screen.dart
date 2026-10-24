@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../core/weather_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/localization.dart';
 import 'browse_screen.dart';
@@ -30,7 +31,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String _activeFont = "Orbitron";
   String _carCard = "Auto";
   String _prayerTime = "Zohor 1:00 PM";
-  String _weatherTemp = "24° Drizzle";
+  String _weatherTemp = "Loading weather...";
   String _parkingSubtitle = "No parking spot yet";
   String _headUnitName = "Google Desktop Head Unit";
   String _headUnitRes = "1190×480";
@@ -70,6 +71,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
               _parkingSubtitle = '$h:$m';
             }
           }
+        });
+      }
+    } catch (_) {}
+
+    try {
+      final liveW = await WeatherService.fetchWeather();
+      if (mounted) {
+        setState(() {
+          _weatherTemp = '${liveW.temp.round()}° ${liveW.condition}';
         });
       }
     } catch (_) {}

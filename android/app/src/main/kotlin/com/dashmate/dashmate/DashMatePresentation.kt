@@ -142,6 +142,9 @@ class DashMatePresentation(
                 useWideViewPort = true
                 loadWithOverviewMode = true
                 userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
+                setSupportZoom(true)
+                builtInZoomControls = true
+                displayZoomControls = false
             }
 
             webChromeClient = object : WebChromeClient() {}
@@ -211,17 +214,10 @@ class DashMatePresentation(
 
     fun toggleFullscreen(fullscreen: Boolean) {
         isFullscreen = fullscreen
-        val density = context.resources.displayMetrics.density
-        if (isFullscreen) {
-            dockBar?.visibility = View.GONE
-            browserBar.visibility = View.GONE
-        } else {
-            if (isBrowsingWeb) {
-                browserBar.visibility = View.VISIBLE
-            } else {
-                dockBar?.visibility = View.VISIBLE
-            }
-        }
+        val prefs = hostContext.getSharedPreferences("dd_car_browser", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("fullscreen", fullscreen).apply()
+        // In AutoDeck, fullscreen removes system insets/padding; dockBar remains visible!
+        updateVisibleArea(lastVisibleArea)
     }
 
     fun onSizeChanged(width: Int, height: Int) {
@@ -354,8 +350,15 @@ class DashMatePresentation(
     }
 
     override fun onSwitchPage(page: String) {
-        if (currentPage == page && !isBrowsingWeb) return
+        if (currentPage == page && (if (page == "web" || page == "browse") isBrowsingWeb else !isBrowsingWeb)) return
         currentPage = page
+
+        if (page == "web" || page == "browse") {
+            loadWebUrl("https://m.youtube.com")
+            dockBar?.updateCurrentPage("web")
+            return
+        }
+
         exitBrowserToHome(false)
 
         val assetUrl = when (page) {
@@ -364,6 +367,7 @@ class DashMatePresentation(
             else -> "file:///android_asset/drivedeck_home.html"
         }
         deckWebView?.loadUrl(assetUrl)
+        dockBar?.updateCurrentPage(page)
     }
 
     override fun onExecuteScript(script: String) {
@@ -374,7 +378,8 @@ class DashMatePresentation(
 
     fun loadWebUrl(url: String) {
         isBrowsingWeb = true
-        dockBar?.visibility = View.GONE
+        dockBar?.visibility = View.VISIBLE
+        dockBar?.updateCurrentPage("web")
         deckWebView?.visibility = View.GONE
         browserWebView?.visibility = View.VISIBLE
         browserBar.visibility = View.VISIBLE
@@ -391,6 +396,7 @@ class DashMatePresentation(
         browserBar.visibility = View.GONE
         closeAuthOverlay()
         dockBar?.visibility = View.VISIBLE
+        dockBar?.updateCurrentPage("home")
         deckWebView?.visibility = View.VISIBLE
 
         if (reloadDeck) {
@@ -405,7 +411,7 @@ class DashMatePresentation(
         val bar = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding((10 * density).toInt(), (4 * density).toInt(), (10 * density).toInt(), (4 * density).toInt())
+            setPadding((12 * density).toInt(), (4 * density).toInt(), (12 * density).toInt(), (4 * density).toInt())
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#D90B0F1A"))
                 cornerRadius = 24 * density
@@ -435,10 +441,10 @@ class DashMatePresentation(
 
         // Back button
         val backBtn = TextView(context).apply {
-            text = "◀ Back"
+            text = "◀"
             setTextColor(Color.WHITE)
-            textSize = 14f
-            setPadding(14, 6, 14, 6)
+            textSize = 16f
+            setPadding(12, 6, 12, 6)
             setOnClickListener {
                 if (browserWebView?.canGoBack() == true) {
                     browserWebView?.goBack()
@@ -448,6 +454,20 @@ class DashMatePresentation(
             }
         }
         bar.addView(backBtn)
+
+        // Forward button
+        val fwdBtn = TextView(context).apply {
+            text = "▶"
+            setTextColor(Color.WHITE)
+            textSize = 16f
+            setPadding(12, 6, 12, 6)
+            setOnClickListener {
+                if (browserWebView?.canGoForward() == true) {
+                    browserWebView?.goForward()
+                }
+            }
+        }
+        bar.addView(fwdBtn)
 
         // Reload button
         val reloadBtn = TextView(context).apply {
@@ -460,32 +480,6 @@ class DashMatePresentation(
             }
         }
         bar.addView(reloadBtn)
-
-        // Zoom In button using dd_zoom_in drawable
-        val zoomInBtn = ImageView(context).apply {
-            setImageResource(R.drawable.dd_zoom_in)
-            imageTintList = ColorStateList.valueOf(Color.WHITE)
-            setPadding(10, 6, 10, 6)
-            layoutParams = LinearLayout.LayoutParams((32 * density).toInt(), (32 * density).toInt())
-            setOnClickListener {
-                currentZoom = minOf(2.0f, currentZoom + 0.15f)
-                browserWebView?.evaluateJavascript("document.documentElement.style.zoom='${String.format(Locale.US, "%.2f", currentZoom)}';", null)
-            }
-        }
-        bar.addView(zoomInBtn)
-
-        // Zoom Out button using dd_zoom_out drawable
-        val zoomOutBtn = ImageView(context).apply {
-            setImageResource(R.drawable.dd_zoom_out)
-            imageTintList = ColorStateList.valueOf(Color.WHITE)
-            setPadding(10, 6, 10, 6)
-            layoutParams = LinearLayout.LayoutParams((32 * density).toInt(), (32 * density).toInt())
-            setOnClickListener {
-                currentZoom = maxOf(0.5f, currentZoom - 0.15f)
-                browserWebView?.evaluateJavascript("document.documentElement.style.zoom='${String.format(Locale.US, "%.2f", currentZoom)}';", null)
-            }
-        }
-        bar.addView(zoomOutBtn)
 
         // Search / Keyboard button
         val searchBtn = TextView(context).apply {
@@ -566,10 +560,10 @@ class DashMatePresentation(
             val insetRight = screenWidth - visibleArea.right
             val insetBottom = screenHeight - visibleArea.bottom
 
-            val padLeft = if (insetLeft > 0) insetLeft else 0
-            val padTop = if (insetTop > 0) insetTop else 0
-            val padRight = if (insetRight > 0) insetRight else 0
-            val padBottom = if (insetBottom > 0) insetBottom else 0
+            val padLeft = if (!isFullscreen && insetLeft > 0) insetLeft else 0
+            val padTop = if (!isFullscreen && insetTop > 0) insetTop else 0
+            val padRight = if (!isFullscreen && insetRight > 0) insetRight else 0
+            val padBottom = if (!isFullscreen && insetBottom > 0) insetBottom else 0
 
             deckWebView?.setPadding(padLeft, padTop, padRight, padBottom)
             browserWebView?.setPadding(padLeft, padTop, padRight, padBottom)
