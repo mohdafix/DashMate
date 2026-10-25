@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../theme/app_colors.dart';
+import '../theme/app_tokens.dart';
 
 class WelcomeSoundScreen extends StatefulWidget {
   const WelcomeSoundScreen({super.key});
@@ -15,7 +15,7 @@ class _WelcomeSoundScreenState extends State<WelcomeSoundScreen> {
   int _selectedSoundMode = 1; // 0: Off, 1: Chime, 2: Custom
   bool _voiceGreeting = true;
   final TextEditingController _greetingController = TextEditingController();
-  String _selectedVoice = 'Phone default';
+  final String _selectedVoice = 'Phone default';
   double _speed = 1.0;
   double _pitch = 1.0;
   double _volume = 0.8;
@@ -107,18 +107,19 @@ class _WelcomeSoundScreenState extends State<WelcomeSoundScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final t = context.tokens;
     return Scaffold(
-      backgroundColor: const Color(0xFF0C101A),
+      backgroundColor: t.bg,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          icon: Icon(Icons.arrow_back, color: t.ink),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
+        title: Text(
           'Welcome sound',
-          style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold, color: Colors.white),
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: t.ink),
         ),
       ),
       body: ListView(
@@ -127,9 +128,10 @@ class _WelcomeSoundScreenState extends State<WelcomeSoundScreen> {
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: AppColors.border),
+              color: t.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: t.border),
+              boxShadow: t.cardShadow,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -137,17 +139,18 @@ class _WelcomeSoundScreenState extends State<WelcomeSoundScreen> {
                 // 1. Top 3-way Segmented Control
                 Container(
                   height: 48,
+                  clipBehavior: Clip.antiAlias,
                   decoration: BoxDecoration(
-                    color: Colors.transparent,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: Colors.white24),
+                    color: t.surface2,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: t.border),
                   ),
                   child: Row(
                     children: [
                       Expanded(child: _buildSoundModeTab(0, Icons.volume_off_outlined, 'Off')),
-                      Container(width: 1, color: Colors.white12),
+                      Container(width: 1, color: t.border),
                       Expanded(child: _buildSoundModeTab(1, Icons.notifications_active_outlined, 'Chime')),
-                      Container(width: 1, color: Colors.white12),
+                      Container(width: 1, color: t.border),
                       Expanded(child: _buildSoundModeTab(2, Icons.insert_drive_file_outlined, 'Custom')),
                     ],
                   ),
@@ -162,21 +165,19 @@ class _WelcomeSoundScreenState extends State<WelcomeSoundScreen> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'Voice greeting',
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: t.ink),
                         ),
                         const SizedBox(height: 4),
                         Text(
                           'Spoken after the sound',
-                          style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.6)),
+                          style: TextStyle(fontSize: 13, color: t.ink2),
                         ),
                       ],
                     ),
                     Switch(
                       value: _voiceGreeting,
-                      activeColor: AppColors.accentTeal,
-                      activeTrackColor: AppColors.accentTeal.withValues(alpha: 0.5),
                       onChanged: (val) {
                         setState(() => _voiceGreeting = val);
                         _savePrefs();
@@ -192,19 +193,24 @@ class _WelcomeSoundScreenState extends State<WelcomeSoundScreen> {
                   height: 100,
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0C101A),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Colors.white12),
+                    color: t.surface2,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: t.border),
                   ),
                   child: TextField(
                     controller: _greetingController,
                     maxLines: null,
                     maxLength: 240,
-                    style: const TextStyle(fontSize: 14, color: Colors.white),
+                    style: TextStyle(fontSize: 14, color: t.ink),
                     decoration: InputDecoration(
                       border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      filled: false,
+                      contentPadding: EdgeInsets.zero,
+                      isDense: true,
                       hintText: 'What to say (optional)',
-                      hintStyle: TextStyle(fontSize: 14, color: Colors.white.withValues(alpha: 0.4)),
+                      hintStyle: TextStyle(fontSize: 14, color: t.ink3),
                       counterText: '',
                     ),
                     onChanged: (_) {
@@ -223,14 +229,14 @@ class _WelcomeSoundScreenState extends State<WelcomeSoundScreen> {
                     Expanded(
                       child: Text(
                         'Leave empty for the automatic greetin...',
-                        style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.5)),
+                        style: TextStyle(fontSize: 11, color: t.ink3),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     Text(
                       '${_greetingController.text.length}/240',
-                      style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.5)),
+                      style: TextStyle(fontSize: 11, color: t.ink3),
                     ),
                   ],
                 ),
@@ -251,20 +257,27 @@ class _WelcomeSoundScreenState extends State<WelcomeSoundScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white24),
+                    border: Border.all(color: t.border),
                   ),
+                  // Not a picker: the greeting uses the phone's text-to-speech voice.
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Voice', style: TextStyle(fontSize: 10, color: Colors.white.withValues(alpha: 0.6))),
-                          const SizedBox(height: 2),
-                          Text(_selectedVoice, style: const TextStyle(fontSize: 14, color: Colors.white)),
-                        ],
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Voice', style: TextStyle(fontSize: 10, color: t.ink3)),
+                            const SizedBox(height: 2),
+                            Text(_selectedVoice, style: TextStyle(fontSize: 14, color: t.ink)),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Change it in Android Settings › Text-to-speech',
+                              style: TextStyle(fontSize: 11, color: t.ink2),
+                            ),
+                          ],
+                        ),
                       ),
-                      const Icon(Icons.arrow_drop_down, color: Colors.white70),
+                      Icon(Icons.record_voice_over_outlined, color: t.ink3, size: 20),
                     ],
                   ),
                 ),
@@ -274,16 +287,16 @@ class _WelcomeSoundScreenState extends State<WelcomeSoundScreen> {
                 // 6. Speed Slider
                 Row(
                   children: [
-                    const SizedBox(
+                    SizedBox(
                       width: 50,
-                      child: Text('Speed', style: TextStyle(fontSize: 13, color: Colors.white70)),
+                      child: Text('Speed', style: TextStyle(fontSize: 13, color: t.ink2)),
                     ),
                     Expanded(
                       child: SliderTheme(
                         data: SliderThemeData(
-                          activeTrackColor: AppColors.accentTeal,
-                          inactiveTrackColor: Colors.white12,
-                          thumbColor: AppColors.accentTeal,
+                          activeTrackColor: t.accent,
+                          inactiveTrackColor: t.border,
+                          thumbColor: t.accent,
                           trackHeight: 3,
                           thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 9),
                         ),
@@ -305,16 +318,16 @@ class _WelcomeSoundScreenState extends State<WelcomeSoundScreen> {
                 // 7. Pitch Slider
                 Row(
                   children: [
-                    const SizedBox(
+                    SizedBox(
                       width: 50,
-                      child: Text('Pitch', style: TextStyle(fontSize: 13, color: Colors.white70)),
+                      child: Text('Pitch', style: TextStyle(fontSize: 13, color: t.ink2)),
                     ),
                     Expanded(
                       child: SliderTheme(
                         data: SliderThemeData(
-                          activeTrackColor: AppColors.accentTeal,
-                          inactiveTrackColor: Colors.white12,
-                          thumbColor: AppColors.accentTeal,
+                          activeTrackColor: t.accent,
+                          inactiveTrackColor: t.border,
+                          thumbColor: t.accent,
                           trackHeight: 3,
                           thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 9),
                         ),
@@ -338,13 +351,13 @@ class _WelcomeSoundScreenState extends State<WelcomeSoundScreen> {
                 // 8. Volume & Test Row
                 Row(
                   children: [
-                    const Icon(Icons.volume_up, size: 20, color: Colors.white70),
+                    Icon(Icons.volume_up, size: 20, color: t.ink2),
                     Expanded(
                       child: SliderTheme(
                         data: SliderThemeData(
-                          activeTrackColor: AppColors.accentTeal,
-                          inactiveTrackColor: Colors.white12,
-                          thumbColor: AppColors.accentTeal,
+                          activeTrackColor: t.accent,
+                          inactiveTrackColor: t.border,
+                          thumbColor: t.accent,
                           trackHeight: 3,
                           thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 9),
                         ),
@@ -361,11 +374,12 @@ class _WelcomeSoundScreenState extends State<WelcomeSoundScreen> {
                     ),
                     ElevatedButton.icon(
                       onPressed: _testSpeech,
-                      icon: const Icon(Icons.play_arrow, size: 16, color: Colors.black),
-                      label: const Text('Test', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black)),
+                      icon: Icon(Icons.play_arrow, size: 16, color: t.onAccent),
+                      label: Text('Test', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: t.onAccent)),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.accentTeal,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                        backgroundColor: t.accent,
+                        minimumSize: const Size(0, 40),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                       ),
                     ),
@@ -377,7 +391,7 @@ class _WelcomeSoundScreenState extends State<WelcomeSoundScreen> {
                 // 9. Bottom Attribution Note
                 Text(
                   'Plays through the car speakers when Android Auto connects. Your music pauses, then resumes after.',
-                  style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.5), height: 1.4),
+                  style: TextStyle(fontSize: 12, color: t.ink3, height: 1.4),
                 ),
               ],
             ),
@@ -390,6 +404,7 @@ class _WelcomeSoundScreenState extends State<WelcomeSoundScreen> {
 
   Widget _buildSoundModeTab(int index, IconData icon, String label) {
     final isSel = _selectedSoundMode == index;
+    final t = context.tokens;
     return GestureDetector(
       onTap: () {
         setState(() => _selectedSoundMode = index);
@@ -397,20 +412,21 @@ class _WelcomeSoundScreenState extends State<WelcomeSoundScreen> {
       },
       child: Container(
         decoration: BoxDecoration(
-          color: isSel ? const Color(0xFF1E3830) : Colors.transparent,
-          borderRadius: BorderRadius.circular(24),
+          color: isSel ? t.surface : Colors.transparent,
+          border: isSel ? Border.all(color: t.accent) : null,
+          borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 16, color: isSel ? AppColors.accentTeal : Colors.white70),
+            Icon(icon, size: 16, color: isSel ? t.accent : t.ink2),
             const SizedBox(width: 6),
             Text(
               label,
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
-                color: isSel ? AppColors.accentTeal : Colors.white70,
+                color: isSel ? t.accent : t.ink2,
               ),
             ),
           ],
@@ -420,18 +436,19 @@ class _WelcomeSoundScreenState extends State<WelcomeSoundScreen> {
   }
 
   Widget _buildTagPill(String tag) {
+    final t = context.tokens;
     return GestureDetector(
       onTap: () => _addTag(tag),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: Colors.transparent,
+          color: t.surface2,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.white24),
+          border: Border.all(color: t.border),
         ),
         child: Text(
           tag,
-          style: const TextStyle(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w500),
+          style: TextStyle(fontSize: 13, color: t.ink, fontWeight: FontWeight.w500),
         ),
       ),
     );

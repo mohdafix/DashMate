@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../theme/app_colors.dart';
+import '../theme/app_tokens.dart';
 
 class BackgroundScreen extends StatefulWidget {
   const BackgroundScreen({super.key});
@@ -62,23 +62,36 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
     _channel.invokeMethod('setBgMode', {'mode': mode, 'url': url});
   }
 
+  AppTokens get t => context.tokens;
+
+  // The car preview mimics the car page: over a photo/cover it keeps a dark
+  // scrim with light text (the deepest/lightest tokens of either theme); on the
+  // plain background it uses the normal surface/ink tokens.
+  Color get _scrim => t.isDark ? t.bg : t.ink;
+  Color get _onPhoto => t.isDark ? t.ink : t.surface;
+  bool get _onImage => _bgMode == 'photo' || _bgMode == 'cover';
+  Color get _hudFill => _onImage ? _scrim.withValues(alpha: 0.4) : t.surface;
+  Color get _hudEdge => _onImage ? _onPhoto.withValues(alpha: 0.12) : t.border;
+  Color get _hudInk => _onImage ? _onPhoto : t.ink;
+  Color get _hudInk2 => _onImage ? _onPhoto.withValues(alpha: 0.75) : t.ink2;
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0C101A),
+      backgroundColor: t.bg,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          icon: Icon(Icons.arrow_back, color: t.ink),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
+        title: Text(
           'Car home background',
           style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.bold,
-            color: Colors.white,
+            color: t.ink,
           ),
         ),
       ),
@@ -86,11 +99,11 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         children: [
           // Subtitle
-          const Text(
+          Text(
             'What shows behind your widgets on the car screen. Choose live music album cover, clean plain dark, or landscape photography.',
             style: TextStyle(
               fontSize: 13.5,
-              color: AppColors.textSub,
+              color: t.ink2,
               height: 1.4,
             ),
           ),
@@ -101,20 +114,20 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
             height: 140,
             width: double.infinity,
             decoration: BoxDecoration(
-              color: const Color(0xFF070B14),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppColors.accentTeal.withValues(alpha: 0.3), width: 1.5),
+              color: t.bg,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: t.border),
               image: _bgMode == 'photo' && _selectedPhotoUrl.isNotEmpty
                   ? DecorationImage(
                       image: NetworkImage(_selectedPhotoUrl),
                       fit: BoxFit.cover,
-                      colorFilter: ColorFilter.mode(Colors.black.withValues(alpha: 0.55), BlendMode.darken),
+                      colorFilter: ColorFilter.mode(_scrim.withValues(alpha: 0.55), BlendMode.srcOver),
                     )
                   : (_bgMode == 'cover'
                       ? DecorationImage(
                           image: const NetworkImage('https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?auto=format&fit=crop&w=600&q=80'),
                           fit: BoxFit.cover,
-                          colorFilter: ColorFilter.mode(Colors.black.withValues(alpha: 0.65), BlendMode.darken),
+                          colorFilter: ColorFilter.mode(_scrim.withValues(alpha: 0.65), BlendMode.srcOver),
                         )
                       : null),
             ),
@@ -128,16 +141,16 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.4),
+                          color: _hudFill,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.white12),
+                          border: Border.all(color: _hudEdge),
                         ),
-                        child: const Column(
+                        child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text('10:42 PM', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                            Text('Friday · 28°C', style: TextStyle(color: Colors.white70, fontSize: 10)),
+                            Text('10:42 PM', style: TextStyle(color: _hudInk, fontSize: 16, fontWeight: FontWeight.bold)),
+                            Text('Friday · 28°C', style: TextStyle(color: _hudInk2, fontSize: 10)),
                           ],
                         ),
                       ),
@@ -145,16 +158,16 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.4),
+                          color: _hudFill,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.white12),
+                          border: Border.all(color: _hudEdge),
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.music_note, color: AppColors.accentTeal, size: 14),
-                            SizedBox(width: 6),
-                            Text('Midnight City', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                            Icon(Icons.music_note, color: _onImage ? _onPhoto : t.accent, size: 14),
+                            const SizedBox(width: 6),
+                            Text('Midnight City', style: TextStyle(color: _hudInk, fontSize: 11, fontWeight: FontWeight.bold)),
                           ],
                         ),
                       ),
@@ -167,12 +180,13 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: Colors.black54,
+                      color: t.surface,
                       borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: t.border),
                     ),
                     child: Text(
                       'Mode: ${_bgMode.toUpperCase()}',
-                      style: const TextStyle(color: AppColors.accentTeal, fontSize: 10, fontWeight: FontWeight.bold),
+                      style: TextStyle(color: t.accent, fontSize: 10, fontWeight: FontWeight.bold),
                     ),
                   ),
                 ),
@@ -208,9 +222,9 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
 
           if (_bgMode == 'photo') ...[
             const SizedBox(height: 20),
-            const Text(
+            Text(
               'Select Driving Wallpaper',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: t.ink),
             ),
             const SizedBox(height: 12),
             GridView.builder(
@@ -237,19 +251,19 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
                         Image.network(
                           photo['url']!,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(color: const Color(0xFF161F30)),
+                          errorBuilder: (_, __, ___) => Container(color: t.surface2),
                         ),
                         Container(
                           color: isSelected
-                              ? AppColors.accentTeal.withValues(alpha: 0.3)
-                              : Colors.black38,
+                              ? t.accent.withValues(alpha: 0.3)
+                              : _scrim.withValues(alpha: 0.38),
                         ),
                         if (isSelected)
-                          const Center(
+                          Center(
                             child: CircleAvatar(
                               radius: 14,
-                              backgroundColor: AppColors.accentTeal,
-                              child: Icon(Icons.check, size: 16, color: Colors.black),
+                              backgroundColor: t.accent,
+                              child: Icon(Icons.check, size: 16, color: t.onAccent),
                             ),
                           ),
                         Positioned(
@@ -258,7 +272,7 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
                           right: 8,
                           child: Text(
                             photo['name']!,
-                            style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                            style: TextStyle(color: _onPhoto, fontSize: 11, fontWeight: FontWeight.bold),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -290,10 +304,11 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(20),
+          color: t.surface,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: t.cardShadow,
           border: Border.all(
-            color: isSelected ? AppColors.accentTeal : AppColors.border,
+            color: isSelected ? t.accent : t.border,
             width: isSelected ? 1.5 : 1,
           ),
         ),
@@ -304,13 +319,13 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
               height: 44,
               decoration: BoxDecoration(
                 color: isSelected
-                    ? AppColors.accentTeal.withValues(alpha: 0.15)
-                    : Colors.white10,
+                    ? t.accent.withValues(alpha: 0.12)
+                    : t.surface2,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(
                 icon,
-                color: isSelected ? AppColors.accentTeal : Colors.white70,
+                color: isSelected ? t.accent : t.ink2,
                 size: 22,
               ),
             ),
@@ -321,12 +336,12 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: t.ink),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     description,
-                    style: const TextStyle(fontSize: 12.5, color: AppColors.textSub, height: 1.3),
+                    style: TextStyle(fontSize: 12.5, color: t.ink2, height: 1.3),
                   ),
                 ],
               ),
@@ -338,13 +353,13 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: isSelected ? AppColors.accentTeal : Colors.white38,
+                  color: isSelected ? t.accent : t.ink3,
                   width: 2,
                 ),
-                color: isSelected ? AppColors.accentTeal : Colors.transparent,
+                color: isSelected ? t.accent : Colors.transparent,
               ),
               child: isSelected
-                  ? const Center(child: Icon(Icons.check, size: 14, color: Colors.black))
+                  ? Center(child: Icon(Icons.check, size: 14, color: t.onAccent))
                   : null,
             ),
           ],

@@ -4,29 +4,42 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>DashMate Deck</title>
+  <script>(function(){var q=/[?&]theme=(dark|light)/.exec(location.search),m=q&&q[1];
+try{if(!m&&window.AutoDeck&&AutoDeck.theme)m=AutoDeck.theme();}catch(e){}
+if(!m)m=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.dataset.theme=m;
+window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'dark':'light');};})();</script>
   <style>
     :root {
-      --bg: #070B14;
-      --card-bg: rgba(18, 26, 44, 0.72);
-      --card-border: rgba(255, 255, 255, 0.12);
-      --accent: #00F0FF;
-      --accent-glow: rgba(0, 240, 255, 0.35);
-      --text-main: #FFFFFF;
-      --text-sub: rgba(255, 255, 255, 0.65);
-      --danger: #FF3366;
-      --card-radius: 18px;
+      --bg: #F8FAFC; --surface: #FFFFFF; --surface-2: #F1F5F9; --border: #E2E8F0;
+      --ink: #0F172A; --ink-2: #475569; --ink-3: #64748B;
+      --accent: #0F766E; --on-accent: #FFFFFF; --danger: #DC2626; --ok: #15803D;
+      --shadow: 0 1px 2px rgba(15,23,42,.06), 0 4px 12px rgba(15,23,42,.06);
+      /* Old names, kept as aliases so inline styles keep working. */
+      --card-bg: var(--surface);
+      --card-border: var(--border);
+      --text-main: var(--ink);
+      --text-sub: var(--ink-2);
+      --card-radius: 16px;
+    }
+    :root[data-theme="dark"] {
+      --bg: #0F1115; --surface: #181B21; --surface-2: #20242B; --border: #2A2F37;
+      --ink: #F1F5F9; --ink-2: #A3ACB9; --ink-3: #7C8594;
+      --accent: #2DD4BF; --on-accent: #042F2E; --danger: #F87171; --ok: #4ADE80;
+      --shadow: none;
     }
 
+    /* Accent variants picked by the app (body data-theme); day and night shades. */
     [data-theme="cyber_red"] {
-      --accent: #FF3366;
-      --accent-glow: rgba(255, 51, 102, 0.4);
+      --accent: #BE123C;
+      --on-accent: #FFFFFF;
     }
-
     [data-theme="carbon_dark"] {
-      --card-bg: rgba(25, 25, 28, 0.85);
-      --accent: #FFB800;
-      --accent-glow: rgba(255, 184, 0, 0.35);
+      --accent: #B45309;
+      --on-accent: #FFFFFF;
     }
+    :root[data-theme="dark"] [data-theme="cyber_red"] { --accent: #FB7185; --on-accent: #1F0A0A; }
+    :root[data-theme="dark"] [data-theme="carbon_dark"] { --accent: #FBBF24; --on-accent: #1F1300; }
 
     * {
       box-sizing: border-box;
@@ -36,12 +49,15 @@
       -webkit-user-select: none;
     }
 
+    html { background: var(--bg); }
+
     body {
       width: 100vw;
       height: 100vh;
-      background: radial-gradient(circle at 20% 20%, #101c38 0%, var(--bg) 60%);
-      color: var(--text-main);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Google Sans", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Google Sans", Roboto, system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
       overflow: hidden;
       display: flex;
       flex-direction: column;
@@ -74,18 +90,18 @@
     }
 
     .badge {
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid var(--card-border);
+      background: var(--surface-2);
+      border: 1px solid var(--border);
       padding: 4px 12px;
-      border-radius: 20px;
+      border-radius: 999px;
       font-size: 0.8rem;
-      font-weight: 500;
-      color: var(--text-sub);
+      font-weight: 600;
+      color: var(--ink-2);
     }
     .badge.active {
       color: var(--accent);
       border-color: var(--accent);
-      box-shadow: 0 0 8px var(--accent-glow);
+      background: color-mix(in srgb, var(--accent) 8%, var(--surface));
     }
 
     /* Main Dashboard Grid */
@@ -99,19 +115,17 @@
     }
 
     .card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: var(--card-radius);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
       padding: 16px;
       display: flex;
       flex-direction: column;
       justify-content: space-between;
       position: relative;
       overflow: hidden;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-      transition: transform 0.15s ease, border-color 0.15s ease;
+      box-shadow: var(--shadow);
+      transition: transform 0.15s ease;
     }
 
     .card:active {
@@ -142,8 +156,7 @@
       font-size: 4.8rem;
       font-weight: 900;
       line-height: 1;
-      color: #FFF;
-      text-shadow: 0 0 25px var(--accent-glow);
+      color: var(--ink);
       font-variant-numeric: tabular-nums;
     }
 
@@ -159,18 +172,20 @@
     .speed-bar-bg {
       width: 80%;
       height: 6px;
-      background: rgba(255, 255, 255, 0.1);
+      background: var(--surface-2);
       border-radius: 4px;
       margin-top: 18px;
       overflow: hidden;
     }
 
+    /* Filled with transform (compositor only); the update sets scaleX. */
     .speed-bar-fill {
       height: 100%;
-      width: 0%;
+      width: 100%;
       background: var(--accent);
-      box-shadow: 0 0 10px var(--accent);
-      transition: width 0.3s ease;
+      transform: scaleX(0);
+      transform-origin: left center;
+      transition: transform 0.25s ease;
     }
 
     /* Clock Card */
@@ -178,13 +193,14 @@
       font-size: 2.8rem;
       font-weight: 800;
       letter-spacing: 1px;
-      color: #FFF;
+      color: var(--ink);
       line-height: 1;
+      font-variant-numeric: tabular-nums;
     }
     .clock-date {
       font-size: 0.95rem;
       font-weight: 500;
-      color: var(--text-sub);
+      color: var(--ink-2);
       margin-top: 6px;
     }
 
@@ -197,11 +213,11 @@
     .weather-temp {
       font-size: 2.4rem;
       font-weight: 800;
-      color: #FFF;
+      color: var(--ink);
     }
     .weather-desc {
       font-size: 0.9rem;
-      color: var(--text-sub);
+      color: var(--ink-2);
       margin-top: 2px;
     }
     .weather-icon {
@@ -218,13 +234,12 @@
       width: 60px;
       height: 60px;
       border-radius: 12px;
-      background: linear-gradient(135deg, #2c3e50, #000);
+      background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 22%, var(--surface-2)), var(--surface-2));
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 1.6rem;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-      border: 1px solid rgba(255,255,255,0.1);
+      border: 1px solid var(--border);
       flex-shrink: 0;
     }
     .media-meta {
@@ -234,13 +249,14 @@
     .media-title {
       font-size: 1.05rem;
       font-weight: 700;
+      color: var(--ink);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
     .media-artist {
       font-size: 0.85rem;
-      color: var(--text-sub);
+      color: var(--ink-2);
       margin-top: 2px;
       white-space: nowrap;
       overflow: hidden;
@@ -252,9 +268,9 @@
       margin-top: 8px;
     }
     .btn-ctrl {
-      background: rgba(255, 255, 255, 0.1);
-      border: none;
-      color: #FFF;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--ink);
       border-radius: 50%;
       width: 38px;
       height: 38px;
@@ -263,11 +279,17 @@
       justify-content: center;
       font-size: 1rem;
       cursor: pointer;
-      transition: background 0.15s;
+      transition: transform 0.15s ease;
+    }
+    #playBtn {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: var(--on-accent);
     }
     .btn-ctrl:active {
+      transform: scale(0.92);
       background: var(--accent);
-      color: #000;
+      color: var(--on-accent);
     }
 
     /* YouTube Card */
@@ -288,9 +310,9 @@
     }
     .yt-preview {
       flex: 1;
-      border-radius: 8px;
-      background: rgba(0, 0, 0, 0.4);
-      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -310,7 +332,7 @@
       align-items: center;
       gap: 4px;
       font-size: 0.8rem;
-      color: var(--text-sub);
+      color: var(--ink-2);
     }
 
     /* Shortcuts Card */
@@ -321,10 +343,10 @@
       height: 100%;
     }
     .btn-sc {
-      background: rgba(255, 255, 255, 0.07);
-      border: 1px solid var(--card-border);
-      border-radius: 10px;
-      color: #FFF;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      color: var(--ink);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -332,11 +354,12 @@
       font-size: 0.85rem;
       font-weight: 600;
       cursor: pointer;
-      transition: all 0.15s;
+      transition: transform 0.15s ease;
     }
     .btn-sc:active {
+      transform: scale(0.96);
       background: var(--accent);
-      color: #000;
+      color: var(--on-accent);
     }
   </style>
 </head>
@@ -439,14 +462,18 @@
 
   <script>
     // Live Clock
+    // Writes to the DOM only when the shown text changes (once a minute, not every second).
+    let shownTime = '', shownDate = '';
     function updateClock() {
       const now = new Date();
       const hours = String(now.getHours()).padStart(2, '0');
       const minutes = String(now.getMinutes()).padStart(2, '0');
-      document.getElementById('clockTime').textContent = `${hours}:${minutes}`;
+      const time = `${hours}:${minutes}`;
+      if (time !== shownTime) { shownTime = time; document.getElementById('clockTime').textContent = time; }
 
       const options = { weekday: 'short', month: 'short', day: 'numeric' };
-      document.getElementById('clockDate').textContent = now.toLocaleDateString('en-US', options);
+      const date = now.toLocaleDateString('en-US', options);
+      if (date !== shownDate) { shownDate = date; document.getElementById('clockDate').textContent = date; }
     }
     setInterval(updateClock, 1000);
     updateClock();
@@ -484,7 +511,7 @@
       if (state.speed !== undefined) {
         document.getElementById('speedText').textContent = Math.round(state.speed);
         const percent = Math.min(100, (state.speed / 180) * 100);
-        document.getElementById('speedBar').style.width = percent + '%';
+        document.getElementById('speedBar').style.transform = 'scaleX(' + (percent / 100).toFixed(3) + ')';
       }
       if (state.speedUnit) {
         document.getElementById('speedUnitText').textContent = state.speedUnit;

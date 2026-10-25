@@ -1,5 +1,6 @@
 package com.dashmate.dashmate.deck
 
+import android.Manifest
 import android.content.ContentUris
 import android.content.Context
 import android.content.pm.PackageManager
@@ -12,79 +13,72 @@ import org.json.JSONObject
 object CalendarManager {
     private const val TAG = "CalendarManager"
 
+    /**
+     * Returns `{ "access": Boolean, "events": [ {title, begin, end, where, allDay, color} ] }`
+     * for calendar instances in the next 7 days (max 40).
+     */
+    // RECONSTRUCTED: jadx failed on this method; rebuilt from --show-bad-code output
+    // (inverted conditions in the bad output were corrected).
     fun getUpcomingEvents(context: Context): JSONObject {
-        val result = JSONObject()
+        val root = JSONObject()
         val hasPermission = ContextCompat.checkSelfPermission(
-            context,
-            android.Manifest.permission.READ_CALENDAR
+            context, Manifest.permission.READ_CALENDAR
         ) == PackageManager.PERMISSION_GRANTED
-
-        result.put("access", hasPermission)
-
+        root.put("access", hasPermission)
         val eventsArray = JSONArray()
+
         if (!hasPermission) {
-            result.put("events", eventsArray)
-            return result
+            root.put("events", eventsArray)
+            return root
         }
 
         try {
             val now = System.currentTimeMillis()
-            val endRange = now + (7 * 24 * 60 * 60 * 1000L) // 7 days ahead
-
+            val endRange = now + 7L * 24 * 60 * 60 * 1000 // 604800000
             val builder = CalendarContract.Instances.CONTENT_URI.buildUpon()
             ContentUris.appendId(builder, now)
             ContentUris.appendId(builder, endRange)
 
             val projection = arrayOf(
-                CalendarContract.Instances.TITLE,
-                CalendarContract.Instances.BEGIN,
-                CalendarContract.Instances.END,
-                CalendarContract.Instances.EVENT_LOCATION,
-                CalendarContract.Instances.ALL_DAY,
-                CalendarContract.Instances.DISPLAY_COLOR
+                "title", "begin", "end", "eventLocation", "allDay", "displayColor"
             )
-
             val cursor = context.contentResolver.query(
-                builder.build(),
-                projection,
-                null,
-                null,
-                "${CalendarContract.Instances.BEGIN} ASC"
+                builder.build(), projection, null, null, "begin ASC"
             )
+            cursor?.use { c ->
+                val titleIdx = c.getColumnIndex("title")
+                val beginIdx = c.getColumnIndex("begin")
+                val endIdx = c.getColumnIndex("end")
+                val locIdx = c.getColumnIndex("eventLocation")
+                val allDayIdx = c.getColumnIndex("allDay")
+                val colorIdx = c.getColumnIndex("displayColor")
 
-            cursor?.use {
-                val titleIdx = it.getColumnIndex(CalendarContract.Instances.TITLE)
-                val beginIdx = it.getColumnIndex(CalendarContract.Instances.BEGIN)
-                val endIdx = it.getColumnIndex(CalendarContract.Instances.END)
-                val locIdx = it.getColumnIndex(CalendarContract.Instances.EVENT_LOCATION)
-                val allDayIdx = it.getColumnIndex(CalendarContract.Instances.ALL_DAY)
-                val colorIdx = it.getColumnIndex(CalendarContract.Instances.DISPLAY_COLOR)
+                while (c.moveToNext()) {
+                    if (eventsArray.length() >= 40) break
 
-                while (it.moveToNext() && eventsArray.length() < 40) {
-                    val title = if (titleIdx >= 0) it.getString(titleIdx) else "Event"
-                    val begin = if (beginIdx >= 0) it.getLong(beginIdx) else now
-                    val end = if (endIdx >= 0) it.getLong(endIdx) else (begin + 3600000L)
-                    val loc = if (locIdx >= 0) it.getString(locIdx) ?: "" else ""
-                    val allDay = if (allDayIdx >= 0) it.getInt(allDayIdx) == 1 else false
-                    val colorInt = if (colorIdx >= 0) it.getInt(colorIdx) else 0x5EF2D6
-                    val hexColor = String.format("#%06X", 0xFFFFFF and colorInt)
+                    val title: String? = if (titleIdx >= 0) c.getString(titleIdx) else "Event"
+                    val begin = if (beginIdx >= 0) c.getLong(beginIdx) else now
+                    val end = if (endIdx >= 0) c.getLong(endIdx) else begin + 3600000L
+                    val where = if (locIdx >= 0) c.getString(locIdx) ?: "" else ""
+                    val allDay = allDayIdx >= 0 && c.getInt(allDayIdx) == 1
+                    val colorInt = if (colorIdx >= 0) c.getInt(colorIdx) else 0x5EF3D6
+                    val color = String.format("#%06X", colorInt and 0xFFFFFF)
 
-                    val evObj = JSONObject().apply {
-                        put("title", title ?: "Event")
-                        put("begin", begin)
-                        put("end", end)
-                        put("where", loc)
-                        put("allDay", allDay)
-                        put("color", hexColor)
-                    }
-                    eventsArray.put(evObj)
+                    val ev = JSONObject()
+                    ev.put("title", title ?: "Event")
+                    ev.put("begin", begin)
+                    ev.put("end", end)
+                    ev.put("where", where)
+                    ev.put("allDay", allDay)
+                    ev.put("color", color)
+                    eventsArray.put(ev)
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Error querying calendar events: ${e.message}")
+            Log.w(TAG, "Error querying calendar events: " + e.message)
         }
 
-        result.put("events", eventsArray)
-        return result
+        root.put("events", eventsArray)
+        return root
     }
 }

@@ -15,7 +15,7 @@ object ParkingManager {
         val bay: String,
         val level: String,
         val notes: String,
-        val timestamp: Long
+        val timestamp: Long,
     )
 
     fun saveSpot(
@@ -24,28 +24,18 @@ object ParkingManager {
         lng: Double,
         bay: String,
         level: String,
-        notes: String
+        notes: String,
     ): ParkingSpot {
-        val spot = ParkingSpot(
-            lat = lat,
-            lng = lng,
-            bay = bay,
-            level = level,
-            notes = notes,
-            timestamp = System.currentTimeMillis()
-        )
-        val json = JSONObject().apply {
-            put("lat", spot.lat)
-            put("lng", spot.lng)
-            put("bay", spot.bay)
-            put("level", spot.level)
-            put("notes", spot.notes)
-            put("timestamp", spot.timestamp)
-        }
+        val spot = ParkingSpot(lat, lng, bay, level, notes, System.currentTimeMillis())
+        val json = JSONObject()
+        json.put("lat", spot.lat)
+        json.put("lng", spot.lng)
+        json.put("bay", spot.bay)
+        json.put("level", spot.level)
+        json.put("notes", spot.notes)
+        json.put("timestamp", spot.timestamp)
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putString(KEY_SPOT, json.toString())
-            .apply()
+            .edit().putString(KEY_SPOT, json.toString()).apply()
         return spot
     }
 
@@ -60,32 +50,35 @@ object ParkingManager {
                 bay = json.optString("bay", ""),
                 level = json.optString("level", ""),
                 notes = json.optString("notes", ""),
-                timestamp = json.optLong("timestamp", 0L)
+                timestamp = json.optLong("timestamp", 0L),
             )
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             null
         }
     }
 
     fun clearSpot(context: Context) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .remove(KEY_SPOT)
-            .apply()
+            .edit().remove(KEY_SPOT).apply()
     }
 
     fun navigateBack(context: Context) {
         val spot = getSpot(context) ?: return
+        if (com.dashmate.dashmate.CarNav.carSessionActive) {
+            com.dashmate.dashmate.CarNav.toCoords(context, spot.lat, spot.lng, "My car")
+            return
+        }
         try {
             val gmmIntentUri = Uri.parse("google.navigation:q=${spot.lat},${spot.lng}")
-            val mapIntent = Intent(Intent.ACTION_VIEW, gmmIntentUri).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
+            val mapIntent = Intent(Intent.ACTION_VIEW, gmmIntentUri)
+            mapIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
             context.startActivity(mapIntent)
         } catch (e: Exception) {
-            val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://maps.google.com/?q=${spot.lat},${spot.lng}")).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
+            val webIntent = Intent(
+                Intent.ACTION_VIEW,
+                Uri.parse("https://maps.google.com/?q=${spot.lat},${spot.lng}")
+            )
+            webIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
             context.startActivity(webIntent)
         }
     }

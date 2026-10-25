@@ -8,26 +8,28 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import java.io.File
-import java.io.FileOutputStream
 import java.io.FileNotFoundException
+import java.io.FileOutputStream
 import java.util.regex.Pattern
 
+/**
+ * Read-only provider that serves album / card art from cacheDir/car_art to
+ * Android Auto (which can't read file:// URIs from our process).
+ */
 class CarArtProvider : ContentProvider() {
-
-    private val filenamePattern = Pattern.compile("^[A-Za-z0-9_.-]+\\.(jpg|png)$")
 
     companion object {
         const val AUTHORITY = "com.dashmate.dashmate.carart"
         val CONTENT_URI: Uri = Uri.parse("content://$AUTHORITY")
 
-        fun getArtUri(filename: String): Uri {
-            return Uri.parse("content://$AUTHORITY/$filename")
-        }
+        fun getArtUri(filename: String): Uri = Uri.parse("content://$AUTHORITY/$filename")
 
         fun saveArt(context: Context, filename: String, bitmap: Bitmap): Uri? {
             return try {
                 val dir = File(context.cacheDir, "car_art")
-                if (!dir.exists()) dir.mkdirs()
+                if (!dir.exists()) {
+                    dir.mkdirs()
+                }
                 val file = File(dir, filename)
                 FileOutputStream(file).use { out ->
                     val format = if (filename.endsWith(".png", ignoreCase = true)) {
@@ -47,11 +49,11 @@ class CarArtProvider : ContentProvider() {
         fun saveArtBytes(context: Context, filename: String, bytes: ByteArray): Uri? {
             return try {
                 val dir = File(context.cacheDir, "car_art")
-                if (!dir.exists()) dir.mkdirs()
-                val file = File(dir, filename)
-                FileOutputStream(file).use { out ->
-                    out.write(bytes)
+                if (!dir.exists()) {
+                    dir.mkdirs()
                 }
+                val file = File(dir, filename)
+                FileOutputStream(file).use { it.write(bytes) }
                 getArtUri(filename)
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -60,10 +62,14 @@ class CarArtProvider : ContentProvider() {
         }
     }
 
+    private val filenamePattern: Pattern = Pattern.compile("^[A-Za-z0-9_.-]+\\.(jpg|png)$")
+
     override fun onCreate(): Boolean {
-        context?.let { ctx ->
-            val dir = File(ctx.cacheDir, "car_art")
-            if (!dir.exists()) dir.mkdirs()
+        context?.let {
+            val dir = File(it.cacheDir, "car_art")
+            if (!dir.exists()) {
+                dir.mkdirs()
+            }
         }
         return true
     }
@@ -73,16 +79,12 @@ class CarArtProvider : ContentProvider() {
         projection: Array<out String>?,
         selection: String?,
         selectionArgs: Array<out String>?,
-        sortOrder: String?
+        sortOrder: String?,
     ): Cursor? = null
 
     override fun getType(uri: Uri): String {
         val segment = uri.lastPathSegment ?: ""
-        return if (segment.endsWith(".png", ignoreCase = true)) {
-            "image/png"
-        } else {
-            "image/jpeg"
-        }
+        return if (segment.endsWith(".png", ignoreCase = true)) "image/png" else "image/jpeg"
     }
 
     override fun insert(uri: Uri, values: ContentValues?): Uri? = null
@@ -93,10 +95,10 @@ class CarArtProvider : ContentProvider() {
         uri: Uri,
         values: ContentValues?,
         selection: String?,
-        selectionArgs: Array<out String>?
+        selectionArgs: Array<out String>?,
     ): Int = 0
 
-    override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor? {
+    override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor {
         if (mode != "r") {
             throw SecurityException("DashMate CarArtProvider only supports read mode")
         }

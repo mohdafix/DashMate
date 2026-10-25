@@ -2,11 +2,15 @@ package com.dashmate.dashmate
 
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.media.AudioManager
-import android.os.Build
 import android.provider.Settings
+import android.speech.tts.TextToSpeech
+import android.util.Log
 import android.view.KeyEvent
+import android.webkit.CookieManager
+import android.webkit.WebStorage
 import androidx.core.content.ContextCompat
 import com.dashmate.dashmate.deck.CalendarManager
 import com.dashmate.dashmate.deck.LocalizationManager
@@ -14,10 +18,10 @@ import com.dashmate.dashmate.deck.LyricsFetcher
 import com.dashmate.dashmate.deck.ParkingManager
 import com.dashmate.dashmate.deck.PrayerTimesManager
 import com.dashmate.dashmate.deck.WeatherManager
-import com.dashmate.dashmate.deck.FuelManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
+import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -25,10 +29,12 @@ import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
+import java.util.Locale
 
 class MainActivity : FlutterActivity() {
 
     private val CHANNEL_LEGACY = "com.dashmate.dashmate/channel"
+    private val REQ_LOCATION = 4107
     private val CH_CAR_BROWSER = "drivedeck/car_browser"
     private val CH_CAR_STATE = "drivedeck/car_state"
     private val CH_NOW_PLAYING = "drivedeck/now_playing"
@@ -37,252 +43,61 @@ class MainActivity : FlutterActivity() {
     private val CH_CALENDAR = "drivedeck/calendar"
     private val CH_PERMISSIONS = "drivedeck/permissions"
     private val CH_WELCOME = "drivedeck/welcome"
-
     private val PREFS_BROWSER = "dd_car_browser"
 
     private val scope = CoroutineScope(Dispatchers.Main)
+
     private var flutterChannel: MethodChannel? = null
     private var carStateEventSink: EventChannel.EventSink? = null
     private var nowPlayingEventSink: EventChannel.EventSink? = null
-    private var tts: android.speech.tts.TextToSpeech? = null
+    private var tts: TextToSpeech? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        com.dashmate.dashmate.deck.PrayerAlertManager.scheduleAsync(this)
         val messenger = flutterEngine.dartExecutor.binaryMessenger
 
-        // 1. Legacy DashMate Channel for existing widgets & screens
         val legacyChan = MethodChannel(messenger, CHANNEL_LEGACY)
         flutterChannel = legacyChan
 
         try {
-            tts = android.speech.tts.TextToSpeech(this) { status ->
-                if (status == android.speech.tts.TextToSpeech.SUCCESS) {
-                    tts?.language = java.util.Locale.getDefault()
+            tts = TextToSpeech(this) { status ->
+                if (status == TextToSpeech.SUCCESS) {
+                    tts?.setLanguage(Locale.getDefault())
                 }
-            }
-        } catch (_: Exception) {}
-
-        // Start DashMateMediaCardService for Android Auto Coolwalk side-by-side card
-        try {
-            val cardIntent = Intent(this, DashMateMediaCardService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(cardIntent)
-            } else {
-                startService(cardIntent)
             }
         } catch (e: Exception) {
-            android.util.Log.w("MainActivity", "Failed starting DashMateMediaCardService: ${e.message}")
         }
 
-        // Sync live fuel prices from data.gov.my
-        scope.launch {
-            try {
-                FuelManager.syncFuelPrices(this@MainActivity)
-            } catch (_: Exception) {}
-        }
-
-        // Schedule prayer times & azan alerts
         try {
-            com.dashmate.dashmate.deck.PrayerAlertManager.scheduleAsync(this)
-        } catch (_: Exception) {}
+            startForegroundService(Intent(this, DashMateMediaCardService::class.java))
+        } catch (e: Exception) {
+            Log.w("MainActivity", "Failed starting DashMateMediaCardService: ${e.message}")
+        }
 
-        // 2. Platform Channels
         val browserChan = MethodChannel(messenger, CH_CAR_BROWSER)
-        val carStateChan = MethodChannel(messenger, CH_CAR_STATE)
-        carStateChan.setMethodCallHandler { call, result ->
-            when (call.method) {
-                "updateFuel" -> {
-                    val fuelMap = call.argument<Map<String, Any>>("fuel")
-                    if (fuelMap != null) {
-                        FuelManager.cachedFuelObj = JSONObject(fuelMap)
-                        DashMateStateBridge.notifyStateChanged(this)
-                    }
-                    result.success(true)
-                }
-                "updateWeather" -> {
-                    result.success(true)
-                }
-                "updateForecast" -> {
-                    val fMap = call.argument<Map<String, Any>>("forecast")
-                    if (fMap != null) {
-                        val days = fMap["days"] as? List<Map<String, Any>>
-                        if (days != null) {
-                            DashMateStateBridge.customForecastArr = JSONArray(days.map { JSONObject(it) })
-                            DashMateStateBridge.notifyStateChanged(this)
-                        }
-                    }
-                    result.success(true)
-                }
-                "updateAir" -> {
-                    val aMap = call.argument<Map<String, Any>>("air")
-                    if (aMap != null) {
-                        DashMateStateBridge.customAirObj = JSONObject(aMap)
-                        DashMateStateBridge.notifyStateChanged(this)
-                    }
-                    result.success(true)
-                }
-                "updateRadar" -> {
-                    val rMap = call.argument<Map<String, Any>>("radar")
-                    if (rMap != null) {
-                        DashMateStateBridge.customRadarObj = JSONObject(rMap)
-                        DashMateStateBridge.notifyStateChanged(this)
-                    }
-                    result.success(true)
-                }
-                "updateEv" -> {
-                    val evMap = call.argument<Map<String, Any>>("ev")
-                    if (evMap != null) {
-                        val lat = (evMap["lat"] as? Number)?.toDouble() ?: 3.1390
-                        val lng = (evMap["lng"] as? Number)?.toDouble() ?: 101.6869
-                        val items = evMap["items"] as? List<Map<String, Any>> ?: emptyList()
-                        val evObj = JSONObject().apply {
-                            put("lat", lat)
-                            put("lng", lng)
-                            val arr = JSONArray()
-                            for (item in items) {
-                                val itObj = JSONObject().apply {
-                                    put("name", item["title"] ?: item["name"] ?: "EV Station")
-                                    val plugs = item["plugs"]
-                                    if (plugs is List<*>) {
-                                        put("plugs", plugs.joinToString(", "))
-                                    } else {
-                                        put("plugs", plugs?.toString() ?: "Type 2")
-                                    }
-                                    put("lat", (item["lat"] as? Number)?.toDouble() ?: lat)
-                                    put("lng", (item["lng"] as? Number)?.toDouble() ?: lng)
-                                    put("status", "up")
-                                }
-                                arr.put(itObj)
-                            }
-                            put("items", arr)
-                        }
-                        DashMateStateBridge.customEvObj = evObj
-                        DashMateStateBridge.notifyStateChanged(this)
-                    }
-                    result.success(true)
-                }
-                "updateScores" -> {
-                    val sMap = call.argument<Map<String, Any>>("scores")
-                    if (sMap != null) {
-                        val matches = sMap["matches"] as? List<Map<String, Any>>
-                        if (matches != null) {
-                            val arr = JSONArray()
-                            for (m in matches) {
-                                val obj = JSONObject().apply {
-                                    put("home", m["home"] ?: "")
-                                    put("away", m["away"] ?: "")
-                                    put("score", "${m["homeScore"] ?: 0} - ${m["awayScore"] ?: 0}")
-                                    put("time", m["status"] ?: "")
-                                    put("status", m["status"] ?: "")
-                                    put("state", if (m["status"] == "IN_PLAY") "in" else "post")
-                                }
-                                arr.put(obj)
-                            }
-                            DashMateStateBridge.customScoresArr = arr
-                            DashMateStateBridge.notifyStateChanged(this)
-                        }
-                    }
-                    result.success(true)
-                }
-                "updateLayout" -> {
-                    val layout = call.argument<String>("layout") ?: ""
-                    if (layout.isNotBlank()) {
-                        getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE).edit().putString("dashmate_layout", layout).putString("car_layouts_current", layout).apply()
-                        getSharedPreferences("DashMatePrefs", Context.MODE_PRIVATE).edit().putString("dashmate_layout", layout).putString("car_layouts_current", layout).apply()
-                        DashMateStateBridge.cachedLayoutJson = layout
-                        DashMateStateBridge.applyLayoutLive(layout)
-                        DashMateStateBridge.notifyStateChanged(this)
-                    }
-                    result.success(true)
-                }
-                "setCustomPageMode" -> {
-                    val mode = call.argument<String>("mode") ?: "weather"
-                    DashMateStateBridge.customPageMode = mode
-                    getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE).edit().putString("customPage", mode).apply()
-                    getSharedPreferences("DashMatePrefs", Context.MODE_PRIVATE).edit().putString("customPage", mode).apply()
-                    DashMateStateBridge.notifyStateChanged(this)
-                    result.success(true)
-                }
-                else -> result.notImplemented()
-            }
-        }
-        val nowPlayingChan = MethodChannel(messenger, CH_NOW_PLAYING)
-        nowPlayingChan.setMethodCallHandler { call, result ->
-            when (call.method) {
-                "getState" -> {
-                    result.success(mapOf(
-                        "title" to DashMateStateBridge.songTitle,
-                        "artist" to DashMateStateBridge.songArtist,
-                        "album" to DashMateStateBridge.songArtist,
-                        "coverUrl" to DashMateStateBridge.songCoverUrl,
-                        "playing" to DashMateStateBridge.isPlaying,
-                        "durationMs" to DashMateStateBridge.playbackDurationMs,
-                        "positionMs" to DashMateStateBridge.playbackPositionMs,
-                        "speed" to 1.0,
-                        "app" to DashMateStateBridge.songApp,
-                        "currentLyric" to DashMateStateBridge.getCurrentLyricLine()
-                    ))
-                }
-                "play" -> {
-                    val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY))
-                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY))
-                    DashMateStateBridge.isPlaying = true
-                    DashMateStateBridge.notifyStateChanged(this)
-                    result.success(true)
-                }
-                "pause" -> {
-                    val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PAUSE))
-                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PAUSE))
-                    DashMateStateBridge.isPlaying = false
-                    DashMateStateBridge.notifyStateChanged(this)
-                    result.success(true)
-                }
-                "skipNext" -> {
-                    val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_NEXT))
-                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_NEXT))
-                    result.success(true)
-                }
-                "skipPrevious" -> {
-                    val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PREVIOUS))
-                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PREVIOUS))
-                    result.success(true)
-                }
-                "isNotificationAccessGranted" -> {
-                    val enabled = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")?.contains(packageName) == true
-                    result.success(enabled)
-                }
-                "openNotificationAccessSettings" -> {
-                    val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    startActivity(intent)
-                    result.success(true)
-                }
-                else -> result.notImplemented()
-            }
-        }
+        MethodChannel(messenger, CH_CAR_STATE)
         val mediaControlChan = MethodChannel(messenger, CH_MEDIA_CONTROL)
-        val mediaStoreChan = MethodChannel(messenger, CH_MEDIA_STORE)
+        MethodChannel(messenger, CH_MEDIA_STORE)
         val calendarChan = MethodChannel(messenger, CH_CALENDAR)
         val permissionsChan = MethodChannel(messenger, CH_PERMISSIONS)
         val welcomeChan = MethodChannel(messenger, CH_WELCOME)
 
-        // EventChannels
-        EventChannel(messenger, CH_CAR_STATE + "/stream").setStreamHandler(object : EventChannel.StreamHandler {
+        EventChannel(messenger, "$CH_CAR_STATE/stream").setStreamHandler(object : EventChannel.StreamHandler {
             override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                 carStateEventSink = events
-                events?.success(mapOf(
-                    "connected" to true,
-                    "connectionType" to "android_auto",
-                    "carApiLevel" to 7,
-                    "scr_w" to 1190,
-                    "scr_h" to 480,
-                    "scr_dpi" to 160
-                ))
+                events?.success(
+                    mapOf(
+                        "connected" to true,
+                        "connectionType" to "android_auto",
+                        "carApiLevel" to 7,
+                        "scr_w" to 1190,
+                        "scr_h" to 480,
+                        "scr_dpi" to 160,
+                    )
+                )
             }
+
             override fun onCancel(arguments: Any?) {
                 carStateEventSink = null
             }
@@ -291,12 +106,9 @@ class MainActivity : FlutterActivity() {
         EventChannel(messenger, CH_NOW_PLAYING).setStreamHandler(object : EventChannel.StreamHandler {
             override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
                 nowPlayingEventSink = events
-                events?.success(mapOf(
-                    "title" to DashMateStateBridge.songTitle,
-                    "artist" to DashMateStateBridge.songArtist,
-                    "playing" to DashMateStateBridge.isPlaying
-                ))
+                events?.success(nowPlayingMap())
             }
+
             override fun onCancel(arguments: Any?) {
                 nowPlayingEventSink = null
             }
@@ -306,609 +118,616 @@ class MainActivity : FlutterActivity() {
             override fun onStateUpdated(stateJson: String) {
                 runOnUiThread {
                     flutterChannel?.invokeMethod("onStateUpdate", stateJson)
-                    nowPlayingEventSink?.success(mapOf(
-                        "title" to DashMateStateBridge.songTitle,
-                        "artist" to DashMateStateBridge.songArtist,
-                        "playing" to DashMateStateBridge.isPlaying
-                    ))
+                    nowPlayingEventSink?.success(nowPlayingMap())
                 }
             }
+
             override fun onSwitchPage(page: String) {}
+
             override fun onExecuteScript(script: String) {}
         })
 
-        // Handler for drivedeck/car_browser
-        browserChan.setMethodCallHandler { call, result ->
-            val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
-            when (call.method) {
-                "setTheme" -> {
-                    val mode = call.argument<String>("mode") ?: "dark"
-                    sp.edit().putString("theme", mode).apply()
-                    result.success(true)
+        browserChan.setMethodCallHandler { call, result -> handleBrowser(call, result) }
+        mediaControlChan.setMethodCallHandler { call, result -> handleMediaControl(call, result) }
+        calendarChan.setMethodCallHandler { call, result ->
+            if (call.method == "getEvents") {
+                val calObj = CalendarManager.getUpcomingEvents(this)
+                result.success(calObj.toString())
+            } else {
+                result.notImplemented()
+            }
+        }
+        permissionsChan.setMethodCallHandler { call, result -> handlePermissions(call, result) }
+        welcomeChan.setMethodCallHandler { call, result ->
+            if (call.method == "playChime") {
+                DashMateStateBridge.playWelcomeChime(this)
+                result.success(true)
+            } else {
+                result.notImplemented()
+            }
+        }
+        legacyChan.setMethodCallHandler { call, result -> handleLegacy(call, result) }
+    }
+
+    private fun nowPlayingMap(): Map<String, Any?> = mapOf(
+        "title" to DashMateStateBridge.songTitle,
+        "artist" to DashMateStateBridge.songArtist,
+        "playing" to DashMateStateBridge.isPlaying,
+    )
+
+    private fun browserPrefs(): SharedPreferences = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
+
+    private fun dispatchMediaKey(keyCode: Int) {
+        val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
+        am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
+    }
+
+    private fun togglePlayPause() {
+        dispatchMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+        DashMateStateBridge.isPlaying = !DashMateStateBridge.isPlaying
+        DashMateStateBridge.notifyStateChanged(this)
+    }
+
+    private fun jsonArrayToList(json: String?): List<String> {
+        val arr = JSONArray(json)
+        val list = ArrayList<String>()
+        for (i in 0 until arr.length()) list.add(arr.getString(i))
+        return list
+    }
+
+    // ---------------------------------------------------------------- drivedeck/car_browser
+
+    private fun handleBrowser(call: MethodCall, result: MethodChannel.Result) {
+        val sp = browserPrefs()
+        when (call.method) {
+            "setBookmarks" -> {
+                val bm = call.argument<String>("bookmarks") ?: "[]"
+                sp.edit().putString("bookmarks", bm).apply()
+                result.success(true)
+            }
+            "setNavScale" -> {
+                val scale = call.argument<Double>("scale") ?: 1.0
+                sp.edit().putFloat("nav_scale", scale.toFloat()).apply()
+                result.success(true)
+            }
+            "setNavStyle" -> {
+                val opacity = call.argument<Double>("opacity") ?: 1.0
+                val color = call.argument<String>("color") ?: "#5EF2D6"
+                sp.edit().putFloat("nav_opacity", opacity.toFloat()).putString("nav_color", color).apply()
+                result.success(true)
+            }
+            "setMenuItems" -> {
+                val items = call.argument<List<String>>("items")
+                    ?: listOf("home", "lyrics", "prayer", "browse", "parking")
+                sp.edit().putString("menu_items", JSONArray(items).toString()).apply()
+                result.success(true)
+            }
+            "sendToCar" -> {
+                // Opens the car's browser on this address (the car screen takes it from pendingWebUrl).
+                val url = call.argument<String>("url") ?: ""
+                if (url.isNotBlank()) {
+                    DashMateStateBridge.pendingWebUrl = url
+                    DashMateStateBridge.setPage("browse")
                 }
-                "setCarTemplate" -> {
-                    val tmpl = call.argument<String>("template") ?: "nav"
-                    sp.edit().putString("car_template", tmpl).apply()
-                    result.success(true)
-                }
-                "setShowPrayer" -> {
-                    val show = call.argument<Boolean>("show_prayer") ?: true
-                    sp.edit().putBoolean("show_prayer", show).apply()
-                    DashMateStateBridge.notifyStateChanged(this)
-                    result.success(true)
-                }
-                "setMenuItems" -> {
-                    val items = call.argument<List<String>>("items") ?: listOf("home", "lyrics", "prayer", "radio", "custom", "web")
-                    sp.edit().putString("menu_items", JSONArray(items).toString()).apply()
-                    DashMateStateBridge.notifyStateChanged(this)
-                    result.success(true)
-                }
-                "setNavStyle" -> {
-                    val opacity = call.argument<Double>("opacity") ?: 1.0
-                    val color = call.argument<String>("color") ?: "#5EF2D6"
-                    sp.edit().putFloat("nav_opacity", opacity.toFloat()).putString("nav_color", color).apply()
-                    result.success(true)
-                }
-                "setNavScale" -> {
-                    val scale = call.argument<Any>("scale")?.toString()?.toFloatOrNull() ?: 1.0f
-                    val opacity = call.argument<Any>("opacity")?.toString()?.toFloatOrNull() ?: 0.92f
-                    val colorIdx = call.argument<Int>("colorIndex") ?: 0
-                    val position = call.argument<String>("position") ?: "top_left"
-                    val autoCollapse = call.argument<Boolean>("autoCollapse") ?: true
-                    sp.edit()
-                        .putFloat("nav_scale", scale)
-                        .putFloat("nav_opacity", opacity)
-                        .putInt("nav_color_idx", colorIdx)
-                        .putString("dock_position", position)
-                        .putBoolean("dock_auto_collapse", autoCollapse)
-                        .apply()
-                    DashMateStateBridge.notifyStateChanged(this)
-                    result.success(true)
-                }
-                "getBookmarks" -> {
-                    val bm = sp.getString("bookmarks", "[]")
-                    result.success(bm)
-                }
-                "setBookmarks" -> {
-                    val bm = call.argument<String>("bookmarks") ?: "[]"
-                    sp.edit().putString("bookmarks", bm).apply()
-                    result.success(true)
-                }
-                "clearBrowserData" -> {
-                    android.webkit.WebStorage.getInstance().deleteAllData()
-                    android.webkit.CookieManager.getInstance().removeAllCookies(null)
-                    result.success(true)
-                }
-                "deviceId" -> {
-                    val androidId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "dashmate"
-                    val sha = MessageDigest.getInstance("SHA-256").digest(androidId.toByteArray())
-                    val hex = sha.joinToString("") { "%02x".format(it) }
-                    result.success("dashmate-pro:$hex")
-                }
-                "carInfo" -> {
-                    result.success(mapOf(
+                result.success(true)
+            }
+            "carInfo" -> {
+                result.success(
+                    mapOf(
                         "scr_name" to "Google Desktop Head Unit",
                         "scr_w" to 1190,
                         "scr_h" to 480,
-                        "scr_dpi" to 160
-                    ))
-                }
-                "sendToCar", "openUrl" -> {
-                    val url = call.argument<String>("url") ?: ""
-                    if (url.isNotBlank()) {
-                        DashMateStateBridge.setPage("browse")
-                        DashMateStateBridge.executeScript("window.location.href = '$url';")
-                    }
-                    result.success(true)
-                }
-                "setPage" -> {
-                    val page = call.argument<String>("page") ?: "home"
-                    DashMateStateBridge.setPage(page)
-                    result.success(true)
-                }
-                "getCarCardMode" -> {
-                    val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
-                    result.success(mapOf(
-                        "show" to sp.getBoolean("car_card_show", true),
-                        "mode" to sp.getString("car_card_mode", "Auto")
-                    ))
-                }
-                "setCarCardMode" -> {
-                    val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
-                    val show = call.argument<Boolean>("show") ?: true
-                    val mode = call.argument<String>("mode") ?: "Auto"
-                    sp.edit()
-                        .putBoolean("car_card_show", show)
-                        .putString("car_card_mode", mode)
-                        .apply()
-                    DashMateStateBridge.carCardMode = mode
-                    DashMateStateBridge.notifyStateChanged(this)
-                    result.success(true)
-                }
-                else -> result.notImplemented()
+                        "scr_dpi" to 160,
+                    )
+                )
             }
-        }
-
-        // Handler for drivedeck/media_control
-        mediaControlChan.setMethodCallHandler { call, result ->
-            val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            when (call.method) {
-                "playPause", "toggle" -> {
-                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
-                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
-                    DashMateStateBridge.isPlaying = !DashMateStateBridge.isPlaying
-                    DashMateStateBridge.notifyStateChanged(this)
-                    result.success(true)
-                }
-                "next" -> {
-                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_NEXT))
-                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_NEXT))
-                    result.success(true)
-                }
-                "previous" -> {
-                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PREVIOUS))
-                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PREVIOUS))
-                    result.success(true)
-                }
-                else -> result.notImplemented()
+            "deviceId" -> {
+                val androidId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: "dashmate"
+                val sha = MessageDigest.getInstance("SHA-256").digest(androidId.toByteArray(Charsets.UTF_8))
+                val hex = sha.joinToString("") { String.format("%02x", it) }
+                result.success("autodeck-trial:$hex")
             }
-        }
-
-        // Handler for drivedeck/calendar
-        calendarChan.setMethodCallHandler { call, result ->
-            when (call.method) {
-                "getEvents" -> {
-                    val calObj = CalendarManager.getUpcomingEvents(this)
-                    result.success(calObj.toString())
-                }
-                else -> result.notImplemented()
+            "clearBrowserData" -> {
+                WebStorage.getInstance().deleteAllData()
+                CookieManager.getInstance().removeAllCookies(null)
+                result.success(true)
             }
-        }
-
-        // Handler for drivedeck/permissions
-        permissionsChan.setMethodCallHandler { call, result ->
-            when (call.method) {
-                "checkNotifications" -> {
-                    val enabled = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")?.contains(packageName) == true
-                    result.success(enabled)
-                }
-                "openNotificationSettings" -> {
-                    val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    startActivity(intent)
-                    result.success(true)
-                }
-                "checkCalendar" -> {
-                    val granted = ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
-                    result.success(granted)
-                }
-                else -> result.notImplemented()
+            "setShowPrayer" -> {
+                val show = call.argument<Boolean>("show_prayer") ?: true
+                sp.edit().putBoolean("show_prayer", show).apply()
+                DashMateStateBridge.notifyStateChanged(this)
+                result.success(true)
             }
-        }
-
-        // Handler for drivedeck/welcome
-        welcomeChan.setMethodCallHandler { call, result ->
-            when (call.method) {
-                "playChime" -> {
-                    DashMateStateBridge.playWelcomeChime(this)
-                    result.success(true)
-                }
-                else -> result.notImplemented()
+            "setCarTemplate" -> {
+                val tmpl = call.argument<String>("template") ?: "nav"
+                sp.edit().putString("car_template", tmpl).apply()
+                result.success(true)
             }
+            "setTheme" -> {
+                val mode = call.argument<String>("mode") ?: "dark"
+                sp.edit().putString("theme", mode).apply()
+                result.success(true)
+            }
+            "getShowPrayer" -> result.success(sp.getBoolean("show_prayer", true))
+            "getBookmarks" -> {
+                result.success(sp.getString("bookmarks", "[]"))
+            }
+            else -> result.notImplemented()
         }
+    }
 
-        // Handler for com.dashmate.dashmate/channel (Legacy Flutter Methods)
-        legacyChan.setMethodCallHandler { call, result ->
-            when (call.method) {
-                "updateSpeed" -> {
-                    val speed = call.argument<Double>("speed") ?: 0.0
-                    DashMateStateBridge.currentSpeed = speed.toFloat()
-                    DashMateStateBridge.notifyStateChanged(this)
-                    result.success(true)
+    // ---------------------------------------------------------------- drivedeck/media_control
+
+    // RECONSTRUCTED: jadx failed to decompile this handler; rebuilt from the instruction dump
+    // ("toggle" is an alias of "playPause").
+    private fun handleMediaControl(call: MethodCall, result: MethodChannel.Result) {
+        when (call.method) {
+            "next" -> {
+                dispatchMediaKey(KeyEvent.KEYCODE_MEDIA_NEXT)
+                result.success(true)
+            }
+            "previous" -> {
+                dispatchMediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+                result.success(true)
+            }
+            "playPause", "toggle" -> {
+                togglePlayPause()
+                result.success(true)
+            }
+            else -> result.notImplemented()
+        }
+    }
+
+    // ---------------------------------------------------------------- drivedeck/permissions
+
+    private fun handlePermissions(call: MethodCall, result: MethodChannel.Result) {
+        when (call.method) {
+            "checkCalendar" -> {
+                val enabled = ContextCompat.checkSelfPermission(
+                    this, android.Manifest.permission.READ_CALENDAR
+                ) == PackageManager.PERMISSION_GRANTED
+                result.success(enabled)
+            }
+            "openNotificationSettings" -> {
+                openNotificationListenerSettings()
+                result.success(true)
+            }
+            "checkNotifications" -> {
+                val listeners = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
+                val enabled = listeners != null && listeners.contains(packageName)
+                result.success(enabled)
+            }
+            else -> result.notImplemented()
+        }
+    }
+
+    private fun hasLocationPermission(): Boolean =
+        ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+    /** Freshest last-known fix from any provider, or null. */
+    @android.annotation.SuppressLint("MissingPermission")
+    private fun lastKnownLocation(): android.location.Location? {
+        val lm = getSystemService(Context.LOCATION_SERVICE) as? android.location.LocationManager ?: return null
+        return try {
+            lm.getProviders(true)
+                .mapNotNull { p -> try { lm.getLastKnownLocation(p) } catch (e: SecurityException) { null } }
+                .maxByOrNull { it.time }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun openNotificationListenerSettings() {
+        val intent = Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")
+        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        startActivity(intent)
+    }
+
+    // ---------------------------------------------------------------- com.dashmate.dashmate/channel
+
+    private fun handleLegacy(call: MethodCall, result: MethodChannel.Result) {
+        when (call.method) {
+            "getPrayerAlerts" -> {
+                val st = com.dashmate.dashmate.deck.PrayerAlertManager.settings(this)
+                result.success(mapOf("azan" to st.azan, "remind" to st.remind, "minutes" to st.minutes))
+            }
+            "setPrayerAlerts" -> {
+                com.dashmate.dashmate.deck.PrayerAlertManager.saveSettings(
+                    this,
+                    call.argument<Boolean>("azan") ?: true,
+                    call.argument<Boolean>("remind") ?: true,
+                    call.argument<Int>("minutes") ?: 10,
+                )
+                result.success(true)
+            }
+            "getAutoPark" -> result.success(com.dashmate.dashmate.deck.ParkingAutoSaver.isEnabled(this))
+            "setAutoPark" -> {
+                com.dashmate.dashmate.deck.ParkingAutoSaver.setEnabled(this, call.argument<Boolean>("enabled") ?: true)
+                result.success(true)
+            }
+            "getFootballPrefs" -> {
+                val sp = browserPrefs()
+                val compsJson = sp.getString("football_comps", "[\"PL\", \"CL\"]")
+                val teamsJson = sp.getString("football_teams", "[\"Arsenal\", \"Liverpool\"]")
+                val key = sp.getString("football_api_key", "")
+                val compsList = ArrayList<String>()
+                val teamsList = ArrayList<String>()
+                try {
+                    val arr1 = JSONArray(compsJson)
+                    for (i in 0 until arr1.length()) compsList.add(arr1.getString(i))
+                    val arr2 = JSONArray(teamsJson)
+                    for (i in 0 until arr2.length()) teamsList.add(arr2.getString(i))
+                } catch (e: Exception) {
                 }
-                "setPrayerZone" -> {
-                    val zone = call.argument<String>("zone") ?: "WLY01"
-                    PrayerTimesManager.setSelectedZone(this, zone)
-                    com.dashmate.dashmate.deck.PrayerAlertManager.scheduleAsync(this)
-                    scope.launch {
-                        val prayerObj = PrayerTimesManager.getPrayerData(this@MainActivity)
-                        val weatherObj = WeatherManager.getWeatherData(this@MainActivity)
-                        DashMateStateBridge.notifyStateChanged(this@MainActivity)
-                        result.success(prayerObj.toString())
-                    }
+                result.success(
+                    mapOf(
+                        "competitions" to compsList,
+                        "favouriteTeams" to teamsList,
+                        "apiKey" to key,
+                    )
+                )
+            }
+            "setWelcomePrefs" -> {
+                val sp = browserPrefs()
+                val mode = call.argument<Int>("mode") ?: 1
+                val voice = call.argument<Boolean>("voiceGreeting") ?: true
+                val text = call.argument<String>("customText") ?: ""
+                val speed = call.argument<Double>("speed")?.toFloat() ?: 1.0f
+                val pitch = call.argument<Double>("pitch")?.toFloat() ?: 1.0f
+                val vol = call.argument<Double>("volume")?.toFloat() ?: 0.8f
+                sp.edit()
+                    .putInt("welcome_mode", mode)
+                    .putBoolean("welcome_voice", voice)
+                    .putString("welcome_text", text)
+                    .putFloat("welcome_speed", speed)
+                    .putFloat("welcome_pitch", pitch)
+                    .putFloat("welcome_volume", vol)
+                    .apply()
+                result.success(true)
+            }
+            "setCarCardMode" -> {
+                val sp = browserPrefs()
+                val show = call.argument<Boolean>("show") ?: true
+                val mode = call.argument<String>("mode") ?: "Auto"
+                sp.edit().putBoolean("car_card_show", show).putString("car_card_mode", mode).apply()
+                DashMateStateBridge.carCardMode = mode
+                DashMateStateBridge.notifyStateChanged(this)
+                result.success(true)
+            }
+            "getMenuItems" -> {
+                val json = browserPrefs().getString("menu_items", "[\"home\",\"lyrics\",\"prayer\",\"custom\",\"web\"]")
+                try {
+                    result.success(jsonArrayToList(json))
+                } catch (e: Exception) {
+                    result.success(listOf("home", "lyrics", "prayer", "custom", "web"))
                 }
-                "getPrayerData" -> {
-                    scope.launch {
-                        val prayerObj = PrayerTimesManager.getPrayerData(this@MainActivity)
-                        result.success(prayerObj.toString())
-                    }
-                }
-                "getPrayerAlerts" -> {
-                    val s = com.dashmate.dashmate.deck.PrayerAlertManager.settings(this)
-                    result.success(mapOf(
-                        "showPrayer" to s.showPrayer,
-                        "azanPrayers" to s.azanPrayers.toList(),
-                        "remindMinutes" to s.remindMinutes
-                    ))
-                }
-                "setPrayerAlerts" -> {
-                    val show = call.argument<Boolean>("showPrayer") ?: true
-                    val azanList = call.argument<List<String>>("azanPrayers") ?: listOf("Subuh", "Zohor", "Asar", "Maghrib", "Isyak")
-                    val minutes = call.argument<Int>("remindMinutes") ?: 0
-                    com.dashmate.dashmate.deck.PrayerAlertManager.saveSettings(this, show, azanList.toSet(), minutes)
-                    result.success(true)
-                }
-                "getWeatherData" -> {
-                    scope.launch {
-                        val weatherObj = WeatherManager.getWeatherData(this@MainActivity)
-                        result.success(weatherObj.toString())
-                    }
-                }
-                "getAirQuality" -> {
-                    scope.launch {
-                        val airObj = WeatherManager.getAirQuality(this@MainActivity)
-                        result.success(airObj.toString())
-                    }
-                }
-                "getRainRadar" -> {
-                    scope.launch {
-                        val radarObj = WeatherManager.getRainRadar(this@MainActivity)
-                        result.success(radarObj?.toString())
-                    }
-                }
-                "getCalendarEvents" -> {
-                    val calObj = CalendarManager.getUpcomingEvents(this)
-                    result.success(calObj.toString())
-                }
-                "updateFuel" -> {
-                    val fuelMap = call.argument<Map<String, Any>>("fuel")
-                    if (fuelMap != null) {
-                        FuelManager.cachedFuelObj = JSONObject(fuelMap)
-                        DashMateStateBridge.notifyStateChanged(this)
-                    }
-                    result.success(true)
-                }
-                "getFuelData" -> {
-                    scope.launch {
-                        val fuel = FuelManager.syncFuelPrices(this@MainActivity)
-                        result.success(fuel.toString())
-                    }
-                }
-                "saveParkingSpot" -> {
-                    val lat = call.argument<Double>("lat") ?: 3.1390
-                    val lng = call.argument<Double>("lng") ?: 101.6869
-                    val bay = call.argument<String>("bay") ?: ""
-                    val level = call.argument<String>("level") ?: ""
-                    val notes = call.argument<String>("notes") ?: ""
-                    ParkingManager.saveSpot(this, lat, lng, bay, level, notes)
-                    DashMateStateBridge.notifyStateChanged(this)
-                    result.success(true)
-                }
-                "getParkingSpot" -> {
-                    val spot = ParkingManager.getSpot(this)
-                    if (spot != null) {
-                        val map = mapOf(
-                            "lat" to spot.lat,
-                            "lng" to spot.lng,
-                            "bay" to spot.bay,
-                            "level" to spot.level,
-                            "notes" to spot.notes,
-                            "timestamp" to spot.timestamp
-                        )
-                        result.success(JSONObject(map).toString())
-                    } else {
-                        result.success(null)
-                    }
-                }
-                "clearParkingSpot" -> {
-                    ParkingManager.clearSpot(this)
-                    DashMateStateBridge.notifyStateChanged(this)
-                    result.success(true)
-                }
-                "navigateParking" -> {
-                    val spot = ParkingManager.getSpot(this)
-                    if (spot != null) {
-                        ParkingManager.navigateBack(this)
-                        result.success(true)
-                    } else {
-                        result.success(false)
-                    }
-                }
-                "fetchLyrics" -> {
-                    val title = call.argument<String>("title") ?: ""
-                    val artist = call.argument<String>("artist") ?: ""
-                    scope.launch {
-                        val lrc = LyricsFetcher.fetchLyrics(artist, title, this@MainActivity)
-                        val lrcText = lrc.joinToString("\n") { "[${it.timeMs}] ${it.text}" }
-                        result.success(lrcText)
-                    }
-                }
-                "setLanguage" -> {
-                    val lang = call.argument<String>("lang") ?: "en"
-                    LocalizationManager.setLanguage(this, lang)
-                    DashMateStateBridge.notifyStateChanged(this)
-                    result.success(true)
-                }
-                "getLanguage" -> {
-                    result.success(LocalizationManager.getLanguage(this))
-                }
-                "setPage" -> {
-                    val page = call.argument<String>("page") ?: "home"
-                    DashMateStateBridge.setPage(page)
-                    result.success(true)
-                }
-                "setCarPage", "setCustomPageMode" -> {
-                    val mode = call.argument<String>("page")
-                        ?: call.argument<String>("mode")
-                        ?: "weather"
-                    DashMateStateBridge.customPageMode = mode
-                    getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
-                        .edit().putString("customPage", mode).apply()
-                    getSharedPreferences("DashMatePrefs", Context.MODE_PRIVATE)
-                        .edit().putString("customPage", mode).apply()
-                    DashMateStateBridge.notifyStateChanged(this)
-                    result.success(true)
-                }
-                "getCustomPageMode" -> {
-                    val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
-                    val mode = sp.getString("customPage", null)
-                        ?: getSharedPreferences("DashMatePrefs", Context.MODE_PRIVATE).getString("customPage", null)
-                        ?: DashMateStateBridge.customPageMode
-                    result.success(mode)
-                }
-                "setFont" -> {
-                    val font = call.argument<String>("font") ?: "orbitron"
-                    DashMateStateBridge.activeFont = font
-                    DashMateStateBridge.notifyStateChanged(this)
-                    result.success(true)
-                }
-                "setBgMode" -> {
-                    val mode = call.argument<String>("mode") ?: "cover"
-                    val url = call.argument<String>("url") ?: ""
-                    DashMateStateBridge.bgMode = mode
-                    DashMateStateBridge.bgUrl = url
-                    DashMateStateBridge.notifyStateChanged(this)
-                    result.success(true)
-                }
-                "updateMusic" -> {
-                    val title = call.argument<String>("title") ?: "Unknown"
-                    val artist = call.argument<String>("artist") ?: "Unknown"
-                    val isPlaying = call.argument<Boolean>("isPlaying") ?: false
-                    DashMateStateBridge.updateMediaInfo(this, title, artist, isPlaying)
-                    result.success(true)
-                }
-                "mediaPlayPause" -> {
-                    val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
-                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
-                    DashMateStateBridge.isPlaying = !DashMateStateBridge.isPlaying
-                    DashMateStateBridge.notifyStateChanged(this)
-                    result.success(true)
-                }
-                "mediaNext" -> {
-                    val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_NEXT))
-                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_NEXT))
-                    result.success(true)
-                }
-                "mediaPrevious" -> {
-                    val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PREVIOUS))
-                    am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PREVIOUS))
-                    result.success(true)
-                }
-                "loadYoutube" -> {
-                    val videoId = call.argument<String>("videoId") ?: ""
-                    DashMateStateBridge.currentYoutubeId = videoId
-                    DashMateStateBridge.notifyStateChanged(this)
-                    result.success(true)
-                }
-                "openNotificationSettings" -> {
-                    val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    startActivity(intent)
-                    result.success(true)
-                }
-                "saveLayoutSettings" -> {
-                    val layoutStr = call.argument<String>("layout")
-                        ?: call.argument<String>("layoutJson")
-                        ?: ""
-                    if (layoutStr.isNotBlank()) {
-                        getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
-                            .edit()
-                            .putString("dashmate_layout", layoutStr)
-                            .putString("car_layouts_current", layoutStr)
-                            .apply()
-                        getSharedPreferences("DashMatePrefs", Context.MODE_PRIVATE)
-                            .edit()
-                            .putString("dashmate_layout", layoutStr)
-                            .putString("car_layouts_current", layoutStr)
-                            .apply()
-                        DashMateStateBridge.cachedLayoutJson = layoutStr
-                        DashMateStateBridge.applyLayoutLive(layoutStr)
-                        DashMateStateBridge.notifyStateChanged(this)
-                    }
-                    result.success(true)
-                }
-                "getLayoutSettings" -> {
-                    val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
-                    val layoutStr = sp.getString("dashmate_layout", null)
-                        ?: sp.getString("car_layouts_current", null)
-                        ?: getSharedPreferences("DashMatePrefs", Context.MODE_PRIVATE).getString("dashmate_layout", null)
-                        ?: DashMateStateBridge.cachedLayoutJson
-                    result.success(layoutStr)
-                }
-                "highlightWidget" -> {
-                    val id = call.argument<String>("id") ?: ""
-                    DashMateStateBridge.highlightWidget(id)
-                    result.success(true)
-                }
-                "getState" -> {
-                    result.success(DashMateStateBridge.buildStateJson(this))
-                }
-                "isCarConnected" -> {
-                    result.success(DashMateStateBridge.isCarConnected(this))
-                }
-                "getButtonPrefs" -> {
-                    val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
-                    val scale = sp.getFloat("nav_scale", 1.0f) * 100
-                    val opacity = sp.getFloat("nav_opacity", 0.92f) * 100
-                    val colorIdx = sp.getInt("nav_color_idx", 0)
-                    val position = sp.getString("dock_position", "top_left") ?: "top_left"
-                    val autoCollapse = sp.getBoolean("dock_auto_collapse", true)
-                    result.success(mapOf(
-                        "size" to scale.toDouble(),
-                        "opacity" to opacity.toDouble(),
-                        "colorIndex" to colorIdx,
-                        "position" to position,
-                        "autoCollapse" to autoCollapse
-                    ))
-                }
-                "setNavScale" -> {
-                    val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
-                    val scale = call.argument<Any>("scale")?.toString()?.toFloatOrNull() ?: 1.0f
-                    val opacity = call.argument<Any>("opacity")?.toString()?.toFloatOrNull() ?: 0.92f
-                    val colorIdx = call.argument<Int>("colorIndex") ?: 0
-                    val position = call.argument<String>("position") ?: "top_left"
-                    val autoCollapse = call.argument<Boolean>("autoCollapse") ?: true
-                    sp.edit()
-                        .putFloat("nav_scale", scale)
-                        .putFloat("nav_opacity", opacity)
-                        .putInt("nav_color_idx", colorIdx)
-                        .putString("dock_position", position)
-                        .putBoolean("dock_auto_collapse", autoCollapse)
-                        .apply()
-                    DashMateStateBridge.notifyStateChanged(this)
-                    result.success(true)
-                }
-                "getWelcomePrefs" -> {
-                    val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
-                    result.success(mapOf(
-                        "mode" to sp.getInt("welcome_mode", 1),
-                        "voiceGreeting" to sp.getBoolean("welcome_voice", true),
-                        "customText" to sp.getString("welcome_text", ""),
-                        "speed" to sp.getFloat("welcome_speed", 1.0f).toDouble(),
-                        "pitch" to sp.getFloat("welcome_pitch", 1.0f).toDouble(),
-                        "volume" to sp.getFloat("welcome_volume", 0.8f).toDouble()
-                    ))
-                }
-                "setWelcomePrefs" -> {
-                    val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
-                    val mode = call.argument<Int>("mode") ?: 1
-                    val voice = call.argument<Boolean>("voiceGreeting") ?: true
-                    val text = call.argument<String>("customText") ?: ""
-                    val speed = call.argument<Double>("speed")?.toFloat() ?: 1.0f
-                    val pitch = call.argument<Double>("pitch")?.toFloat() ?: 1.0f
-                    val vol = call.argument<Double>("volume")?.toFloat() ?: 0.8f
-                    sp.edit()
-                        .putInt("welcome_mode", mode)
-                        .putBoolean("welcome_voice", voice)
-                        .putString("welcome_text", text)
-                        .putFloat("welcome_speed", speed)
-                        .putFloat("welcome_pitch", pitch)
-                        .putFloat("welcome_volume", vol)
-                        .apply()
-                    result.success(true)
-                }
-                "testVoiceGreeting" -> {
-                    val rawText = call.argument<String>("text") ?: ""
-                    val speed = call.argument<Double>("speed")?.toFloat() ?: 1.0f
-                    val pitch = call.argument<Double>("pitch")?.toFloat() ?: 1.0f
-                    val text = if (rawText.isBlank()) "Welcome back, Mohamad Afix" else rawText
+            }
+            "loadYoutube" -> {
+                val videoId = call.argument<String>("videoId") ?: ""
+                DashMateStateBridge.currentYoutubeId = videoId
+                DashMateStateBridge.notifyStateChanged(this)
+                result.success(true)
+            }
+            "highlightWidget" -> {
+                val id = call.argument<String>("id") ?: ""
+                DashMateStateBridge.highlightWidget(id)
+                result.success(true)
+            }
+            "testVoiceGreeting" -> {
+                val rawText = call.argument<String>("text") ?: ""
+                val speed = call.argument<Double>("speed")?.toFloat() ?: 1.0f
+                val pitch = call.argument<Double>("pitch")?.toFloat() ?: 1.0f
+                val text = if (rawText.isBlank()) {
+                    "Welcome back, Mohamad Afix"
+                } else {
+                    rawText
                         .replace("{name}", "Mohamad Afix")
                         .replace("{prayer_name}", "Maghrib")
                         .replace("{prayer_time}", "6:59 PM")
                         .replace("{time}", "7:15 PM")
                         .replace("{rain}", "No rain expected")
-                    tts?.setSpeechRate(speed)
-                    tts?.setPitch(pitch)
-                    tts?.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "greeting_test")
-                    result.success(true)
                 }
-                "getMenuItems" -> {
-                    val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
-                    val json = sp.getString("menu_items", "[\"home\",\"lyrics\",\"prayer\",\"radio\",\"custom\",\"web\"]")
-                    try {
-                        val arr = org.json.JSONArray(json)
-                        val list = mutableListOf<String>()
-                        for (i in 0 until arr.length()) {
-                            list.add(arr.getString(i))
-                        }
-                        result.success(list)
-                    } catch (_: Exception) {
-                        result.success(listOf("home", "lyrics", "prayer", "radio", "custom", "web"))
-                    }
-                }
-                "setMenuItems" -> {
-                    val items = call.argument<List<String>>("items") ?: listOf("home", "lyrics", "prayer", "radio", "custom", "web")
-                    getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
-                        .edit()
-                        .putString("menu_items", org.json.JSONArray(items).toString())
-                        .apply()
-                    DashMateStateBridge.notifyStateChanged(this)
-                    result.success(true)
-                }
-                "getCarCardMode" -> {
-                    val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
-                    result.success(mapOf(
-                        "show" to sp.getBoolean("car_card_show", true),
-                        "mode" to sp.getString("car_card_mode", "Auto")
-                    ))
-                }
-                "setCarCardMode" -> {
-                    val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
-                    val show = call.argument<Boolean>("show") ?: true
-                    val mode = call.argument<String>("mode") ?: "Auto"
-                    sp.edit()
-                        .putBoolean("car_card_show", show)
-                        .putString("car_card_mode", mode)
-                        .apply()
-                    DashMateStateBridge.carCardMode = mode
-                    DashMateStateBridge.notifyStateChanged(this)
-                    result.success(true)
-                }
-                "getBgPrefs" -> {
-                    val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
-                    result.success(mapOf(
-                        "mode" to (DashMateStateBridge.bgMode.ifBlank { sp.getString("bg_mode", "cover") }),
-                        "url" to (DashMateStateBridge.bgUrl.ifBlank { sp.getString("bg_url", "") })
-                    ))
-                }
-                "getFootballPrefs" -> {
-                    val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
-                    val compsJson = sp.getString("football_comps", "[\"PL\", \"CL\"]")
-                    val teamsJson = sp.getString("football_teams", "[\"Arsenal\", \"Liverpool\"]")
-                    val key = sp.getString("football_api_key", "")
-                    val compsList = mutableListOf<String>()
-                    val teamsList = mutableListOf<String>()
-                    try {
-                        val arr1 = org.json.JSONArray(compsJson)
-                        for (i in 0 until arr1.length()) compsList.add(arr1.getString(i))
-                        val arr2 = org.json.JSONArray(teamsJson)
-                        for (i in 0 until arr2.length()) teamsList.add(arr2.getString(i))
-                    } catch (_: Exception) {}
-                    result.success(mapOf(
-                        "competitions" to compsList,
-                        "favouriteTeams" to teamsList,
-                        "apiKey" to key
-                    ))
-                }
-                "setFootballPrefs" -> {
-                    val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
-                    val comps = call.argument<List<String>>("competitions") ?: listOf("PL", "CL")
-                    val teams = call.argument<List<String>>("favouriteTeams") ?: listOf("Arsenal", "Liverpool")
-                    val key = call.argument<String>("apiKey") ?: ""
-                    sp.edit()
-                        .putString("football_comps", org.json.JSONArray(comps).toString())
-                        .putString("football_teams", org.json.JSONArray(teams).toString())
-                        .putString("football_api_key", key)
-                        .apply()
-                    result.success(true)
-                }
-                else -> {
-                    result.notImplemented()
+                tts?.setSpeechRate(speed)
+                tts?.setPitch(pitch)
+                tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "greeting_test")
+                result.success(true)
+            }
+            "getRainRadar" -> {
+                scope.launch {
+                    val radarObj = WeatherManager.getRainRadar(this@MainActivity)
+                    result.success(radarObj?.toString())
                 }
             }
+            "mediaPrevious" -> {
+                dispatchMediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+                result.success(true)
+            }
+            "updateMusic" -> {
+                val title = call.argument<String>("title") ?: "Unknown"
+                val artist = call.argument<String>("artist") ?: "Unknown"
+                val isPlaying = call.argument<Boolean>("isPlaying") ?: false
+                // Remaining args are the declared defaults of updateMediaInfo (passed explicitly).
+                DashMateStateBridge.updateMediaInfo(this, title, artist, isPlaying, "", "", 0L, 0L, 0L, 1.0f)
+                result.success(true)
+            }
+            "updateSpeed" -> {
+                val speed = call.argument<Double>("speed") ?: 0.0
+                DashMateStateBridge.currentSpeed = speed.toFloat()
+                DashMateStateBridge.notifyStateChanged(this)
+                result.success(true)
+            }
+            "getWeatherData" -> {
+                scope.launch {
+                    val weatherObj = WeatherManager.getWeatherData(this@MainActivity)
+                    result.success(weatherObj.toString())
+                }
+            }
+            "getPrayerData" -> {
+                scope.launch {
+                    val prayerObj = PrayerTimesManager.getPrayerData(this@MainActivity)
+                    result.success(prayerObj.toString())
+                }
+            }
+            "saveParkingSpot" -> {
+                // The phone's own position unless the caller passes one (never a made-up spot).
+                var lat = call.argument<Double>("lat")
+                var lng = call.argument<Double>("lng")
+                if (lat == null || lng == null) {
+                    if (!hasLocationPermission()) {
+                        androidx.core.app.ActivityCompat.requestPermissions(
+                            this,
+                            arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION),
+                            REQ_LOCATION,
+                        )
+                        result.error("no_permission", "Location permission needed", null)
+                        return
+                    }
+                    val fix = lastKnownLocation()
+                    if (fix == null) {
+                        result.error("no_location", "No location fix yet", null)
+                        return
+                    }
+                    lat = fix.latitude
+                    lng = fix.longitude
+                }
+                val bay = call.argument<String>("bay") ?: ""
+                val level = call.argument<String>("level") ?: ""
+                val notes = call.argument<String>("notes") ?: ""
+                ParkingManager.saveSpot(this, lat, lng, bay, level, notes)
+                DashMateStateBridge.notifyStateChanged(this)
+                result.success(true)
+            }
+            "getCalendarEvents" -> {
+                val calObj = CalendarManager.getUpcomingEvents(this)
+                result.success(calObj.toString())
+            }
+            "mediaPlayPause" -> {
+                togglePlayPause()
+                result.success(true)
+            }
+            "setNavScale" -> {
+                val sp = browserPrefs()
+                val scale = call.argument<Any>("scale")?.toString()?.toFloatOrNull() ?: 1.0f
+                val opacity = call.argument<Any>("opacity")?.toString()?.toFloatOrNull() ?: 0.92f
+                val colorIdx = call.argument<Int>("colorIndex") ?: 0
+                sp.edit()
+                    .putFloat("nav_scale", scale)
+                    .putFloat("nav_opacity", opacity)
+                    .putInt("nav_color_idx", colorIdx)
+                    .apply()
+                result.success(true)
+            }
+            "getLayoutSettings" -> {
+                if (call.argument<Boolean>("tall") == true) {
+                    // Tall (portrait) layout, e.g. the Jaecoo J7; null = use the built-in default.
+                    result.success(browserPrefs().getString(DashMateStateBridge.PORTRAIT_LAYOUT_KEY, null))
+                    return
+                }
+                val sp = browserPrefs()
+                val layoutStr = sp.getString("dashmate_layout", null)
+                    ?: sp.getString("car_layouts_current", null)
+                    ?: getSharedPreferences("DashMatePrefs", Context.MODE_PRIVATE).getString("dashmate_layout", null)
+                    ?: DashMateStateBridge.cachedLayoutJson
+                result.success(layoutStr)
+            }
+            "setMenuItems" -> {
+                val items = call.argument<List<String>>("items")
+                    ?: listOf("home", "lyrics", "prayer", "custom", "web")
+                browserPrefs().edit().putString("menu_items", JSONArray(items).toString()).apply()
+                result.success(true)
+            }
+            "setBgMode" -> {
+                val mode = call.argument<String>("mode") ?: "cover"
+                val url = call.argument<String>("url") ?: ""
+                DashMateStateBridge.bgMode = mode
+                DashMateStateBridge.bgUrl = url
+                browserPrefs().edit().putString("bg_mode", mode).putString("bg_url", url).apply()
+                DashMateStateBridge.notifyStateChanged(this)
+                result.success(true)
+            }
+            "getCarCardMode" -> {
+                val sp = browserPrefs()
+                result.success(
+                    mapOf(
+                        "show" to sp.getBoolean("car_card_show", true),
+                        "mode" to sp.getString("car_card_mode", "Auto"),
+                    )
+                )
+            }
+            "clearParkingSpot" -> {
+                ParkingManager.clearSpot(this)
+                DashMateStateBridge.notifyStateChanged(this)
+                result.success(true)
+            }
+            "setPrayerZone" -> {
+                val zone = call.argument<String>("zone") ?: "WLY01"
+                PrayerTimesManager.setSelectedZone(this, zone)
+                scope.launch {
+                    val prayerObj = PrayerTimesManager.getPrayerData(this@MainActivity)
+                    // Refresh weather as well (result intentionally unused).
+                    WeatherManager.getWeatherData(this@MainActivity)
+                    DashMateStateBridge.notifyStateChanged(this@MainActivity)
+                    result.success(prayerObj.toString())
+                }
+            }
+            "fetchLyrics" -> {
+                val title = call.argument<String>("title") ?: ""
+                val artist = call.argument<String>("artist") ?: ""
+                scope.launch {
+                    val lrc = LyricsFetcher.fetchLyrics(artist, title, this@MainActivity)
+                    val lrcText = lrc.joinToString("\n") { "[${it.timeMs}] ${it.text}" }
+                    result.success(lrcText)
+                }
+            }
+            "setLanguage" -> {
+                val lang = call.argument<String>("lang") ?: "en"
+                LocalizationManager.setLanguage(this, lang)
+                DashMateStateBridge.notifyStateChanged(this)
+                result.success(true)
+            }
+            "saveLayoutSettings" -> {
+                val layout = call.argument<String>("layout") ?: call.argument<String>("layoutJson") ?: ""
+                if (layout.isNotBlank() && call.argument<Boolean>("tall") == true) {
+                    browserPrefs().edit().putString(DashMateStateBridge.PORTRAIT_LAYOUT_KEY, layout).apply()
+                    DashMateStateBridge.applyPortraitLayoutLive(layout)
+                    DashMateStateBridge.notifyStateChanged(this)
+                } else if (layout.isNotBlank()) {
+                    browserPrefs().edit()
+                        .putString("dashmate_layout", layout)
+                        .putString("car_layouts_current", layout)
+                        .apply()
+                    getSharedPreferences("DashMatePrefs", Context.MODE_PRIVATE).edit()
+                        .putString("dashmate_layout", layout)
+                        .putString("car_layouts_current", layout)
+                        .apply()
+                    DashMateStateBridge.cachedLayoutJson = layout
+                    DashMateStateBridge.applyLayoutLive(layout)
+                    DashMateStateBridge.notifyStateChanged(this)
+                }
+                result.success(true)
+            }
+            "getAirQuality" -> {
+                scope.launch {
+                    val airObj = WeatherManager.getAirQuality(this@MainActivity)
+                    result.success(airObj.toString())
+                }
+            }
+            "openNotificationSettings" -> {
+                openNotificationListenerSettings()
+                result.success(true)
+            }
+            "setFootballPrefs" -> {
+                val sp = browserPrefs()
+                val comps = call.argument<List<String>>("competitions") ?: listOf("PL", "CL")
+                val teams = call.argument<List<String>>("favouriteTeams") ?: listOf("Arsenal", "Liverpool")
+                val key = call.argument<String>("apiKey") ?: ""
+                sp.edit()
+                    .putString("football_comps", JSONArray(comps).toString())
+                    .putString("football_teams", JSONArray(teams).toString())
+                    .putString("football_api_key", key)
+                    .apply()
+                result.success(true)
+            }
+            "getLanguage" -> {
+                result.success(LocalizationManager.getLanguage(this))
+            }
+            "navigateParking" -> {
+                if (ParkingManager.getSpot(this) != null) {
+                    ParkingManager.navigateBack(this)
+                    result.success(true)
+                } else {
+                    result.success(false)
+                }
+            }
+            "getBgPrefs" -> {
+                val sp = browserPrefs()
+                val bgMode: String? = DashMateStateBridge.bgMode.let {
+                    if (it.isBlank()) sp.getString("bg_mode", "cover") else it
+                }
+                val bgUrl: String? = DashMateStateBridge.bgUrl.let {
+                    if (it.isBlank()) sp.getString("bg_url", "") else it
+                }
+                result.success(mapOf("mode" to bgMode, "url" to bgUrl))
+            }
+            "getWelcomePrefs" -> {
+                val sp = browserPrefs()
+                result.success(
+                    mapOf(
+                        "mode" to sp.getInt("welcome_mode", 1),
+                        "voiceGreeting" to sp.getBoolean("welcome_voice", true),
+                        "customText" to sp.getString("welcome_text", ""),
+                        "speed" to sp.getFloat("welcome_speed", 1.0f).toDouble(),
+                        "pitch" to sp.getFloat("welcome_pitch", 1.0f).toDouble(),
+                        "volume" to sp.getFloat("welcome_volume", 0.8f).toDouble(),
+                    )
+                )
+            }
+            "getButtonPrefs" -> {
+                val sp = browserPrefs()
+                val scale = sp.getFloat("nav_scale", 1.0f) * 100
+                val opacity = sp.getFloat("nav_opacity", 0.92f) * 100
+                val colorIdx = sp.getInt("nav_color_idx", 0)
+                result.success(
+                    mapOf(
+                        "size" to scale.toDouble(),
+                        "opacity" to opacity.toDouble(),
+                        "colorIndex" to colorIdx,
+                    )
+                )
+            }
+            "getParkingSpot" -> {
+                val spot = ParkingManager.getSpot(this)
+                if (spot != null) {
+                    val map = mapOf(
+                        "lat" to spot.lat,
+                        "lng" to spot.lng,
+                        "bay" to spot.bay,
+                        "level" to spot.level,
+                        "notes" to spot.notes,
+                        "timestamp" to spot.timestamp,
+                    )
+                    result.success(JSONObject(map).toString())
+                } else {
+                    result.success(null)
+                }
+            }
+            "getState" -> {
+                result.success(DashMateStateBridge.buildStateJson(this))
+            }
+            "openCarPreview" -> {
+                startActivity(Intent(this, CarPreviewActivity::class.java))
+                result.success(true)
+            }
+            "getLayoutMode" -> result.success(DashMateStateBridge.layoutMode(this))
+            "setLayoutMode" -> {
+                val mode = if (call.argument<String>("mode") == "auto") "auto" else "tall"
+                browserPrefs().edit().putString(DashMateStateBridge.LAYOUT_MODE_KEY, mode).apply()
+                DashMateStateBridge.notifyStateChanged(this)
+                result.success(true)
+            }
+            "getCarScreenSize" -> {
+                result.success(CarPreviewActivity.savedSize(this))
+            }
+            "setFont" -> {
+                val font = call.argument<String>("font") ?: "orbitron"
+                DashMateStateBridge.activeFont = font
+                DashMateStateBridge.notifyStateChanged(this)
+                result.success(true)
+            }
+            "setPage", "setCarPage" -> {
+                val page = call.argument<String>("page") ?: "home"
+                call.argument<String>("mode")?.let { DashMateStateBridge.customMode = it }
+                DashMateStateBridge.setPage(page)
+                if (page == "custom") DashMateStateBridge.notifyStateChanged(this)
+                result.success(true)
+            }
+            "mediaNext" -> {
+                dispatchMediaKey(KeyEvent.KEYCODE_MEDIA_NEXT)
+                result.success(true)
+            }
+            else -> result.notImplemented()
         }
     }
 

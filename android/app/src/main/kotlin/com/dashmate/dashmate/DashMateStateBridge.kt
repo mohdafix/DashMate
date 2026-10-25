@@ -2,7 +2,7 @@ package com.dashmate.dashmate
 
 import android.content.Context
 import android.content.Intent
-import android.content.res.AssetFileDescriptor
+import android.graphics.Bitmap
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Handler
@@ -10,7 +10,6 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import com.dashmate.dashmate.deck.CalendarManager
-import com.dashmate.dashmate.deck.FuelManager
 import com.dashmate.dashmate.deck.LocalizationManager
 import com.dashmate.dashmate.deck.LyricLine
 import com.dashmate.dashmate.deck.LyricsFetcher
@@ -22,11 +21,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 import java.util.concurrent.CopyOnWriteArrayList
 
 object DashMateStateBridge {
-
     private const val TAG = "DashMateStateBridge"
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val scope = CoroutineScope(Dispatchers.IO)
+    private val listeners = CopyOnWriteArrayList<StateListener>()
 
     interface StateListener {
         fun onStateUpdated(stateJson: String)
@@ -34,20 +41,30 @@ object DashMateStateBridge {
         fun onExecuteScript(script: String)
     }
 
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private val scope = CoroutineScope(Dispatchers.IO)
-    private val listeners = CopyOnWriteArrayList<StateListener>()
-
-    // Core States
     var cachedLayoutJson: String? = null
+
+    /** Prefs key (dd_car_browser) of the tall-screen widget layout, edited on the phone. */
+    const val PORTRAIT_LAYOUT_KEY = "dashmate_layout_portrait"
+
+    /** Prefs key (dd_car_browser): "tall" (default) = the car always uses the tall placement and tall UI
+     *  on a full-screen deck, whatever the surface shape; "auto" = follow the screen's shape. */
+    const val LAYOUT_MODE_KEY = "dashmate_layout_mode"
+
+    fun layoutMode(context: Context?): String {
+        val v = try {
+            context?.getSharedPreferences("dd_car_browser", Context.MODE_PRIVATE)?.getString(LAYOUT_MODE_KEY, null)
+        } catch (e: Exception) { null }
+        return if (v == "auto") "auto" else "tall"
+    }
     var currentSpeed: Float = 0f
     var speedUnit: String = "km/h"
     var isGps: Boolean = true
+
     var songTitle: String = "Not Playing"
     var songArtist: String = "DashMate Audio"
     var songApp: String = "YouTube Music"
     var songCoverUrl: String = ""
-    var currentArtBitmap: android.graphics.Bitmap? = null
+    var currentArtBitmap: Bitmap? = null
     var currentArtUri: Uri? = null
     var isPlaying: Boolean = false
     var playbackPositionMs: Long = 0L
@@ -65,60 +82,79 @@ object DashMateStateBridge {
         if (!isPlaying || playbackPositionTimestampMs == 0L) {
             return playbackPositionMs
         }
-        val elapsed = (SystemClock.elapsedRealtime() - playbackPositionTimestampMs)
+        val elapsed = SystemClock.elapsedRealtime() - playbackPositionTimestampMs
         val computed = playbackPositionMs + (elapsed * playbackSpeed).toLong()
-        return if (playbackDurationMs > 0L) computed.coerceIn(0L, playbackDurationMs) else computed.coerceAtLeast(0L)
-    }
-
-    fun getCurrentLyricLine(): String {
-        if (currentLyrics.isEmpty()) return ""
-        val pos = getCurrentPositionMs()
-        for (i in currentLyrics.indices.reversed()) {
-            if (pos >= currentLyrics[i].timeMs) {
-                return currentLyrics[i].text
-            }
+        return if (playbackDurationMs > 0) {
+            computed.coerceIn(0L, playbackDurationMs)
+        } else {
+            computed.coerceAtLeast(0L)
         }
-        return currentLyrics.first().text
     }
 
     fun updatePlaybackProgress(positionMs: Long, durationMs: Long = 0L, speed: Float = 1.0f) {
         playbackPositionMs = positionMs
         playbackPositionTimestampMs = SystemClock.elapsedRealtime()
-        if (durationMs > 0L) playbackDurationMs = durationMs
+        if (durationMs > 0) {
+            playbackDurationMs = durationMs
+        }
         playbackSpeed = if (speed > 0f) speed else 1.0f
         if (listeners.isNotEmpty()) {
             notifyStateChanged()
         }
     }
 
-    var activeFont: String = "orbitron" // orbitron, bebas, audiowide, monoton, teko, poiret
-    var bgMode: String = "cover" // cover, plain, photo
+    var activeFont: String = "orbitron"
+    var bgMode: String = "cover"
     var bgUrl: String = ""
-    var currentPage: String = "home" // home, lyrics, prayer, browse, custom
-    var customPageMode: String = "weather" // weather, calendar, sports, radar, ev
+    var currentPage: String = "home"
     var currentYoutubeId: String = ""
+    /** Address the phone sent to the car browser (Browse screen); the car screen takes it once. */
+    @Volatile var pendingWebUrl: String? = null
+        set(v) { field = v; pendingWebUrlAt = if (v != null) System.currentTimeMillis() else 0L }
+    @Volatile private var pendingWebUrlAt: Long = 0L
+    /** The phone's link, once, and only if it was sent in the last minute (never a days-old link). */
+    fun takePendingWebUrl(): String? {
+        val url = pendingWebUrl
+        val fresh = url != null && System.currentTimeMillis() - pendingWebUrlAt < 60_000L
+        pendingWebUrl = null
+        return if (fresh) url else null
+    }
+
+    /** Which Custom page the phone picked: weather (default), calendar, sports, radar or ev. */
+    var customMode: String = "weather"
     var appLanguage: String = "en"
-    var carCardMode: String = "music" // music, prayer, weather, sports
+    var carCardMode: String = "music"
 
-    var customForecastObj: JSONObject? = null
-    var customForecastArr: JSONArray? = null
-    var customAirObj: JSONObject? = null
-    var customRadarObj: JSONObject? = null
-    var customEvObj: JSONObject? = null
-    var customScoresArr: JSONArray? = null
-
-    // Fuel Prices (MYR)
     var ron95Price: String = "2.05"
     var ron97Price: String = "3.19"
     var dieselPrice: String = "2.95"
 
-    // Shortcuts (5 floating car shortcuts)
     var shortcutsList: MutableList<JSONObject> = mutableListOf(
-        JSONObject().apply { put("name", "YouTube"); put("url", "https://m.youtube.com"); put("icon", "dd_youtube.png") },
-        JSONObject().apply { put("name", "RTM Klik"); put("url", "https://rtmklik.rtm.gov.my"); put("icon", "dd_rtm.png") },
-        JSONObject().apply { put("name", "Google"); put("url", "https://www.google.com"); put("icon", "https://www.google.com/favicon.ico") },
-        JSONObject().apply { put("name", "Waze"); put("url", "https://www.waze.com/live-map"); put("icon", "https://www.waze.com/favicon.ico") },
-        JSONObject().apply { put("name", "Parking"); put("url", "dashmate://parking"); put("icon", "assets/icons/parking.svg") }
+        JSONObject().apply {
+            put("name", "YouTube")
+            put("url", "https://m.youtube.com")
+            put("icon", "dd_youtube.png")
+        },
+        JSONObject().apply {
+            put("name", "RTM Klik")
+            put("url", "https://rtmklik.rtm.gov.my")
+            put("icon", "dd_rtm.png")
+        },
+        JSONObject().apply {
+            put("name", "Google")
+            put("url", "https://www.google.com")
+            put("icon", "https://www.google.com/favicon.ico")
+        },
+        JSONObject().apply {
+            put("name", "Waze")
+            put("url", "https://www.waze.com/live-map")
+            put("icon", "https://www.waze.com/favicon.ico")
+        },
+        JSONObject().apply {
+            put("name", "Parking")
+            put("url", "dashmate://parking")
+            put("icon", "assets/icons/parking.svg")
+        },
     )
 
     fun addListener(listener: StateListener) {
@@ -130,30 +166,30 @@ object DashMateStateBridge {
         listeners.remove(listener)
     }
 
-    private var lastMediaUpdateMs = 0L
-    private var lastMediaKey = ""
+    private var lastMediaUpdateMs: Long = 0L
+    private var lastMediaKey: String = ""
 
     fun setPage(page: String) {
-        if (currentPage == page && page != "custom") return
-        currentPage = page
-        mainHandler.post {
-            for (listener in listeners) {
-                listener.onSwitchPage(page)
+        if (currentPage != page || page == "custom" || pendingWebUrl != null) {
+            currentPage = page
+            mainHandler.post {
+                for (listener in listeners) {
+                    listener.onSwitchPage(page)
+                }
             }
         }
     }
 
     fun playWelcomeChime(context: Context) {
         try {
-            val afd: AssetFileDescriptor = context.assets.openFd("dd_welcome_chime.wav")
-            val player = MediaPlayer().apply {
-                setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
-                prepare()
-                start()
-                setOnCompletionListener {
-                    it.release()
-                    afd.close()
-                }
+            val afd = context.assets.openFd("dd_welcome_chime.wav")
+            val mediaPlayer = MediaPlayer()
+            mediaPlayer.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+            mediaPlayer.prepare()
+            mediaPlayer.start()
+            mediaPlayer.setOnCompletionListener {
+                it.release()
+                afd.close()
             }
         } catch (e: Exception) {
             Log.w(TAG, "Could not play welcome chime: ${e.message}")
@@ -170,16 +206,14 @@ object DashMateStateBridge {
         durationMs: Long = 0L,
         positionMs: Long = 0L,
         lastUpdateTime: Long = 0L,
-        speed: Float = 1.0f
+        speed: Float = 1.0f,
     ) {
         val titleChanged = title != songTitle || artist != songArtist
         val playStateChanged = playing != isPlaying
         val now = System.currentTimeMillis()
         val currentKey = "$title|$artist|$playing"
-        val isSamePlayback = (currentKey == lastMediaKey)
-
-        // Throttle updates: if song & play state haven't changed, don't spam updates more than once every 1.5s
-        if (!titleChanged && !playStateChanged && isSamePlayback && (now - lastMediaUpdateMs) < 1500L) {
+        val isSamePlayback = currentKey == lastMediaKey
+        if (!titleChanged && !playStateChanged && isSamePlayback && now - lastMediaUpdateMs < 1500) {
             return
         }
         lastMediaKey = currentKey
@@ -188,18 +222,24 @@ object DashMateStateBridge {
         songTitle = title
         songArtist = artist
         isPlaying = playing
-        if (coverUrl.isNotBlank()) songCoverUrl = coverUrl
-        if (app.isNotBlank()) songApp = app
+        if (coverUrl.isNotBlank()) {
+            songCoverUrl = coverUrl
+        }
+        if (app.isNotBlank()) {
+            songApp = app
+        }
 
         if (titleChanged) {
             playbackPositionMs = positionMs.coerceAtLeast(0L)
             playbackDurationMs = durationMs.coerceAtLeast(0L)
-            playbackPositionTimestampMs = if (lastUpdateTime > 0L) lastUpdateTime else SystemClock.elapsedRealtime()
+            playbackPositionTimestampMs = if (lastUpdateTime > 0) lastUpdateTime else SystemClock.elapsedRealtime()
         } else {
-            if (durationMs > 0L) playbackDurationMs = durationMs
-            if (positionMs >= 0L) {
+            if (durationMs > 0) {
+                playbackDurationMs = durationMs
+            }
+            if (positionMs >= 0) {
                 playbackPositionMs = positionMs
-                playbackPositionTimestampMs = if (lastUpdateTime > 0L) lastUpdateTime else SystemClock.elapsedRealtime()
+                playbackPositionTimestampMs = if (lastUpdateTime > 0) lastUpdateTime else SystemClock.elapsedRealtime()
             }
         }
         playbackSpeed = if (speed > 0f) speed else 1.0f
@@ -220,9 +260,9 @@ object DashMateStateBridge {
                     notifyStateChanged(context)
                 }
             }
-        } else {
-            notifyStateChanged(context)
+            return
         }
+        notifyStateChanged(context)
     }
 
     fun refreshAllServices(context: Context) {
@@ -231,7 +271,8 @@ object DashMateStateBridge {
                 WeatherManager.getWeatherData(context)
                 WeatherManager.getAirQuality(context)
                 WeatherManager.getRainRadar(context)
-                FuelManager.syncFuelPrices(context)
+                com.dashmate.dashmate.deck.FuelPriceManager.refresh(context)
+                com.dashmate.dashmate.deck.PrayerTimesManager.getPrayerData(context)
             } catch (e: Exception) {
                 Log.w(TAG, "Service refresh error: ${e.message}")
             }
@@ -239,70 +280,54 @@ object DashMateStateBridge {
         }
     }
 
-    fun isCarConnected(context: Context?): Boolean {
-        return DashMatePresentation.isPresentationActive ||
-               DashMateSession.isSessionActive ||
-               com.dashmate.dashmate.deck.ParkingAutoSaver.isConnected()
+    private var savedChoicesRestored = false
+
+    /** After a restart: the background and car card the owner picked on the phone (saved in prefs). */
+    private fun restoreSavedChoices(context: Context) {
+        if (savedChoicesRestored) return
+        savedChoicesRestored = true
+        try {
+            val sp = context.getSharedPreferences("dd_car_browser", Context.MODE_PRIVATE)
+            sp.getString("bg_mode", null)?.takeIf { it.isNotBlank() }?.let { bgMode = it }
+            sp.getString("bg_url", null)?.let { if (bgUrl.isBlank()) bgUrl = it }
+            sp.getString("car_card_mode", null)?.takeIf { it.isNotBlank() }?.let { carCardMode = it }
+        } catch (e: Exception) {
+        }
     }
 
     fun buildStateJson(context: Context?): String {
-        val root = JSONObject()
-        val connected = isCarConnected(context)
-        root.put("carConnected", connected)
-        root.put("connected", connected)
-        root.put("scr_w", DashMatePresentation.activeDisplayWidth)
-        root.put("scr_h", DashMatePresentation.activeDisplayHeight)
-        root.put("scr_name", DashMatePresentation.activeHeadUnitName)
-        root.put("speed", currentSpeed.toInt())
-        root.put("speedOnly", false)
-        root.put("gps", isGps)
+        if (context != null) restoreSavedChoices(context)
+        val state = JSONObject()
+        state.put("speed", currentSpeed.toInt())
+        state.put("speedOnly", false)
+        state.put("gps", isGps)
+        state.put("fn", if (currentPage == "custom") customMode else activeFont)
+        state.put("page", currentPage)
+        state.put("carCard", carCardMode)
+        state.put("layoutMode", layoutMode(context))
 
-        if (context != null) {
-            try {
-                val spBrowser = context.getSharedPreferences("dd_car_browser", Context.MODE_PRIVATE)
-                val spPrefs = context.getSharedPreferences("DashMatePrefs", Context.MODE_PRIVATE)
-                val savedCustom = spBrowser.getString("customPage", null)
-                    ?: spPrefs.getString("customPage", null)
-                if (!savedCustom.isNullOrBlank()) {
-                    customPageMode = savedCustom
-                }
-            } catch (_: Exception) {}
-        }
-
-        root.put("fn", if (currentPage == "custom") customPageMode else activeFont)
-        root.put("page", currentPage)
-        root.put("carCard", carCardMode)
-        root.put("customPage", customPageMode)
-
-        // Custom Multi-Widget Dashboard Layout
         if (currentPage == "custom") {
-            val customLayout = JSONObject().apply {
+            // Custom page: one full-screen layout per mode picked on the phone (Custom page screen).
+            fun tile(id: String, x: Int, y: Int, w: Int, h: Int) =
+                JSONObject().apply { put("id", id); put("x", x); put("y", y); put("w", w); put("h", h) }
+            state.put("layout", JSONObject().apply {
                 put("v", 2)
                 put("textScale", 1)
                 put("clockFont", "thin")
-                val widgets = JSONArray()
-                when (customPageMode) {
-                    "calendar" -> {
-                        widgets.put(JSONObject().apply { put("id", "calendar"); put("x", 1); put("y", 1); put("w", 12); put("h", 8) })
+                put("widgets", JSONArray().apply {
+                    when (customMode) {
+                        "calendar" -> put(tile("calendar", 1, 1, 12, 8))
+                        "sports" -> put(tile("sports", 1, 1, 12, 8))
+                        "radar" -> put(tile("radar", 1, 1, 12, 8))
+                        "ev" -> put(tile("ev", 1, 1, 12, 8))
+                        else -> {
+                            put(tile("forecast", 1, 1, 6, 8))
+                            put(tile("air", 7, 1, 6, 4))
+                            put(tile("radar", 7, 5, 6, 4))
+                        }
                     }
-                    "sports" -> {
-                        widgets.put(JSONObject().apply { put("id", "sports"); put("x", 1); put("y", 1); put("w", 12); put("h", 8) })
-                    }
-                    "radar" -> {
-                        widgets.put(JSONObject().apply { put("id", "radar"); put("x", 1); put("y", 1); put("w", 12); put("h", 8) })
-                    }
-                    "ev" -> {
-                        widgets.put(JSONObject().apply { put("id", "ev"); put("x", 1); put("y", 1); put("w", 12); put("h", 8) })
-                    }
-                    else -> { // "weather"
-                        widgets.put(JSONObject().apply { put("id", "forecast"); put("x", 1); put("y", 1); put("w", 6); put("h", 8) })
-                        widgets.put(JSONObject().apply { put("id", "air"); put("x", 7); put("y", 1); put("w", 6); put("h", 4) })
-                        widgets.put(JSONObject().apply { put("id", "radar"); put("x", 7); put("y", 5); put("w", 6); put("h", 4) })
-                    }
-                }
-                put("widgets", widgets)
-            }
-            root.put("layout", customLayout)
+                })
+            })
         } else {
             var activeLayoutStr = cachedLayoutJson
             if (context != null) {
@@ -316,50 +341,75 @@ object DashMateStateBridge {
                         activeLayoutStr = layoutStr
                         cachedLayoutJson = layoutStr
                     }
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                }
             }
             if (!activeLayoutStr.isNullOrBlank()) {
                 try {
-                    root.put("layout", JSONObject(activeLayoutStr))
-                } catch (_: Exception) {}
+                    state.put("layout", JSONObject(activeLayoutStr))
+                } catch (e: Exception) {
+                }
+            }
+            // Tall screens (Jaecoo J7) use their own layout; the page falls back to its portrait default.
+            try {
+                context?.getSharedPreferences("dd_car_browser", Context.MODE_PRIVATE)
+                    ?.getString(PORTRAIT_LAYOUT_KEY, null)
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { state.put("layoutP", JSONObject(it)) }
+            } catch (e: Exception) {
             }
         }
 
-        // Portrait / Split-Screen Layout (12x18 grid)
-        val defaultPortraitLayout = JSONObject().apply {
+        // Portrait default layout: only when the owner hasn't saved a tall layout (added above).
+        if (!state.has("layoutP")) state.put("layoutP", JSONObject().apply {
             put("v", 2)
             put("textScale", 1)
             put("clockFont", "thin")
-            val widgets = JSONArray().apply {
-                put(JSONObject().apply { put("id", "clock"); put("x", 1); put("y", 1); put("w", 12); put("h", 3) })
-                put(JSONObject().apply { put("id", "music"); put("x", 1); put("y", 4); put("w", 12); put("h", 4) })
-                put(JSONObject().apply { put("id", "prayer"); put("x", 1); put("y", 8); put("w", 6); put("h", 3) })
-                put(JSONObject().apply { put("id", "weather"); put("x", 7); put("y", 8); put("w", 6); put("h", 3) })
-                put(JSONObject().apply { put("id", "football"); put("x", 1); put("y", 11); put("w", 12); put("h", 2) })
-                put(JSONObject().apply { put("id", "fuel"); put("x", 1); put("y", 13); put("w", 12); put("h", 3) })
-                put(JSONObject().apply { put("id", "speed"); put("x", 1); put("y", 16); put("w", 5); put("h", 3); put("ta", "center") })
-                put(JSONObject().apply { put("id", "shortcuts"); put("x", 6); put("y", 16); put("w", 7); put("h", 3); put("ta", "center") })
-            }
-            put("widgets", widgets)
-        }
-        root.put("layoutP", defaultPortraitLayout)
+            put("widgets", JSONArray().apply {
+                put(JSONObject().apply {
+                    put("id", "clock"); put("x", 1); put("y", 1); put("w", 12); put("h", 3)
+                })
+                put(JSONObject().apply {
+                    put("id", "music"); put("x", 1); put("y", 4); put("w", 12); put("h", 4)
+                })
+                put(JSONObject().apply {
+                    put("id", "prayer"); put("x", 1); put("y", 8); put("w", 6); put("h", 3)
+                })
+                put(JSONObject().apply {
+                    put("id", "weather"); put("x", 7); put("y", 8); put("w", 6); put("h", 3)
+                })
+                put(JSONObject().apply {
+                    put("id", "football"); put("x", 1); put("y", 11); put("w", 12); put("h", 2)
+                })
+                put(JSONObject().apply {
+                    put("id", "fuel"); put("x", 1); put("y", 13); put("w", 12); put("h", 3)
+                })
+                put(JSONObject().apply {
+                    put("id", "speed"); put("x", 1); put("y", 16); put("w", 5); put("h", 3)
+                    put("ta", "center")
+                })
+                put(JSONObject().apply {
+                    put("id", "shortcuts"); put("x", 6); put("y", 16); put("w", 7); put("h", 3)
+                    put("ta", "center")
+                })
+            })
+        })
 
-        // Labels / Localization
         val lang = if (context != null) LocalizationManager.getLanguage(context) else appLanguage
         val labelsObj = LocalizationManager.getLabels(lang)
-        root.put("labels", labelsObj)
-        root.put("lang", lang)
+        state.put("labels", labelsObj)
+        state.put("lang", lang)
 
-        // Background
-        val bgObj = JSONObject().apply {
-            put("mode", bgMode)
-            put("dim", 0.4)
-            if (bgUrl.isNotBlank()) put("url", bgUrl)
-            else if (songCoverUrl.isNotBlank()) put("url", songCoverUrl)
+        val bg = JSONObject()
+        bg.put("mode", bgMode)
+        bg.put("dim", 0.4)
+        if (bgUrl.isNotBlank()) {
+            bg.put("url", bgUrl)
+        } else if (songCoverUrl.isNotBlank()) {
+            bg.put("url", songCoverUrl)
         }
-        root.put("bg", bgObj)
+        state.put("bg", bg)
 
-        // Lyrics data
         val lyricsArr = JSONArray()
         val linesPairArr = JSONArray()
         for (l in currentLyrics) {
@@ -372,14 +422,15 @@ object DashMateStateBridge {
                 put(l.text)
             })
         }
-        val musicStatus = if (currentLyrics.isNotEmpty()) "found"
-            else if (isFetchingLyrics) "loading"
-            else if (songTitle.isNotBlank() && songTitle != "Not Playing") "notFound"
-            else "waiting"
 
-        // Music (matches drivedeck_home.html renderMusic and drivedeck_lyrics.html)
+        val musicStatus = when {
+            currentLyrics.isNotEmpty() -> "found"
+            isFetchingLyrics -> "loading"
+            songTitle.isBlank() || songTitle == "Not Playing" -> "waiting"
+            else -> "notFound"
+        }
         val currentPos = getCurrentPositionMs()
-        val musicObj = JSONObject().apply {
+        state.put("music", JSONObject().apply {
             put("title", songTitle)
             put("artist", songArtist)
             put("art", songCoverUrl)
@@ -395,62 +446,65 @@ object DashMateStateBridge {
             put("sentAtMs", System.currentTimeMillis())
             put("app", songApp)
             put("lyrics", lyricsArr)
-        }
-        root.put("music", musicObj)
-        root.put("positionMs", currentPos)
-        root.put("durationMs", playbackDurationMs)
+        })
+        state.put("positionMs", currentPos)
+        state.put("durationMs", playbackDurationMs)
 
-        // Weather
-        val weatherObj = if (context != null) {
+        val weatherObj: JSONObject = if (context != null) {
             try {
                 val cached = context.getSharedPreferences("DashMatePrefs", Context.MODE_PRIVATE)
                     .getString("dashmate_weather_cache", null)
                 if (cached != null) JSONObject(cached) else defaultWeather()
-            } catch (_: Exception) { defaultWeather() }
-        } else defaultWeather()
-        root.put("weather", weatherObj)
+            } catch (e: Exception) {
+                defaultWeather()
+            }
+        } else {
+            defaultWeather()
+        }
+        state.put("weather", weatherObj)
+        if (weatherObj.has("forecast")) {
+            state.put("forecast", weatherObj.getJSONArray("forecast"))
+        }
 
-        // Forecast
-        val forecastObj = customForecastObj ?: (if (context != null) {
-            try {
-                val cached = context.getSharedPreferences("DashMatePrefs", Context.MODE_PRIVATE)
-                    .getString("dashmate_forecast_cache", null)
-                if (cached != null) JSONObject(cached) else defaultForecast(weatherObj)
-            } catch (_: Exception) { defaultForecast(weatherObj) }
-        } else defaultForecast(weatherObj))
-        root.put("forecast", forecastObj)
-
-        // Air Quality
-        val airObj = customAirObj ?: (if (context != null) {
+        val airObj: JSONObject = if (context != null) {
             try {
                 val cached = context.getSharedPreferences("DashMatePrefs", Context.MODE_PRIVATE)
                     .getString("dashmate_air_cache", null)
                 if (cached != null) JSONObject(cached) else defaultAir()
-            } catch (_: Exception) { defaultAir() }
-        } else defaultAir())
-        root.put("air", airObj)
+            } catch (e: Exception) {
+                defaultAir()
+            }
+        } else {
+            defaultAir()
+        }
+        state.put("air", airObj)
 
-        // Rain Radar
-        val radarObj = customRadarObj ?: (if (context != null) {
+        val radarObj: JSONObject = if (context != null) {
             try {
                 val cached = context.getSharedPreferences("DashMatePrefs", Context.MODE_PRIVATE)
                     .getString("dashmate_radar_cache", null)
                 if (cached != null) JSONObject(cached) else defaultRadar()
-            } catch (_: Exception) { defaultRadar() }
-        } else defaultRadar())
-        root.put("radar", radarObj)
+            } catch (e: Exception) {
+                defaultRadar()
+            }
+        } else {
+            defaultRadar()
+        }
+        state.put("radar", radarObj)
 
-        // Calendar
-        val calendarObj = if (context != null) {
+        val calendarObj: JSONObject = if (context != null) {
             try {
                 CalendarManager.getUpcomingEvents(context)
-            } catch (_: Exception) { defaultCalendar() }
-        } else defaultCalendar()
-        root.put("calendar", calendarObj)
+            } catch (e: Exception) {
+                defaultCalendar()
+            }
+        } else {
+            defaultCalendar()
+        }
+        state.put("calendar", calendarObj)
 
-        // Parking
         val parkingSpot = if (context != null) ParkingManager.getSpot(context) else null
-        val parkingObj = JSONObject().apply {
+        state.put("parking", JSONObject().apply {
             put("saved", parkingSpot != null)
             if (parkingSpot != null) {
                 put("lat", parkingSpot.lat)
@@ -460,242 +514,93 @@ object DashMateStateBridge {
                 put("notes", parkingSpot.notes)
                 put("time", parkingSpot.timestamp)
             }
-        }
-        root.put("parking", parkingObj)
+        })
 
-        // Shortcuts
         val shortcutsArr = JSONArray()
         for (sc in shortcutsList) {
             shortcutsArr.put(sc)
         }
-        root.put("shortcuts", shortcutsArr)
+        state.put("shortcuts", shortcutsArr)
 
-        // Prayer
-        val prayerObj = if (context != null) {
+        val prayerObj: JSONObject = if (context != null) {
             try {
-                PrayerTimesManager.getEnrichedPrayerData(context)
-            } catch (_: Exception) { defaultPrayer() }
-        } else defaultPrayer()
-        root.put("prayer", prayerObj)
+                // The cache holds raw times; the page and card need next/countdown, so enrich it.
+                PrayerTimesManager.cachedEnriched(context) ?: defaultPrayer()
+            } catch (e: Exception) {
+                defaultPrayer()
+            }
+        } else {
+            defaultPrayer()
+        }
+        state.put("prayer", prayerObj)
+        // Feed the "Next Prayer" media card (these were never updated before).
+        prayerObj.optJSONObject("next")?.let { nx ->
+            nextPrayerName = nx.optString("name", nextPrayerName)
+            nextPrayerTime = nx.optString("time", nextPrayerTime)
+            val mins = ((nx.optLong("epochMs") - System.currentTimeMillis()) / 60000).coerceAtLeast(0)
+            prayerCountdown = if (mins >= 60) "${mins / 60}h ${mins % 60}m" else "${mins}m"
+        }
 
-        // Fuel
-        val fuelObj = FuelManager.getFuelData(context)
-        root.put("fuel", fuelObj)
+        // Weekly prices from data.gov.my (null until the first fetch -> page shows "Fuel prices…").
+        context?.let { com.dashmate.dashmate.deck.FuelPriceManager.cached(it) }?.let { state.put("fuel", it) }
 
-        // Sports / Football
-        val sportsArr = customScoresArr ?: JSONArray().apply {
+        val scores = JSONArray().apply {
             put(JSONObject().apply {
-                put("league", "Premier League")
                 put("home", "Arsenal")
                 put("away", "Liverpool")
                 put("score", "2 - 1")
-                put("hs", 2)
-                put("as", 1)
                 put("time", "74'")
-                put("detail", "74'")
                 put("status", "live")
                 put("state", "in")
             })
             put(JSONObject().apply {
-                put("league", "La Liga")
                 put("home", "Real Madrid")
                 put("away", "Barcelona")
                 put("score", "3 - 2")
-                put("hs", 3)
-                put("as", 2)
                 put("time", "FT")
-                put("detail", "FT")
                 put("status", "ft")
                 put("state", "post")
             })
-            put(JSONObject().apply {
-                put("league", "Premier League")
-                put("home", "Man City")
-                put("away", "Chelsea")
-                put("score", "vs")
-                put("time", "23:30")
-                put("detail", "23:30")
-                put("status", "pre")
-                put("state", "pre")
-            })
         }
-        root.put("scores", sportsArr)
-        root.put("scoresLabel", "Today's Matches")
-        root.put("sports", JSONObject().apply {
-            put("games", sportsArr)
-        })
+        state.put("scores", scores)
+        state.put("scoresLabel", "Today's Matches")
+        state.put("sports", JSONObject().apply { put("games", scores) })
 
-        // EV Chargers & Nearby Petrol Stations
-        val evObj = customEvObj ?: JSONObject().apply {
-            put("lat", 3.1390)
+        state.put("ev", JSONObject().apply {
+            put("lat", 3.139)
             put("lng", 101.6869)
-            val items = JSONArray().apply {
-                // EV Charger 1
+            put("items", JSONArray().apply {
                 put(JSONObject().apply {
-                    put("name", "Shell Recharge Pavilion KL")
-                    put("kind", "ev")
-                    put("operator", "Shell Recharge")
-                    put("km", 1.2)
+                    put("name", "Shell Recharge Pavilion")
+                    put("plugs", "CCS2 180kW (2/2 Avail)")
                     put("lat", 3.1488)
                     put("lng", 101.7133)
                     put("status", "up")
-                    put("plugs", JSONArray().apply {
-                        put(JSONObject().apply { put("type", "CCS2"); put("kw", 180); put("n", 2) })
-                        put(JSONObject().apply { put("type", "Type 2"); put("kw", 22); put("n", 2) })
-                    })
                 })
-                // Petrol Station 1
-                put(JSONObject().apply {
-                    put("name", "Petronas Jalan Ampang")
-                    put("kind", "fuel")
-                    put("operator", "Petronas")
-                    put("km", 1.5)
-                    put("lat", 3.1585)
-                    put("lng", 101.7125)
-                    put("status", "up")
-                    put("fuels", "RON95 · RON97 · Diesel")
-                    put("plugs", JSONArray().apply {
-                        put(JSONObject().apply { put("type", "RON95"); put("kw", 0); put("n", 8) })
-                        put(JSONObject().apply { put("type", "RON97"); put("kw", 0); put("n", 4) })
-                        put(JSONObject().apply { put("type", "Euro 5 Diesel"); put("kw", 0); put("n", 4) })
-                    })
-                })
-                // EV Charger 2
                 put(JSONObject().apply {
                     put("name", "Gentari Suria KLCC")
-                    put("kind", "ev")
-                    put("operator", "Gentari")
-                    put("km", 2.1)
+                    put("plugs", "CCS2 60kW, Type 2 22kW")
                     put("lat", 3.1579)
                     put("lng", 101.7116)
                     put("status", "up")
-                    put("plugs", JSONArray().apply {
-                        put(JSONObject().apply { put("type", "CCS2"); put("kw", 60); put("n", 2) })
-                        put(JSONObject().apply { put("type", "Type 2"); put("kw", 22); put("n", 4) })
-                    })
                 })
-                // Petrol Station 2
-                put(JSONObject().apply {
-                    put("name", "Shell Jalan Tun Razak")
-                    put("kind", "fuel")
-                    put("operator", "Shell")
-                    put("km", 2.4)
-                    put("lat", 3.1465)
-                    put("lng", 101.7190)
-                    put("status", "up")
-                    put("fuels", "FuelSave 95 · V-Power Racing · Diesel")
-                    put("plugs", JSONArray().apply {
-                        put(JSONObject().apply { put("type", "FuelSave 95"); put("kw", 0); put("n", 6) })
-                        put(JSONObject().apply { put("type", "V-Power"); put("kw", 0); put("n", 4) })
-                        put(JSONObject().apply { put("type", "Diesel"); put("kw", 0); put("n", 4) })
-                    })
-                })
-                // Petrol Station 3
-                put(JSONObject().apply {
-                    put("name", "BHPetrol Sungai Besi")
-                    put("kind", "fuel")
-                    put("operator", "BHPetrol")
-                    put("km", 3.2)
-                    put("lat", 3.1320)
-                    put("lng", 101.7080)
-                    put("status", "up")
-                    put("fuels", "Infiniti 95 · Infiniti 97 · Euro 5 Diesel")
-                    put("plugs", JSONArray().apply {
-                        put(JSONObject().apply { put("type", "Infiniti 95"); put("kw", 0); put("n", 6) })
-                        put(JSONObject().apply { put("type", "Infiniti 97"); put("kw", 0); put("n", 2) })
-                    })
-                })
-                // EV Charger 3
-                put(JSONObject().apply {
-                    put("name", "ChargEV Menara Maybank")
-                    put("kind", "ev")
-                    put("operator", "ChargEV")
-                    put("km", 3.5)
-                    put("lat", 3.1472)
-                    put("lng", 101.6995)
-                    put("status", "up")
-                    put("plugs", JSONArray().apply {
-                        put(JSONObject().apply { put("type", "CCS2"); put("kw", 50); put("n", 2) })
-                        put(JSONObject().apply { put("type", "AC"); put("kw", 22); put("n", 2) })
-                    })
-                })
-            }
-            put("items", items)
-        }
-        root.put("ev", evObj)
-
-        // Top-level lyrics and music fields (for drivedeck_lyrics.html and standalone views)
-        root.put("lyrics", lyricsArr)
-        root.put("lines", linesPairArr)
-        root.put("title", songTitle)
-        root.put("artist", songArtist)
-        root.put("art", songCoverUrl)
-        root.put("playing", isPlaying)
-        root.put("positionMs", playbackPositionMs)
-        root.put("durationMs", playbackDurationMs)
-        root.put("status", musicStatus)
-        root.put("app", songApp)
-        root.put("cached", true)
-        root.put("sentAtMs", System.currentTimeMillis())
-
-        return root.toString()
-    }
-
-    fun defaultForecast(weatherObj: JSONObject?): JSONObject {
-        val temp = weatherObj?.optInt("temp", 31) ?: 31
-        val code = weatherObj?.optInt("code", 2) ?: 2
-        val windStr = weatherObj?.optString("wind", "12 km/h") ?: "12 km/h"
-        val wind = windStr.replace(" km/h", "").toIntOrNull() ?: 12
-
-        val nowObj = JSONObject().apply {
-            put("temp", temp)
-            put("feels", temp + 3)
-            put("code", code)
-            put("isDay", true)
-            put("humidity", 75)
-            put("wind", wind)
-            put("uv", 5.0)
-        }
-
-        val hoursArr = JSONArray()
-        val cal = java.util.Calendar.getInstance()
-        val curHour = cal.get(java.util.Calendar.HOUR_OF_DAY)
-        for (i in 0 until 12) {
-            val h = (curHour + i) % 24
-            val hStr = String.format(java.util.Locale.US, "%02d:00", h)
-            val hTemp = when (h) {
-                in 11..16 -> temp + (h % 3)
-                in 0..6 -> (temp - 5).coerceAtLeast(20) + (h % 2)
-                else -> temp - 2
-            }
-            hoursArr.put(JSONObject().apply {
-                put("t", hStr)
-                put("temp", hTemp)
-                put("code", if (i == 4 || i == 5) 80 else code)
-                put("isDay", h in 7..19)
-                put("rain", if (i == 4 || i == 5) 45 else 0)
             })
-        }
+        })
 
-        val daysArr = JSONArray()
-        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
-        for (i in 0 until 7) {
-            val dayCal = java.util.Calendar.getInstance().apply { add(java.util.Calendar.DAY_OF_YEAR, i) }
-            val dStr = sdf.format(dayCal.time)
-            daysArr.put(JSONObject().apply {
-                put("d", dStr)
-                put("code", if (i == 2 || i == 5) 80 else code)
-                put("min", 24 + (i % 2))
-                put("max", 32 + (i % 3))
-                put("rain", if (i == 2 || i == 5) 60 else 10)
-            })
-        }
-
-        return JSONObject().apply {
-            put("now", nowObj)
-            put("hours", hoursArr)
-            put("days", daysArr)
-        }
+        // Flat legacy fields
+        state.put("lyrics", lyricsArr)
+        state.put("lines", linesPairArr)
+        state.put("title", songTitle)
+        state.put("artist", songArtist)
+        state.put("art", songCoverUrl)
+        state.put("playing", isPlaying)
+        state.put("positionMs", playbackPositionMs)
+        state.put("durationMs", playbackDurationMs)
+        state.put("status", musicStatus)
+        state.put("app", songApp)
+        state.put("cached", true)
+        state.put("sentAtMs", System.currentTimeMillis())
+        return state.toString()
     }
 
     private fun defaultWeather(): JSONObject = JSONObject().apply {
@@ -705,7 +610,7 @@ object DashMateStateBridge {
         put("icon", "partly-cloudy-day")
         put("city", "Kuala Lumpur")
         put("wind", "12 km/h")
-        put("rain", null)
+        put("rain", null as Any?)
     }
 
     private fun defaultAir(): JSONObject = JSONObject().apply {
@@ -718,33 +623,14 @@ object DashMateStateBridge {
     private fun defaultRadar(): JSONObject = JSONObject().apply {
         put("host", "https://tilecache.rainviewer.com")
         put("path", "/v2/radar/nowcast")
-        put("lat", 3.1390)
+        put("lat", 3.139)
         put("lon", 101.6869)
         put("time", System.currentTimeMillis() / 1000)
     }
 
     private fun defaultCalendar(): JSONObject = JSONObject().apply {
-        put("access", true)
-        val now = System.currentTimeMillis()
-        val eventsArr = JSONArray().apply {
-            put(JSONObject().apply {
-                put("title", "Daily Standup & Sync")
-                put("begin", now + 1800000L)
-                put("end", now + 3600000L)
-                put("where", "Google Meet")
-                put("allDay", false)
-                put("color", "#14E0C1")
-            })
-            put(JSONObject().apply {
-                put("title", "Family Dinner")
-                put("begin", now + (4 * 3600000L))
-                put("end", now + (6 * 3600000L))
-                put("where", "Pavilion KL")
-                put("allDay", false)
-                put("color", "#F59E0B")
-            })
-        }
-        put("events", eventsArr)
+        put("access", false)
+        put("events", JSONArray())
     }
 
     private fun defaultPrayer(): JSONObject = JSONObject().apply {
@@ -753,89 +639,74 @@ object DashMateStateBridge {
         put("zoneName", "Kuala Lumpur, Putrajaya")
         put("date", "Today")
 
-        val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("Asia/Kuala_Lumpur"))
+        val cal = Calendar.getInstance(TimeZone.getTimeZone("Asia/Kuala_Lumpur"))
         fun epochAt(h: Int, m: Int): Long {
-            val c = cal.clone() as java.util.Calendar
-            c.set(java.util.Calendar.HOUR_OF_DAY, h)
-            c.set(java.util.Calendar.MINUTE, m)
-            c.set(java.util.Calendar.SECOND, 0)
-            c.set(java.util.Calendar.MILLISECOND, 0)
+            val c = cal.clone() as Calendar
+            c.set(Calendar.HOUR_OF_DAY, h)
+            c.set(Calendar.MINUTE, m)
+            c.set(Calendar.SECOND, 0)
+            c.set(Calendar.MILLISECOND, 0)
             return c.timeInMillis
         }
 
-        val imsakEpoch = epochAt(5, 39)
-        val subuhEpoch = epochAt(5, 49)
-        val syurukEpoch = epochAt(6, 56)
-        val zohorEpoch = epochAt(13, 0)
-        val asarEpoch = epochAt(16, 19)
-        val maghribEpoch = epochAt(18, 59)
-        val isyakEpoch = epochAt(20, 10)
-
-        val arr = JSONArray().apply {
-            put(JSONObject().apply { put("name", "Imsak"); put("time", "05:39"); put("epochMs", imsakEpoch); put("obligatory", false) })
-            put(JSONObject().apply { put("name", "Subuh"); put("time", "05:49"); put("epochMs", subuhEpoch); put("obligatory", true) })
-            put(JSONObject().apply { put("name", "Syuruk"); put("time", "06:56"); put("epochMs", syurukEpoch); put("obligatory", false) })
-            put(JSONObject().apply { put("name", "Zohor"); put("time", "13:00"); put("epochMs", zohorEpoch); put("obligatory", true) })
-            put(JSONObject().apply { put("name", "Asar"); put("time", "16:19"); put("epochMs", asarEpoch); put("obligatory", true) })
-            put(JSONObject().apply { put("name", "Maghrib"); put("time", "18:59"); put("epochMs", maghribEpoch); put("obligatory", true) })
-            put(JSONObject().apply { put("name", "Isyak"); put("time", "20:10"); put("epochMs", isyakEpoch); put("obligatory", true) })
-        }
-        put("times", arr)
-
-        val nowMs = System.currentTimeMillis()
-        var curObj: JSONObject? = null
-        var nextObj: JSONObject? = null
-        for (i in 0 until arr.length()) {
-            val item = arr.getJSONObject(i)
-            val ep = item.getLong("epochMs")
-            if (ep <= nowMs) {
-                curObj = item
-            } else if (nextObj == null) {
-                nextObj = item
-            }
-        }
-        if (nextObj == null) {
-            val tomCal = (cal.clone() as java.util.Calendar).apply {
-                add(java.util.Calendar.DAY_OF_YEAR, 1)
-                set(java.util.Calendar.HOUR_OF_DAY, 5)
-                set(java.util.Calendar.MINUTE, 49)
-                set(java.util.Calendar.SECOND, 0)
-                set(java.util.Calendar.MILLISECOND, 0)
-            }
-            nextObj = JSONObject().apply {
-                put("name", "Subuh")
-                put("time", "05:49")
-                put("epochMs", tomCal.timeInMillis)
-                put("obligatory", true)
-            }
-        }
-        if (curObj == null) {
-            val yestCal = (cal.clone() as java.util.Calendar).apply {
-                add(java.util.Calendar.DAY_OF_YEAR, -1)
-                set(java.util.Calendar.HOUR_OF_DAY, 20)
-                set(java.util.Calendar.MINUTE, 10)
-                set(java.util.Calendar.SECOND, 0)
-                set(java.util.Calendar.MILLISECOND, 0)
-            }
-            curObj = JSONObject().apply {
-                put("name", "Isyak")
-                put("time", "20:10")
-                put("epochMs", yestCal.timeInMillis)
-                put("obligatory", true)
-            }
+        fun entry(name: String, time: String, epochMs: Long, obligatory: Boolean) = JSONObject().apply {
+            put("name", name)
+            put("time", time)
+            put("epochMs", epochMs)
+            put("obligatory", obligatory)
         }
 
-        val remMs = (nextObj.getLong("epochMs") - nowMs).coerceAtLeast(0L)
-        val remMin = (remMs / 60000L).toInt()
-        val h = remMin / 60
-        val m = remMin % 60
-        val countStr = if (h > 0) "${h}h ${m}m" else "${m}m"
+        val times = JSONArray().apply {
+            put(entry("Imsak", "05:39", epochAt(5, 39), false))
+            put(entry("Subuh", "05:49", epochAt(5, 49), true))
+            put(entry("Syuruk", "06:56", epochAt(6, 56), false))
+            put(entry("Zohor", "13:00", epochAt(13, 0), true))
+            put(entry("Asar", "16:19", epochAt(16, 19), true))
+            put(entry("Maghrib", "18:59", epochAt(18, 59), true))
+            put(entry("Isyak", "20:10", epochAt(20, 10), true))
+        }
+        put("times", times)
 
-        put("current", curObj)
+        val now = System.currentTimeMillis()
+        var next: JSONObject? = null
+        var current: JSONObject? = null
+        for (i in 0 until times.length()) {
+            val t = times.getJSONObject(i)
+            if (t.getLong("epochMs") <= now) {
+                current = t
+            } else if (next == null) {
+                next = t
+            }
+        }
+        val nextObj = next ?: run {
+            val c = cal.clone() as Calendar
+            c.add(Calendar.DAY_OF_YEAR, 1)
+            c.set(Calendar.HOUR_OF_DAY, 5)
+            c.set(Calendar.MINUTE, 49)
+            c.set(Calendar.SECOND, 0)
+            c.set(Calendar.MILLISECOND, 0)
+            entry("Subuh", "05:49", c.timeInMillis, true)
+        }
+        val currentObj = current ?: run {
+            val c = cal.clone() as Calendar
+            c.add(Calendar.DAY_OF_YEAR, -1)
+            c.set(Calendar.HOUR_OF_DAY, 20)
+            c.set(Calendar.MINUTE, 10)
+            c.set(Calendar.SECOND, 0)
+            c.set(Calendar.MILLISECOND, 0)
+            entry("Isyak", "20:10", c.timeInMillis, true)
+        }
+
+        val diffMin = ((nextObj.getLong("epochMs") - now).coerceAtLeast(0L) / 60_000L).toInt()
+        val h = diffMin / 60
+        val m = diffMin % 60
+        val count = if (h > 0) "${h}h ${m}m" else "${m}m"
+
+        put("current", currentObj)
         put("next", nextObj)
         put("time", nextObj.optString("time", "05:49"))
-        put("count", countStr)
-        put("countMin", remMin)
+        put("count", count)
+        put("countMin", diffMin)
         put("imsak", "05:39")
         put("subuh", "05:49")
         put("syuruk", "06:56")
@@ -853,7 +724,8 @@ object DashMateStateBridge {
             }
             try {
                 DashMateMediaCardService.triggerUpdate()
-            } catch (_: Throwable) {}
+            } catch (e: Throwable) {
+            }
         }
     }
 
@@ -861,9 +733,16 @@ object DashMateStateBridge {
         executeScript("if (window.ddHighlight) window.ddHighlight('$id');")
     }
 
+    /** Live update of the tall layout while the owner edits it on the phone. */
+    fun applyPortraitLayoutLive(layoutJson: String) {
+        executeScript("if (window.ddSetLayout) { window.ddSetLayout($layoutJson, true); }")
+    }
+
     fun applyLayoutLive(layoutJson: String) {
         cachedLayoutJson = layoutJson
-        val script = "if (window.applyLayout) { window.applyLayout($layoutJson); } else if (window.ddUpdate) { window.ddUpdate({ layout: $layoutJson }); }"
+        val script = "if (window.ddSetLayout) { window.ddSetLayout($layoutJson, false); } " +
+            "else if (window.applyLayout) { window.applyLayout($layoutJson); } " +
+            "else if (window.ddUpdate) { window.ddUpdate({ layout: $layoutJson }); }"
         executeScript(script)
     }
 
@@ -875,29 +754,12 @@ object DashMateStateBridge {
         }
     }
 
+    // Navigation opens in the car's Waze/Maps when the Deck car session is running (see CarNav).
     fun launchNavigation(context: Context, destination: String) {
-        mainHandler.post {
-            try {
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=" + Uri.encode(destination)))
-                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                context.startActivity(intent)
-            } catch (e: Exception) {
-                val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://maps.google.com/?q=" + Uri.encode(destination)))
-                webIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                context.startActivity(webIntent)
-            }
-        }
+        CarNav.toQuery(context, destination)
     }
 
     fun launchNavigationCoords(context: Context, lat: Double, lng: Double) {
-        mainHandler.post {
-            try {
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("google.navigation:q=$lat,$lng"))
-                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                context.startActivity(intent)
-            } catch (e: Exception) {
-                launchNavigation(context, "$lat,$lng")
-            }
-        }
+        CarNav.toCoords(context, lat, lng)
     }
 }

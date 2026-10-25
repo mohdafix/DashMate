@@ -1,21 +1,16 @@
 name: dashmate
-description: "DashMate Next-Gen In-Car Digital Deck"
+description: "DashMate Deck - Android Auto dashboard companion."
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.5+6
 
 environment:
-  sdk: ^3.12.2
+  sdk: ^3.9.0
 
 dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.8
-  webview_flutter: ^4.10.0
-  shared_preferences: ^2.5.6
-  http: ^1.6.0
-  intl: ^0.20.3
-  flutter_svg: ^2.3.0
-  url_launcher: ^6.3.3
+  webview_flutter: ^4.13.0
 
 dev_dependencies:
   flutter_test:
@@ -24,9 +19,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-
   assets:
     - assets/car/
     - assets/data/
     - assets/icons/
-    - assets/images/

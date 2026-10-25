@@ -6,13 +6,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.BufferedReader
-import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
-
-data class LyricLine(val timeMs: Long, val text: String)
+import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 
 object LyricsFetcher {
     private const val TAG = "LyricsFetcher"
@@ -20,28 +18,33 @@ object LyricsFetcher {
     private const val LRCLIB_SEARCH = "https://lrclib.net/api/search"
     private const val LYRICS_OVH_BASE = "https://api.lyrics.ovh/v1"
     private const val PREFS_NAME = "DashMateLyricsCache"
+    private const val USER_AGENT = "DashMate-AndroidAuto/1.0"
 
-    // In-memory cache for speed during car playback
-    private val memoryCache = java.util.concurrent.ConcurrentHashMap<String, List<LyricLine>>()
+    private val memoryCache = ConcurrentHashMap<String, List<LyricLine>>()
 
-    suspend fun fetchLyrics(artist: String, track: String, context: Context? = null): List<LyricLine> = withContext(Dispatchers.IO) {
-        if (track.isBlank() || track == "Not Playing") return@withContext emptyList()
+    // RECONSTRUCTED: body rebuilt from --show-bad-code output of LyricsFetcher$fetchLyrics$2.
+    suspend fun fetchLyrics(
+        artist: String,
+        track: String,
+        context: Context? = null,
+    ): List<LyricLine> = withContext(Dispatchers.IO) {
+        if (track.isBlank() || track == "Not Playing") {
+            return@withContext emptyList()
+        }
 
         val cleanTrack = cleanTitle(track)
         val cleanArtist = cleanArtist(artist)
-        val cacheKey = "${cleanArtist.lowercase()}_${cleanTrack.lowercase()}"
+        val cacheKey = cleanArtist.lowercase(Locale.ROOT) + "_" + cleanTrack.lowercase(Locale.ROOT)
 
-        // Check in-memory cache
         memoryCache[cacheKey]?.let { return@withContext it }
 
-        // Check persistent disk cache
         if (context != null) {
             try {
                 val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 val cachedJson = prefs.getString(cacheKey, null)
                 if (!cachedJson.isNullOrBlank()) {
                     val arr = JSONArray(cachedJson)
-                    val list = mutableListOf<LyricLine>()
+                    val list = ArrayList<LyricLine>()
                     for (i in 0 until arr.length()) {
                         val obj = arr.getJSONObject(i)
                         list.add(LyricLine(obj.getLong("time"), obj.getString("text")))
@@ -52,24 +55,18 @@ object LyricsFetcher {
                     }
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Failed reading lyrics cache: ${e.message}")
+                Log.w(TAG, "Failed reading lyrics cache: " + e.message)
             }
         }
 
-        // Primary: LRCLIB direct get
         var result = fetchFromLrclib(cleanArtist, cleanTrack)
-
-        // Secondary: LRCLIB search fallback
         if (result.isEmpty()) {
             result = searchFromLrclib("$cleanArtist $cleanTrack")
         }
-
-        // Tertiary: Lyrics.ovh fallback engine
         if (result.isEmpty()) {
             result = fetchFromLyricsOvh(cleanArtist, cleanTrack)
         }
 
-        // Cache result if found
         if (result.isNotEmpty()) {
             memoryCache[cacheKey] = result
             if (context != null) {
@@ -82,28 +79,35 @@ object LyricsFetcher {
                         })
                     }
                     context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                        .edit()
-                        .putString(cacheKey, arr.toString())
-                        .apply()
-                } catch (_: Exception) {}
+                        .edit().putString(cacheKey, arr.toString()).apply()
+                } catch (ignored: Exception) {
+                }
             }
         }
-
-        return@withContext result
+        result
     }
+
+    private fun openGet(urlStr: String): HttpURLConnection {
+        val conn = URL(urlStr).openConnection() as HttpURLConnection
+        conn.requestMethod = "GET"
+        conn.connectTimeout = 4000
+        conn.readTimeout = 4000
+        conn.setRequestProperty("User-Agent", USER_AGENT)
+        return conn
+    }
+
+    private fun plainToLines(plain: String): List<LyricLine> =
+        plain.lines()
+            .filter { it.isNotBlank() }
+            .mapIndexed { i, line -> LyricLine((i * 3500).toLong(), line) }
 
     private fun fetchFromLrclib(artist: String, track: String): List<LyricLine> {
         try {
-            val urlStr = "$LRCLIB_GET?artist_name=${URLEncoder.encode(artist, "UTF-8")}&track_name=${URLEncoder.encode(track, "UTF-8")}"
-            val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 4000
-                readTimeout = 4000
-                setRequestProperty("User-Agent", "DashMate-AndroidAuto/1.0")
-            }
-
+            val urlStr = "$LRCLIB_GET?artist_name=" + URLEncoder.encode(artist, "UTF-8") +
+                "&track_name=" + URLEncoder.encode(track, "UTF-8")
+            val conn = openGet(urlStr)
             if (conn.responseCode == 200) {
-                val response = conn.inputStream.bufferedReader().use { it.readText() }
+                val response = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
                 val json = JSONObject(response)
                 val syncedLyrics = json.optString("syncedLyrics", "")
                 if (syncedLyrics.isNotBlank()) {
@@ -111,29 +115,21 @@ object LyricsFetcher {
                 }
                 val plainLyrics = json.optString("plainLyrics", "")
                 if (plainLyrics.isNotBlank()) {
-                    return plainLyrics.lines()
-                        .filter { it.isNotBlank() }
-                        .mapIndexed { index, line -> LyricLine(index * 3500L, line) }
+                    return plainToLines(plainLyrics)
                 }
             }
         } catch (e: Throwable) {
-            Log.d(TAG, "LRCLIB get error: ${e.message}")
+            Log.d(TAG, "LRCLIB get error: " + e.message)
         }
         return emptyList()
     }
 
     private fun searchFromLrclib(query: String): List<LyricLine> {
         try {
-            val urlStr = "$LRCLIB_SEARCH?q=${URLEncoder.encode(query, "UTF-8")}"
-            val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 4000
-                readTimeout = 4000
-                setRequestProperty("User-Agent", "DashMate-AndroidAuto/1.0")
-            }
-
+            val urlStr = "$LRCLIB_SEARCH?q=" + URLEncoder.encode(query, "UTF-8")
+            val conn = openGet(urlStr)
             if (conn.responseCode == 200) {
-                val response = conn.inputStream.bufferedReader().use { it.readText() }
+                val response = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
                 val array = JSONArray(response)
                 if (array.length() > 0) {
                     val first = array.getJSONObject(0)
@@ -143,51 +139,43 @@ object LyricsFetcher {
                     }
                     val plain = first.optString("plainLyrics", "")
                     if (plain.isNotBlank()) {
-                        return plain.lines()
-                            .filter { it.isNotBlank() }
-                            .mapIndexed { index, line -> LyricLine(index * 3500L, line) }
+                        return plainToLines(plain)
                     }
                 }
             }
         } catch (e: Throwable) {
-            Log.d(TAG, "LRCLIB search error: ${e.message}")
+            Log.d(TAG, "LRCLIB search error: " + e.message)
         }
         return emptyList()
     }
 
+    // RECONSTRUCTED: jadx failed on this method; rebuilt from --show-bad-code output.
     private fun fetchFromLyricsOvh(artist: String, track: String): List<LyricLine> {
         try {
             val encArtist = URLEncoder.encode(artist, "UTF-8").replace("+", "%20")
             val encTrack = URLEncoder.encode(track, "UTF-8").replace("+", "%20")
             val urlStr = "$LYRICS_OVH_BASE/$encArtist/$encTrack"
-            val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 4000
-                readTimeout = 4000
-                setRequestProperty("User-Agent", "DashMate-AndroidAuto/1.0")
-            }
-
+            val conn = openGet(urlStr)
             if (conn.responseCode == 200) {
-                val response = conn.inputStream.bufferedReader().use { it.readText() }
+                val response = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
                 val json = JSONObject(response)
                 val lyrics = json.optString("lyrics", "")
                 if (lyrics.isNotBlank()) {
                     Log.d(TAG, "Fetched fallback lyrics from Lyrics.ovh for $artist - $track")
                     return lyrics.lines()
                         .filter { it.isNotBlank() && !it.startsWith("Paroles de la chanson") }
-                        .mapIndexed { index, line -> LyricLine(index * 3500L, line.trim()) }
+                        .mapIndexed { i, line -> LyricLine((i * 3500).toLong(), line.trim()) }
                 }
             }
         } catch (e: Throwable) {
-            Log.d(TAG, "Lyrics.ovh fallback error: ${e.message}")
+            Log.d(TAG, "Lyrics.ovh fallback error: " + e.message)
         }
         return emptyList()
     }
 
     fun parseLrc(lrcText: String): List<LyricLine> {
-        val lines = mutableListOf<LyricLine>()
-        val regex = Regex("""\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)""")
-
+        val lines = ArrayList<LyricLine>()
+        val regex = Regex("\\[(\\d{2}):(\\d{2})\\.(\\d{2,3})\\](.*)")
         for (rawLine in lrcText.lines()) {
             val match = regex.find(rawLine.trim())
             if (match != null) {
@@ -196,41 +184,38 @@ object LyricsFetcher {
                 val fracStr = match.groupValues[3]
                 val frac = fracStr.toLongOrNull() ?: 0L
                 val ms = if (fracStr.length == 2) frac * 10 else frac
-
                 val timeMs = min * 60 * 1000 + sec * 1000 + ms
                 val text = match.groupValues[4].trim()
                 if (text.isNotBlank()) {
                     lines.add(LyricLine(timeMs, text))
                 }
             } else if (rawLine.isNotBlank() && !rawLine.startsWith("[")) {
-                lines.add(LyricLine(lines.size * 3500L, rawLine.trim()))
+                lines.add(LyricLine((lines.size * 3500).toLong(), rawLine.trim()))
             }
         }
         return lines.sortedBy { it.timeMs }
     }
 
-    private fun cleanTitle(title: String): String {
-        return title
-            .replace(Regex("""^♪\s*"""), "")
-            .replace(Regex("""(?i)\s*[·•-]\s*finding\s+lyrics.*"""), "")
-            .replace(Regex("""(?i)\s*[·•-]\s*cached.*"""), "")
-            .replace(Regex("""(?i)\(official\s+video\)"""), "")
-            .replace(Regex("""(?i)\[official\s+video\]"""), "")
-            .replace(Regex("""(?i)\(music\s+video\)"""), "")
-            .replace(Regex("""(?i)\(lyric\s+video\)"""), "")
-            .replace(Regex("""(?i)\(audio\)"""), "")
-            .replace(Regex("""(?i)\[.*?\]"""), "")
-            .replace(Regex("""(?i)ft\..*"""), "")
-            .replace(Regex("""(?i)feat\..*"""), "")
+    private fun cleanTitle(title: String): String =
+        title
+            .replace(Regex("^♪\\s*"), "")
+            .replace(Regex("(?i)\\s*[·•-]\\s*finding\\s+lyrics.*"), "")
+            .replace(Regex("(?i)\\s*[·•-]\\s*cached.*"), "")
+            .replace(Regex("(?i)\\(official\\s+video\\)"), "")
+            .replace(Regex("(?i)\\[official\\s+video\\]"), "")
+            .replace(Regex("(?i)\\(music\\s+video\\)"), "")
+            .replace(Regex("(?i)\\(lyric\\s+video\\)"), "")
+            .replace(Regex("(?i)\\(audio\\)"), "")
+            .replace(Regex("(?i)\\[.*?\\]"), "")
+            .replace(Regex("(?i)ft\\..*"), "")
+            .replace(Regex("(?i)feat\\..*"), "")
             .trim()
-    }
 
-    private fun cleanArtist(artist: String): String {
-        return artist
-            .replace(Regex("""(?i)\s*[·•-]\s*finding\s+lyrics.*"""), "")
-            .replace(Regex("""(?i)\s*[·•-]\s*cached.*"""), "")
-            .replace(Regex("""(?i)\s*-\s*topic"""), "")
-            .replace(Regex("""(?i)vevo"""), "")
+    private fun cleanArtist(artist: String): String =
+        artist
+            .replace(Regex("(?i)\\s*[·•-]\\s*finding\\s+lyrics.*"), "")
+            .replace(Regex("(?i)\\s*[·•-]\\s*cached.*"), "")
+            .replace(Regex("(?i)\\s*-\\s*topic"), "")
+            .replace(Regex("(?i)vevo"), "")
             .trim()
-    }
 }

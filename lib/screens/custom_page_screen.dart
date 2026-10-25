@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../core/weather_service.dart';
-import '../theme/app_colors.dart';
+import '../theme/app_tokens.dart';
 
 class CustomPageScreen extends StatefulWidget {
   const CustomPageScreen({super.key});
@@ -52,19 +52,7 @@ class _CustomPageScreenState extends State<CustomPageScreen> {
   @override
   void initState() {
     super.initState();
-    _loadSavedMode();
     _loadWeather();
-  }
-
-  void _loadSavedMode() async {
-    try {
-      final res = await _channel.invokeMethod<String>('getCustomPageMode');
-      if (res != null && res.isNotEmpty && mounted) {
-        setState(() {
-          _selectedMode = res;
-        });
-      }
-    } catch (_) {}
   }
 
   void _loadWeather() async {
@@ -80,7 +68,8 @@ class _CustomPageScreenState extends State<CustomPageScreen> {
 
   void _selectMode(String id) {
     setState(() => _selectedMode = id);
-    _channel.invokeMethod('setCarPage', {'page': id});
+    // The car shows its Custom page in the chosen mode (weather, calendar, sports, radar, ev).
+    _channel.invokeMethod('setPage', {'page': 'custom', 'mode': id});
   }
 
   IconData _getWeatherIcon(int code, int isDay) {
@@ -95,29 +84,31 @@ class _CustomPageScreenState extends State<CustomPageScreen> {
   }
 
   Color _getAqiColor(int aqi) {
-    if (aqi <= 50) return AppColors.accentTeal;
-    if (aqi <= 100) return const Color(0xFFF1C40F);
-    if (aqi <= 150) return const Color(0xFFE67E22);
-    return AppColors.accentRed;
+    final t = context.tokens;
+    if (aqi <= 50) return t.ok;
+    if (aqi <= 100) return t.isDark ? Colors.amber.shade300 : Colors.amber.shade800;
+    if (aqi <= 150) return t.isDark ? Colors.orange.shade300 : Colors.orange.shade800;
+    return t.danger;
   }
 
   @override
   Widget build(BuildContext context) {
     final w = _weatherData ?? WeatherData.initial();
+    final t = context.tokens;
 
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      backgroundColor: t.bg,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          icon: Icon(Icons.arrow_back, color: t.ink),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('Custom page', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+        title: Text('Custom page', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: t.ink)),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.white70),
+            icon: Icon(Icons.refresh, color: t.ink2),
             onPressed: () {
               WeatherService.fetchWeather(forceRefresh: true).then((val) {
                 if (mounted) setState(() => _weatherData = val);
@@ -133,19 +124,16 @@ class _CustomPageScreenState extends State<CustomPageScreen> {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFF1E2E4A), Color(0xFF121B2D)],
-              ),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppColors.border),
+              color: t.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: t.border),
+              boxShadow: t.cardShadow,
             ),
             child: _isLoading
-                ? const SizedBox(
+                ? SizedBox(
                     height: 140,
                     child: Center(
-                      child: CircularProgressIndicator(color: AppColors.accentTeal),
+                      child: CircularProgressIndicator(color: t.accent),
                     ),
                   )
                 : Column(
@@ -163,36 +151,36 @@ class _CustomPageScreenState extends State<CustomPageScreen> {
                                   children: [
                                     Text(
                                       '${w.temp.round()}°',
-                                      style: const TextStyle(fontSize: 34, fontWeight: FontWeight.bold),
+                                      style: TextStyle(fontSize: 34, fontWeight: FontWeight.bold, color: t.ink),
                                     ),
                                     const SizedBox(width: 8),
                                     Icon(
                                       _getWeatherIcon(w.weatherCode, w.isDay),
                                       size: 30,
-                                      color: AppColors.accentTeal,
+                                      color: t.accent,
                                     ),
                                   ],
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
                                   w.condition,
-                                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: t.ink),
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
                                   'Feels like ${w.apparentTemp.round()}° · UV ${w.uvIndex.round()}',
-                                  style: const TextStyle(fontSize: 11, color: AppColors.textSub),
+                                  style: TextStyle(fontSize: 11, color: t.ink2),
                                 ),
                                 const SizedBox(height: 6),
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                   decoration: BoxDecoration(
-                                    color: Colors.black26,
+                                    color: t.accent.withValues(alpha: 0.10),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Text(
                                     w.rainSummary,
-                                    style: const TextStyle(fontSize: 11, color: AppColors.accentTeal),
+                                    style: TextStyle(fontSize: 11, color: t.accent),
                                   ),
                                 ),
                               ],
@@ -206,7 +194,7 @@ class _CustomPageScreenState extends State<CustomPageScreen> {
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.end,
                                   children: [
-                                    const Text('Air quality ', style: TextStyle(fontSize: 11, color: AppColors.textSub)),
+                                    Text('Air quality ', style: TextStyle(fontSize: 11, color: t.ink2)),
                                     Text(
                                       '${w.aqi} ',
                                       style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _getAqiColor(w.aqi)),
@@ -214,7 +202,7 @@ class _CustomPageScreenState extends State<CustomPageScreen> {
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                       decoration: BoxDecoration(
-                                        color: _getAqiColor(w.aqi).withValues(alpha: 0.2),
+                                        color: _getAqiColor(w.aqi).withValues(alpha: 0.12),
                                         borderRadius: BorderRadius.circular(10),
                                       ),
                                       child: Text(
@@ -234,16 +222,16 @@ class _CustomPageScreenState extends State<CustomPageScreen> {
                                   width: 140,
                                   height: 75,
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF0F1E2E),
+                                    color: t.surface2,
                                     borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(color: Colors.white12),
+                                    border: Border.all(color: t.border),
                                   ),
                                   child: Stack(
                                     children: [
                                       Positioned.fill(
                                         child: Opacity(
                                           opacity: 0.8,
-                                          child: CustomPaint(painter: _RadarWavesPainter()),
+                                          child: CustomPaint(painter: _RadarWavesPainter(t.accent, t.ok)),
                                         ),
                                       ),
                                       Positioned(
@@ -251,11 +239,11 @@ class _CustomPageScreenState extends State<CustomPageScreen> {
                                         top: 4,
                                         child: Text(
                                           'Rain radar · ${w.radarTime}',
-                                          style: const TextStyle(fontSize: 9, color: Colors.white70),
+                                          style: TextStyle(fontSize: 9, color: t.ink2),
                                         ),
                                       ),
-                                      const Center(
-                                        child: Icon(Icons.my_location, size: 14, color: AppColors.accentTeal),
+                                      Center(
+                                        child: Icon(Icons.my_location, size: 14, color: t.accent),
                                       ),
                                     ],
                                   ),
@@ -289,21 +277,21 @@ class _CustomPageScreenState extends State<CustomPageScreen> {
 
           const SizedBox(height: 10),
 
-          // Verbatim source attribution
+          // Verbatim source attribution from AutoDeck
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Text(
               'For your prayer zone. Forecast and air quality from Open-Meteo, radar from RainViewer (updates every 10 min). Free, no account.',
-              style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.5)),
+              style: TextStyle(fontSize: 11, color: t.ink3),
             ),
           ),
 
           const SizedBox(height: 20),
 
           // "Shows on the car" section title
-          const Text(
+          Text(
             'Shows on the car',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: t.ink),
           ),
           const SizedBox(height: 12),
 
@@ -327,12 +315,13 @@ class _CustomPageScreenState extends State<CustomPageScreen> {
                 child: Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(18),
+                    color: isSel ? Color.alphaBlend(t.accent.withValues(alpha: 0.06), t.surface) : t.surface,
+                    borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: isSel ? AppColors.accentTeal : AppColors.border,
+                      color: isSel ? t.accent : t.border,
                       width: isSel ? 2 : 1,
                     ),
+                    boxShadow: t.cardShadow,
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -340,27 +329,27 @@ class _CustomPageScreenState extends State<CustomPageScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Icon(m['icon'], color: AppColors.accentTeal, size: 24),
+                          Icon(m['icon'], color: t.accent, size: 24),
                           if (isSel)
                             Container(
                               width: 20,
                               height: 20,
-                              decoration: const BoxDecoration(
+                              decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                color: AppColors.accentTeal,
+                                color: t.accent,
                               ),
-                              child: const Icon(Icons.check, size: 14, color: Colors.black),
+                              child: Icon(Icons.check, size: 14, color: t.onAccent),
                             ),
                         ],
                       ),
                       const Spacer(),
-                      Text(m['title'], style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      Text(m['title'], style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: t.ink)),
                       const SizedBox(height: 4),
                       Text(
                         m['desc'],
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 10, color: AppColors.textSub, height: 1.2),
+                        style: TextStyle(fontSize: 10, color: t.ink2, height: 1.2),
                       ),
                     ],
                   ),
@@ -376,22 +365,23 @@ class _CustomPageScreenState extends State<CustomPageScreen> {
   }
 
   Widget _buildHourlyItem(String time, IconData icon, String temp) {
+    final t = context.tokens;
     return Container(
       width: 52,
       margin: const EdgeInsets.only(right: 8),
       padding: const EdgeInsets.symmetric(vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
+        color: t.surface2,
         borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(time, style: const TextStyle(fontSize: 10, color: AppColors.textSub)),
+          Text(time, style: TextStyle(fontSize: 10, color: t.ink2)),
           const SizedBox(height: 2),
-          Icon(icon, size: 16, color: Colors.white70),
+          Icon(icon, size: 16, color: t.ink2),
           const SizedBox(height: 2),
-          Text(temp, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+          Text(temp, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: t.ink)),
         ],
       ),
     );
@@ -399,10 +389,15 @@ class _CustomPageScreenState extends State<CustomPageScreen> {
 }
 
 class _RadarWavesPainter extends CustomPainter {
+  _RadarWavesPainter(this.ring, this.rain);
+
+  final Color ring;
+  final Color rain;
+
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = AppColors.accentTeal.withValues(alpha: 0.3)
+      ..color = ring.withValues(alpha: 0.3)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0;
 
@@ -413,12 +408,13 @@ class _RadarWavesPainter extends CustomPainter {
 
     // Simulated rain blip
     final rainPaint = Paint()
-      ..color = Colors.greenAccent.withValues(alpha: 0.4)
+      ..color = rain.withValues(alpha: 0.35)
       ..style = PaintingStyle.fill;
     canvas.drawCircle(Offset(size.width * 0.65, size.height * 0.4), 16, rainPaint);
     canvas.drawCircle(Offset(size.width * 0.35, size.height * 0.6), 12, rainPaint);
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _RadarWavesPainter oldDelegate) =>
+      oldDelegate.ring != ring || oldDelegate.rain != rain;
 }

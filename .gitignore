@@ -44,18 +44,5 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-# Additional ignores
-.gradle/
-android/.gradle/
-android/local.properties
-*.apk
-*.apks
-*.aab
-*.zip
-
-# Temporary analysis & scratch artifacts
-/*.py
-/*.png
-/*.xml
-/*.txt
-/*.bat
+# Widget Preview related
+.widget_preview/

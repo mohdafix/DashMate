@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../theme/app_colors.dart';
+import '../theme/app_tokens.dart';
 
 class MenuItemData {
   final String id;
@@ -36,7 +36,6 @@ class _FloatingMenuScreenState extends State<FloatingMenuScreen> {
       MenuItemData(id: 'home', title: 'Home', icon: Icons.home_outlined, enabled: true),
       MenuItemData(id: 'lyrics', title: 'Lyrics', icon: Icons.speaker_notes_outlined, enabled: true),
       MenuItemData(id: 'prayer', title: 'Prayer', icon: Icons.mosque_outlined, enabled: true),
-      MenuItemData(id: 'radio', title: 'Radio FM', icon: Icons.radio_outlined, enabled: true),
       MenuItemData(id: 'custom', title: 'Custom page', icon: Icons.view_quilt_outlined, enabled: true),
       MenuItemData(id: 'web', title: 'Browse', icon: Icons.public_outlined, enabled: true),
     ];
@@ -59,11 +58,7 @@ class _FloatingMenuScreenState extends State<FloatingMenuScreen> {
         }
         for (final item in _items) {
           if (!savedIds.contains(item.id)) {
-            if (item.id == 'radio') {
-              item.enabled = true;
-            } else {
-              item.enabled = false;
-            }
+            item.enabled = false;
             reordered.add(item);
           }
         }
@@ -82,21 +77,22 @@ class _FloatingMenuScreenState extends State<FloatingMenuScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final t = context.tokens;
     return Scaffold(
-      backgroundColor: const Color(0xFF0C101A),
+      backgroundColor: t.bg,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          icon: Icon(Icons.arrow_back, color: t.ink),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
+        title: Text(
           'Car menu',
           style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.bold,
-            color: Colors.white,
+            color: t.ink,
           ),
         ),
       ),
@@ -104,11 +100,11 @@ class _FloatingMenuScreenState extends State<FloatingMenuScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         children: [
           // Subtitle / Header Description
-          const Text(
+          Text(
             'What the floating DashMate menu on the car shows. Switch items on or off and drag to change the order.',
             style: TextStyle(
               fontSize: 13.5,
-              color: AppColors.textSub,
+              color: t.ink2,
               height: 1.4,
             ),
           ),
@@ -117,9 +113,10 @@ class _FloatingMenuScreenState extends State<FloatingMenuScreen> {
           // Card with Reorderable List
           Container(
             decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: AppColors.border),
+              color: t.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: t.border),
+              boxShadow: t.cardShadow,
             ),
             clipBehavior: Clip.antiAlias,
             child: Theme(
@@ -161,9 +158,9 @@ class _FloatingMenuScreenState extends State<FloatingMenuScreen> {
                                 child: Container(
                                   padding: const EdgeInsets.only(right: 12, left: 2, top: 4, bottom: 4),
                                   color: Colors.transparent,
-                                  child: const Icon(
+                                  child: Icon(
                                     Icons.drag_indicator,
-                                    color: Colors.white38,
+                                    color: t.ink3,
                                     size: 22,
                                   ),
                                 ),
@@ -172,7 +169,7 @@ class _FloatingMenuScreenState extends State<FloatingMenuScreen> {
                               // Item Icon
                               Icon(
                                 item.icon,
-                                color: Colors.white,
+                                color: t.ink,
                                 size: 22,
                               ),
                               const SizedBox(width: 14),
@@ -181,10 +178,10 @@ class _FloatingMenuScreenState extends State<FloatingMenuScreen> {
                               Expanded(
                                 child: Text(
                                   item.title,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 15.5,
                                     fontWeight: FontWeight.w600,
-                                    color: Colors.white,
+                                    color: t.ink,
                                   ),
                                 ),
                               ),
@@ -192,10 +189,6 @@ class _FloatingMenuScreenState extends State<FloatingMenuScreen> {
                               // Toggle Switch
                               Switch(
                                 value: item.enabled,
-                                activeColor: AppColors.accentTeal,
-                                activeTrackColor: const Color(0xFF0F766E),
-                                inactiveThumbColor: Colors.white38,
-                                inactiveTrackColor: Colors.white12,
                                 onChanged: (val) {
                                   setState(() {
                                     item.enabled = val;
@@ -207,12 +200,12 @@ class _FloatingMenuScreenState extends State<FloatingMenuScreen> {
                           ),
                         ),
                         if (!isLast)
-                          const Divider(
+                          Divider(
                             height: 1,
                             thickness: 1,
                             indent: 14,
                             endIndent: 14,
-                            color: Colors.white10,
+                            color: t.border,
                           ),
                       ],
                     ),

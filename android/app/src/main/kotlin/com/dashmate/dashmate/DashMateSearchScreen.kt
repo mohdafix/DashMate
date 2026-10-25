@@ -10,10 +10,10 @@ class DashMateSearchScreen(
     carContext: CarContext,
     private val initialText: String = "",
     private val hintText: String = "Search or type URL...",
-    private val onSubmitted: (String) -> Unit
+    private val onSubmitted: (String) -> Unit,
 ) : Screen(carContext) {
 
-    private var currentText = initialText
+    private var currentText: String = initialText
 
     override fun onGetTemplate(): Template {
         return SearchTemplate.Builder(object : SearchTemplate.SearchCallback {

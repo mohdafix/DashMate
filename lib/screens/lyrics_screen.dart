@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../theme/app_tokens.dart';
 
 class LyricsScreen extends StatefulWidget {
   const LyricsScreen({super.key});
@@ -152,14 +153,20 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
     } catch (_) {}
   }
 
+  /// Asks MainActivity for synced lyrics. It takes `title` + `artist` and answers with one
+  /// "[ms] text" line per lyric line (older builds may send a list of {time, text}).
+  Future<List<Map<String, dynamic>>> _requestLyrics(String artist, String track) async {
+    final res = await _channel.invokeMethod('fetchLyrics', {'artist': artist, 'title': track, 'track': track});
+    return parseLyricsResponse(res);
+  }
+
+
   Future<void> _fetchLyricsLive(String artist, String track) async {
     try {
-      final res = await _channel.invokeMethod('fetchLyrics', {'artist': artist, 'track': track});
-      if (res is List && res.isNotEmpty && mounted) {
+      final lyrics = await _requestLyrics(artist, track);
+      if (lyrics.isNotEmpty && mounted) {
         setState(() {
-          _lyrics = List<Map<String, dynamic>>.from(
-            res.map((e) => Map<String, dynamic>.from(e)),
-          );
+          _lyrics = lyrics;
           _updateActiveLine();
         });
       }
@@ -170,14 +177,13 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
     HapticFeedback.lightImpact();
     setState(() => _isLoadingLyrics = true);
     try {
-      final res = await _channel.invokeMethod('fetchLyrics', {'artist': artist, 'track': track});
-      if (res is List && res.isNotEmpty) {
+      final lyrics = await _requestLyrics(artist, track);
+      if (!mounted) return;
+      if (lyrics.isNotEmpty) {
         setState(() {
           _title = track;
           _artist = artist;
-          _lyrics = List<Map<String, dynamic>>.from(
-            res.map((e) => Map<String, dynamic>.from(e)),
-          );
+          _lyrics = lyrics;
           _positionMs = 0;
           _isLoadingLyrics = false;
           _updateActiveLine();
@@ -186,7 +192,7 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
         setState(() => _isLoadingLyrics = false);
       }
     } catch (_) {
-      setState(() => _isLoadingLyrics = false);
+      if (mounted) setState(() => _isLoadingLyrics = false);
     }
   }
 
@@ -208,19 +214,19 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
 
   void _pushLyricsToCar() {
     HapticFeedback.lightImpact();
-    _channel.invokeMethod('setCarPage', {'page': 'lyrics'});
+    _channel.invokeMethod('setPage', {'page': 'lyrics'});
+    final t = context.tokens;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Row(
+        content: Row(
           children: [
-            Icon(Icons.directions_car, color: Color(0xFF14E0C1), size: 20),
-            SizedBox(width: 10),
-            Text('Projecting live lyrics to Android Auto screen', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            Icon(Icons.directions_car, color: t.bg, size: 20),
+            const SizedBox(width: 10),
+            const Text('Projecting live lyrics to Android Auto screen', style: TextStyle(fontWeight: FontWeight.bold)),
           ],
         ),
-        backgroundColor: const Color(0xFF101622),
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFF14E0C1), width: 1)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
@@ -241,8 +247,8 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
   }
 
   Widget _defaultCoverIcon() {
-    return const Center(
-      child: Icon(Icons.music_note_rounded, color: Color(0xFF0B0F1A), size: 36),
+    return Center(
+      child: Icon(Icons.music_note_rounded, color: context.tokens.ink3, size: 36),
     );
   }
 
@@ -254,11 +260,12 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
   }
 
   void _openSettingsDialog() {
+    final t = context.tokens;
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF101622),
+      backgroundColor: t.surface,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
         return StatefulBuilder(
@@ -272,18 +279,18 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
+                      Text(
                         'Music & Lyrics Settings',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: t.ink),
                       ),
                       IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white70),
+                        icon: Icon(Icons.close, color: t.ink2),
                         onPressed: () => Navigator.pop(ctx),
                       ),
                     ],
                   ),
-                  const Divider(color: Colors.white12, height: 24),
-                  const Text('Album Art Size', style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold)),
+                  Divider(color: t.border, height: 24),
+                  Text('Album Art Size', style: TextStyle(color: t.ink2, fontSize: 13, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
@@ -292,10 +299,11 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
                       return ChoiceChip(
                         label: Text(s),
                         selected: selected,
-                        selectedColor: const Color(0xFF14E0C1),
-                        backgroundColor: Colors.white.withValues(alpha: 0.08),
+                        selectedColor: t.accent,
+                        backgroundColor: t.surface2,
+                        checkmarkColor: t.onAccent,
                         labelStyle: TextStyle(
-                          color: selected ? Colors.black : Colors.white70,
+                          color: selected ? t.onAccent : t.ink2,
                           fontWeight: selected ? FontWeight.bold : FontWeight.normal,
                         ),
                         onSelected: (_) {
@@ -306,7 +314,7 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
                     }).toList(),
                   ),
                   const SizedBox(height: 16),
-                  const Text('Default Lyrics Source', style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold)),
+                  Text('Default Lyrics Source', style: TextStyle(color: t.ink2, fontSize: 13, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
@@ -315,10 +323,11 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
                       return ChoiceChip(
                         label: Text(src),
                         selected: selected,
-                        selectedColor: const Color(0xFF14E0C1),
-                        backgroundColor: Colors.white.withValues(alpha: 0.08),
+                        selectedColor: t.accent,
+                        backgroundColor: t.surface2,
+                        checkmarkColor: t.onAccent,
                         labelStyle: TextStyle(
-                          color: selected ? Colors.black : Colors.white70,
+                          color: selected ? t.onAccent : t.ink2,
                           fontWeight: selected ? FontWeight.bold : FontWeight.normal,
                         ),
                         onSelected: (_) {
@@ -331,10 +340,9 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
                   const SizedBox(height: 16),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('Plain Lyrics Only', style: TextStyle(color: Colors.white, fontSize: 14)),
-                    subtitle: const Text('Read full lyrics without auto-karaoke scrolling', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                    title: Text('Plain Lyrics Only', style: TextStyle(color: t.ink, fontSize: 14)),
+                    subtitle: Text('Read full lyrics without auto-karaoke scrolling', style: TextStyle(color: t.ink2, fontSize: 12)),
                     value: _plainLyricsOnly,
-                    activeThumbColor: const Color(0xFF14E0C1),
                     onChanged: (val) {
                       setModalState(() => _plainLyricsOnly = val);
                       setState(() => _plainLyricsOnly = val);
@@ -357,31 +365,12 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
     if (_albumArtSize == "Small") artDimension = 74.0;
     if (_albumArtSize == "Large") artDimension = 145.0;
     final bool showCover = _albumArtSize != "Off";
+    final t = context.tokens;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0B0F1A),
+      backgroundColor: t.bg,
       body: Stack(
         children: [
-          // 1. Subtle Radial Ambient Glow
-          Positioned(
-            top: -60,
-            left: -60,
-            child: Container(
-              width: 320,
-              height: 320,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    const Color(0xFF14E0C1).withValues(alpha: 0.15),
-                    const Color(0xFF0B9E8A).withValues(alpha: 0.05),
-                    Colors.transparent,
-                  ],
-                ),
-              ),
-            ),
-          ),
-
           SafeArea(
             child: Column(
               children: [
@@ -391,7 +380,7 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
                   child: Row(
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
+                        icon: Icon(Icons.arrow_back_ios_new, color: t.ink, size: 20),
                         onPressed: () => Navigator.pop(context),
                       ),
                       const SizedBox(width: 4),
@@ -399,24 +388,24 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
+                            Text(
                               'Music Player',
-                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -0.2),
+                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: t.ink, letterSpacing: -0.2),
                             ),
                             Row(
                               children: [
                                 Container(
                                   width: 6,
                                   height: 6,
-                                  decoration: const BoxDecoration(
+                                  decoration: BoxDecoration(
                                     shape: BoxShape.circle,
-                                    color: Color(0xFF14E0C1),
+                                    color: t.accent,
                                   ),
                                 ),
                                 const SizedBox(width: 5),
-                                const Text(
+                                Text(
                                   'LRCLIB Synced Stage',
-                                  style: TextStyle(fontSize: 11, color: Color(0xFF14E0C1), fontWeight: FontWeight.w600),
+                                  style: TextStyle(fontSize: 11, color: t.accent, fontWeight: FontWeight.w600),
                                 ),
                               ],
                             ),
@@ -427,7 +416,7 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
                         tooltip: 'Search Lyrics',
                         icon: Icon(
                           _showSearchBar ? Icons.search_off_rounded : Icons.search_rounded,
-                          color: _showSearchBar ? const Color(0xFF14E0C1) : Colors.white70,
+                          color: _showSearchBar ? t.accent : t.ink2,
                         ),
                         onPressed: () => setState(() => _showSearchBar = !_showSearchBar),
                       ),
@@ -437,16 +426,16 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
                           padding: const EdgeInsets.all(6),
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: const Color(0xFF14E0C1).withValues(alpha: 0.18),
-                            border: Border.all(color: const Color(0xFF14E0C1).withValues(alpha: 0.4)),
+                            color: t.accent.withValues(alpha: 0.12),
+                            border: Border.all(color: t.accent.withValues(alpha: 0.4)),
                           ),
-                          child: const Icon(Icons.directions_car_rounded, color: Color(0xFF14E0C1), size: 18),
+                          child: Icon(Icons.directions_car_rounded, color: t.accent, size: 18),
                         ),
                         onPressed: _pushLyricsToCar,
                       ),
                       IconButton(
                         tooltip: 'Settings',
-                        icon: const Icon(Icons.tune_rounded, color: Colors.white70),
+                        icon: Icon(Icons.tune_rounded, color: t.ink2),
                         onPressed: _openSettingsDialog,
                       ),
                     ],
@@ -459,21 +448,24 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
                     margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF161F2E),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.white12),
+                      color: t.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: t.border),
                     ),
                     child: Row(
                       children: [
                         Expanded(
                           child: TextField(
                             controller: _searchController,
-                            style: const TextStyle(fontSize: 13, color: Colors.white),
-                            decoration: const InputDecoration(
+                            style: TextStyle(fontSize: 13, color: t.ink),
+                            decoration: InputDecoration(
                               hintText: 'Artist - Track (e.g. Coldplay - Yellow)',
-                              hintStyle: TextStyle(fontSize: 12, color: Colors.white38),
+                              hintStyle: TextStyle(fontSize: 12, color: t.ink3),
                               isDense: true,
+                              filled: false,
                               border: InputBorder.none,
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
                             ),
                           ),
                         ),
@@ -489,9 +481,10 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
                             }
                           },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF14E0C1),
-                            foregroundColor: Colors.black,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            backgroundColor: t.accent,
+                            foregroundColor: t.onAccent,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            minimumSize: const Size(0, 40),
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                             elevation: 0,
                           ),
@@ -512,28 +505,13 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
                           width: artDimension,
                           height: artDimension,
                           decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(20),
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF14E0C1), Color(0xFF0B9E8A)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.65),
-                                blurRadius: 24,
-                                offset: const Offset(0, 10),
-                              ),
-                              BoxShadow(
-                                color: const Color(0xFF14E0C1).withValues(alpha: 0.25),
-                                blurRadius: 16,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                            border: Border.all(color: Colors.white.withValues(alpha: 0.16), width: 1),
+                            borderRadius: BorderRadius.circular(16),
+                            color: t.surface2,
+                            boxShadow: t.cardShadow,
+                            border: Border.all(color: t.border, width: 1),
                           ),
                           child: ClipRRect(
-                            borderRadius: BorderRadius.circular(19),
+                            borderRadius: BorderRadius.circular(15),
                             child: _buildCoverImage(),
                           ),
                         ),
@@ -548,10 +526,10 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
                           children: [
                             Text(
                               _title,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 20,
-                                fontWeight: FontWeight.w800,
-                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                color: t.ink,
                                 letterSpacing: -0.3,
                               ),
                               maxLines: 1,
@@ -560,9 +538,9 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
                             const SizedBox(height: 4),
                             Text(
                               _artist,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 14,
-                                color: Colors.white70,
+                                color: t.ink2,
                                 fontWeight: FontWeight.w500,
                               ),
                               maxLines: 1,
@@ -577,36 +555,27 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                   decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.08),
+                                    color: t.surface2,
                                     borderRadius: BorderRadius.circular(99),
-                                    border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+                                    border: Border.all(color: t.border),
                                   ),
                                   child: Text(
                                     _appSource,
-                                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.white),
+                                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: t.ink),
                                   ),
                                 ),
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                   decoration: BoxDecoration(
-                                    gradient: const LinearGradient(
-                                      colors: [Color(0xFF14E0C1), Color(0xFF0B9E8A)],
-                                    ),
+                                    color: t.accent,
                                     borderRadius: BorderRadius.circular(99),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: const Color(0xFF14E0C1).withValues(alpha: 0.4),
-                                        blurRadius: 8,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ],
                                   ),
                                   child: Text(
                                     _isPlaying ? '▶ Playing' : '⏸ Paused',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 10,
-                                      fontWeight: FontWeight.w800,
-                                      color: Color(0xFF0B0F1A),
+                                      fontWeight: FontWeight.w700,
+                                      color: t.onAccent,
                                     ),
                                   ),
                                 ),
@@ -625,16 +594,18 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
                 Expanded(
                   child: ShaderMask(
                     shaderCallback: (Rect bounds) {
-                      return const LinearGradient(
+                      // Alpha-only mask: any opaque colour works here.
+                      final opaque = t.ink.withValues(alpha: 1);
+                      return LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
                           Colors.transparent,
-                          Colors.black,
-                          Colors.black,
+                          opaque,
+                          opaque,
                           Colors.transparent,
                         ],
-                        stops: [0.0, 0.14, 0.82, 1.0],
+                        stops: const [0.0, 0.14, 0.82, 1.0],
                       ).createShader(bounds);
                     },
                     blendMode: BlendMode.dstIn,
@@ -650,8 +621,8 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
                 Container(
                   padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0B0F1A),
-                    border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
+                    color: t.bg,
+                    border: Border(top: BorderSide(color: t.border)),
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -662,9 +633,9 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
                           trackHeight: 3.5,
                           thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
                           overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-                          activeTrackColor: const Color(0xFF14E0C1),
-                          inactiveTrackColor: Colors.white.withValues(alpha: 0.16),
-                          thumbColor: const Color(0xFF14E0C1),
+                          activeTrackColor: t.accent,
+                          inactiveTrackColor: t.border,
+                          thumbColor: t.accent,
                           trackShape: const RoundedRectSliderTrackShape(),
                         ),
                         child: Slider(
@@ -688,11 +659,11 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
                           children: [
                             Text(
                               _formatTime(_positionMs),
-                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white60),
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: t.ink3),
                             ),
                             Text(
                               _formatTime(_durationMs),
-                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white60),
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: t.ink3),
                             ),
                           ],
                         ),
@@ -721,18 +692,12 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
                               height: 58,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                color: Colors.white,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.white.withValues(alpha: 0.35),
-                                    blurRadius: 20,
-                                    offset: const Offset(0, 4),
-                                  ),
-                                ],
+                                color: t.accent,
+                                boxShadow: t.cardShadow,
                               ),
                               child: Icon(
                                 _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                                color: const Color(0xFF0B0F1A),
+                                color: t.onAccent,
                                 size: 34,
                               ),
                             ),
@@ -765,6 +730,7 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
     required double iconSize,
     required VoidCallback onTap,
   }) {
+    final t = context.tokens;
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -772,29 +738,17 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
         height: size,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          gradient: LinearGradient(
-            colors: [
-              Colors.white.withValues(alpha: 0.14),
-              Colors.white.withValues(alpha: 0.05),
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.3),
-              blurRadius: 14,
-              offset: const Offset(0, 4),
-            ),
-          ],
+          color: t.surface,
+          border: Border.all(color: t.border),
+          boxShadow: t.cardShadow,
         ),
-        child: Icon(icon, color: Colors.white, size: iconSize),
+        child: Icon(icon, color: t.ink, size: iconSize),
       ),
     );
   }
 
   Widget _buildLyricsList() {
+    final t = context.tokens;
     return ListView.builder(
       controller: _scrollController,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
@@ -824,26 +778,13 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
                 text.isEmpty ? '♪ ♪ ♪' : text,
                 style: TextStyle(
                   fontSize: isNow ? 22 : 16,
-                  fontWeight: isNow ? FontWeight.w900 : (isPast ? FontWeight.w400 : FontWeight.w600),
+                  fontWeight: isNow ? FontWeight.w800 : (isPast ? FontWeight.w400 : FontWeight.w600),
                   color: isNow
-                      ? Colors.white
+                      ? t.accent
                       : (isPast
-                          ? Colors.white.withValues(alpha: 0.25)
-                          : Colors.white.withValues(alpha: 0.65)),
+                          ? t.ink3.withValues(alpha: 0.6)
+                          : t.ink2),
                   height: 1.35,
-                  shadows: isNow
-                      ? [
-                          Shadow(
-                            color: const Color(0xFF14E0C1).withValues(alpha: 0.75),
-                            blurRadius: 24,
-                          ),
-                          const Shadow(
-                            color: Colors.black87,
-                            offset: Offset(0, 2),
-                            blurRadius: 6,
-                          ),
-                        ]
-                      : null,
                 ),
               ),
             ),
@@ -854,20 +795,21 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
   }
 
   Widget _buildLoadingEqualizer() {
+    final t = context.tokens;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           _EqualizerWidget(controller: _eqController),
           const SizedBox(height: 18),
-          const Text(
+          Text(
             'Finding lyrics…',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: t.ink),
           ),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             'Connecting to LRCLIB & NetEase',
-            style: TextStyle(fontSize: 12, color: Colors.white54),
+            style: TextStyle(fontSize: 12, color: t.ink2),
           ),
         ],
       ),
@@ -875,32 +817,33 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
   }
 
   Widget _buildWaitingView() {
+    final t = context.tokens;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           _EqualizerWidget(controller: _eqController),
           const SizedBox(height: 18),
-          const Text(
+          Text(
             'Waiting for music…',
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Colors.white),
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: t.ink),
           ),
           const SizedBox(height: 8),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 32),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
             child: Text(
               'Play something in Spotify, YouTube Music or any app to stream live synced lyrics to your car.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: Colors.white60, height: 1.4),
+              style: TextStyle(fontSize: 13, color: t.ink2, height: 1.4),
             ),
           ),
           const SizedBox(height: 20),
           OutlinedButton.icon(
             onPressed: () => setState(() => _showSearchBar = true),
-            icon: const Icon(Icons.search, color: Color(0xFF14E0C1), size: 18),
-            label: const Text('Search Lyrics Manually', style: TextStyle(color: Color(0xFF14E0C1), fontWeight: FontWeight.bold)),
+            icon: Icon(Icons.search, color: t.accent, size: 18),
+            label: Text('Search Lyrics Manually', style: TextStyle(color: t.accent, fontWeight: FontWeight.bold)),
             style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: Color(0xFF14E0C1)),
+              side: BorderSide(color: t.accent),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             ),
@@ -924,6 +867,7 @@ class _EqualizerWidget extends StatelessWidget {
         final h1 = 12.0 + 20.0 * (0.5 + 0.5 * (v * 2 * 3.14159).abs());
         final h2 = 12.0 + 26.0 * (0.5 + 0.5 * ((v + 0.3) * 2 * 3.14159).abs());
         final h3 = 12.0 + 18.0 * (0.5 + 0.5 * ((v + 0.6) * 2 * 3.14159).abs());
+        final accent = context.tokens.accent;
 
         return SizedBox(
           height: 38,
@@ -931,11 +875,11 @@ class _EqualizerWidget extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              _buildBar(const Color(0xFF14E0C1), h1.clamp(10, 36)),
+              _buildBar(accent, h1.clamp(10, 36)),
               const SizedBox(width: 5),
-              _buildBar(const Color(0xFF3FC8D8), h2.clamp(10, 36)),
+              _buildBar(accent.withValues(alpha: 0.75), h2.clamp(10, 36)),
               const SizedBox(width: 5),
-              _buildBar(const Color(0xFF0B9E8A), h3.clamp(10, 36)),
+              _buildBar(accent.withValues(alpha: 0.5), h3.clamp(10, 36)),
             ],
           ),
         );
@@ -950,14 +894,24 @@ class _EqualizerWidget extends StatelessWidget {
       decoration: BoxDecoration(
         color: color,
         borderRadius: BorderRadius.circular(6),
-        boxShadow: [
-          BoxShadow(
-            color: color.withValues(alpha: 0.5),
-            blurRadius: 6,
-            offset: const Offset(0, 1),
-          ),
-        ],
       ),
     );
   }
+}
+
+List<Map<String, dynamic>> parseLyricsResponse(Object? res) {
+  if (res is List) {
+    return res.whereType<Map>().map((e) => {
+          'time': ((e['time'] ?? e['timeMs'] ?? 0) as num).toInt(),
+          'text': (e['text'] ?? '').toString(),
+        }).toList();
+  }
+  if (res is! String) return [];
+  final line = RegExp(r'^\[(\d+)\]\s?(.*)$');
+  final out = <Map<String, dynamic>>[];
+  for (final l in const LineSplitter().convert(res)) {
+    final m = line.firstMatch(l.trim());
+    if (m != null) out.add({'time': int.parse(m.group(1)!), 'text': m.group(2)!});
+  }
+  return out;
 }

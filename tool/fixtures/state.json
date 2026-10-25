@@ -1,0 +1,19 @@
+{
+  "speed": 62, "speedOnly": false, "gps": true, "fn": "", "page": "home", "carCard": "off", "lang": "en",
+  "bg": { "mode": "plain", "dim": 0.35 },
+  "music": { "title": "Pelangi Petang", "artist": "Sudirman", "art": "", "playing": true,
+             "positionMs": 72000, "durationMs": 214000, "status": "found", "app": "Spotify",
+             "lines": [[60000, "Kulihat pelangi petang"], [70000, "Bersinar indah di awan"], [80000, "Mewarnai langit biru"], [90000, "Bagai lukisan alam"]] },
+  "prayer": { "next": { "name": "Maghrib", "time": "7:12 PM", "epochMs": 0 } },
+  "weather": { "temp": 31, "code": 2, "isDay": true, "cond": "Partly Cloudy", "city": "Kuala Lumpur", "wind": "12 km/h", "rain": null },
+  "scores": [ { "home": "Arsenal", "away": "Liverpool", "score": "2 - 1", "status": "74'" }, { "home": "Real Madrid", "away": "Barcelona", "score": "3 - 2", "status": "FT" } ],
+  "scoresLabel": "Today's Matches",
+  "fuel": { "items": [ { "label": "RON95 BUDI", "price": 1.99 }, { "label": "RON97", "price": 3.18 }, { "label": "Diesel", "price": 2.93 } ] },
+  "air": { "aqi": 42, "pm25": 12, "uv": 5.0, "label": "Good" },
+  "forecast": { "now": { "temp": 31, "code": 2, "isDay": true, "feels": 36, "humidity": 70, "wind": 12, "uv": 5 },
+                "hours": [ { "t": "15:00", "temp": 31, "code": 2, "isDay": true, "rain": 10 }, { "t": "16:00", "temp": 30, "code": 61, "isDay": true, "rain": 60 }, { "t": "17:00", "temp": 29, "code": 80, "isDay": true, "rain": 70 }, { "t": "18:00", "temp": 28, "code": 3, "isDay": true, "rain": 30 } ],
+                "days": [ { "d": "Mon", "max": 33, "min": 25, "code": 2 }, { "d": "Tue", "max": 32, "min": 25, "code": 61 }, { "d": "Wed", "max": 33, "min": 24, "code": 80 } ] },
+  "calendar": { "events": [] },
+  "shortcuts": [ { "name": "YouTube" }, { "name": "Waze" }, { "name": "Parking" } ],
+  "parking": { "saved": false }
+}

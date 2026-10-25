@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../theme/app_colors.dart';
+import '../theme/app_tokens.dart';
 
 class CarCardScreen extends StatefulWidget {
   const CarCardScreen({super.key});
@@ -31,12 +31,7 @@ class _CarCardScreenState extends State<CarCardScreen> {
 
   void _loadPrefs() async {
     try {
-      dynamic res;
-      try {
-        res = await _channel.invokeMethod('getCarCardMode');
-      } catch (_) {
-        res = await _browserChannel.invokeMethod('getCarCardMode');
-      }
+      final res = await _channel.invokeMethod('getCarCardMode');
       if (res != null && mounted) {
         if (res is Map) {
           setState(() {
@@ -65,56 +60,58 @@ class _CarCardScreenState extends State<CarCardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final t = context.tokens;
     return Scaffold(
-      backgroundColor: const Color(0xFF0C101A),
+      backgroundColor: t.bg,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          icon: Icon(Icons.arrow_back, color: t.ink),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
+        title: Text(
           'Car card (next to the map)',
           style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.bold,
-            color: Colors.white,
+            color: t.ink,
           ),
         ),
       ),
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         children: [
-          // 1. Top Card: Show DashMate Card toggle
+          // 1. Top Card: Show AutoDeck Card toggle
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: AppColors.border),
+              color: t.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: t.border),
+              boxShadow: t.cardShadow,
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Padding(
+                Padding(
                   padding: EdgeInsets.only(top: 2, right: 14),
                   child: Icon(
                     Icons.featured_video_outlined,
-                    color: Colors.white,
+                    color: t.ink,
                     size: 24,
                   ),
                 ),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
+                    children: [
                       Text(
                         'Show DashMate Card',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
-                          color: Colors.white,
+                          color: t.ink,
                         ),
                       ),
                       SizedBox(height: 6),
@@ -122,7 +119,7 @@ class _CarCardScreenState extends State<CarCardScreen> {
                         "Media card next to the map (lyrics, prayer, scores). Turn off if your car's dashboard / meter map or media buttons stop working while DashMate is open.",
                         style: TextStyle(
                           fontSize: 13,
-                          color: AppColors.textSub,
+                          color: t.ink2,
                           height: 1.35,
                         ),
                       ),
@@ -132,10 +129,6 @@ class _CarCardScreenState extends State<CarCardScreen> {
                 const SizedBox(width: 8),
                 Switch(
                   value: _showCard,
-                  activeColor: AppColors.accentTeal,
-                  activeTrackColor: const Color(0xFF0F766E),
-                  inactiveThumbColor: Colors.white38,
-                  inactiveTrackColor: Colors.white12,
                   onChanged: (val) {
                     setState(() {
                       _showCard = val;
@@ -150,11 +143,11 @@ class _CarCardScreenState extends State<CarCardScreen> {
           const SizedBox(height: 20),
 
           // 2. Explanatory Subtitle
-          const Text(
+          Text(
             "What Android Auto's media card shows beside Google Maps. Auto = lyrics while music plays, a live score when your teams play, otherwise the next prayer.",
             style: TextStyle(
               fontSize: 13.5,
-              color: AppColors.textSub,
+              color: t.ink2,
               height: 1.4,
             ),
           ),
@@ -179,13 +172,13 @@ class _CarCardScreenState extends State<CarCardScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   decoration: BoxDecoration(
                     color: isSelected
-                        ? const Color(0xFF0F766E)
-                        : AppColors.surface,
-                    borderRadius: BorderRadius.circular(20),
+                        ? t.accent
+                        : t.surface,
+                    borderRadius: BorderRadius.circular(999),
                     border: Border.all(
                       color: isSelected
-                          ? AppColors.accentTeal
-                          : AppColors.border,
+                          ? t.accent
+                          : t.border,
                       width: isSelected ? 1.5 : 1,
                     ),
                   ),
@@ -193,9 +186,9 @@ class _CarCardScreenState extends State<CarCardScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (isSelected) ...[
-                        const Icon(
+                        Icon(
                           Icons.check,
-                          color: Colors.white,
+                          color: t.onAccent,
                           size: 16,
                         ),
                         const SizedBox(width: 6),
@@ -203,7 +196,7 @@ class _CarCardScreenState extends State<CarCardScreen> {
                       Text(
                         mode,
                         style: TextStyle(
-                          color: isSelected ? Colors.white : Colors.white70,
+                          color: isSelected ? t.onAccent : t.ink2,
                           fontSize: 14,
                           fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                         ),
