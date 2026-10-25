@@ -1,6 +1,6 @@
 # DashMate 🚗⚡
 
-**DashMate** is an advanced automotive dashboard platform for **Android Auto** and Android phones, inspired by and architected identically to **AutoDeck**.
+**DashMate** is an advanced automotive dashboard platform for **Android Auto** and Android phones.
 
 It bypasses standard Android Auto template constraints by combining a **Flutter companion app**, a native **Kotlin Android Auto Navigation Service**, and a high-performance **HTML5/CSS3 glassmorphic dashboard** rendered via `VirtualDisplay` and `Presentation`.
 

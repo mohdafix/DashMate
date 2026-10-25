@@ -34,6 +34,13 @@ class DashMatePresentation(
     display: Display
 ) : Presentation(hostContext, display), DashMateStateBridge.StateListener {
 
+    companion object {
+        @Volatile var isPresentationActive: Boolean = false
+        @Volatile var activeDisplayWidth: Int = 1190
+        @Volatile var activeDisplayHeight: Int = 480
+        @Volatile var activeHeadUnitName: String = "Android Auto Head Unit"
+    }
+
     private val TAG = "DashMatePresentation"
     
     // Dual-WebView Architecture:
@@ -66,6 +73,13 @@ class DashMatePresentation(
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        isPresentationActive = true
+        try {
+            activeDisplayWidth = display.width
+            activeDisplayHeight = display.height
+            activeHeadUnitName = display.name ?: "Android Auto Head Unit"
+        } catch (_: Exception) {}
+        DashMateStateBridge.notifyStateChanged(context)
 
         // Play welcome audio chime on vehicle connection
         DashMateStateBridge.playWelcomeChime(context)
@@ -220,13 +234,11 @@ class DashMatePresentation(
                 }
             }
 
-            val bridge = AutoDeckJsInterface()
+            val bridge = DashMateJsInterface()
             addJavascriptInterface(bridge, "DashMate")
             addJavascriptInterface(bridge, "DashMateWeb")
-            addJavascriptInterface(bridge, "AutoDeck")
             addJavascriptInterface(bridge, "DriveDeck")
             addJavascriptInterface(bridge, "DashMateBridge")
-            addJavascriptInterface(bridge, "AutoDeckWeb")
             addJavascriptInterface(RadioJsInterface(context), "DashMateRadio")
 
             loadUrl("file:///android_asset/drivedeck_home.html")
@@ -292,7 +304,7 @@ class DashMatePresentation(
         val prefs = hostContext.getSharedPreferences("dd_car_browser", Context.MODE_PRIVATE)
         prefs.edit().putBoolean("fullscreen", fullscreen).apply()
         
-        // AutoDeck zoom feature: zoom in / out the interface content
+        // Zoom feature: zoom in / out the interface content
         val zoomLevel = if (fullscreen) "1.18" else "1.0"
         deckWebView?.evaluateJavascript("document.documentElement.style.zoom = '$zoomLevel';", null)
         browserWebView?.evaluateJavascript("document.documentElement.style.zoom = '$zoomLevel';", null)
@@ -344,9 +356,8 @@ class DashMatePresentation(
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
 
-                        val bridge = AutoDeckJsInterface()
+                        val bridge = DashMateJsInterface()
                         addJavascriptInterface(bridge, "DashMateWeb")
-                        addJavascriptInterface(bridge, "AutoDeckWeb")
 
                         webViewClient = object : WebViewClient() {
                             override fun onPageFinished(v: WebView?, u: String?) {
@@ -417,11 +428,12 @@ class DashMatePresentation(
                 return !el.disabled && !el.readOnly;
               };
               var field = function (el) {
-                if (!isField(el) || !window.AutoDeckWeb) return;
+                if (!isField(el) || (!window.DashMateWeb && !window.DashMate)) return;
                 window.__ddField = el;
                 var v = el.isContentEditable ? el.innerText : el.value;
                 try {
-                  AutoDeckWeb.textField(v || '', el.getAttribute('placeholder') || el.getAttribute('aria-label') || '');
+                  var w = window.DashMateWeb || window.DashMate;
+                  w.textField(v || '', el.getAttribute('placeholder') || el.getAttribute('aria-label') || '');
                 } catch (err) {}
               };
               document.addEventListener('click', function (e) {
@@ -564,11 +576,9 @@ class DashMatePresentation(
                 }
             }
 
-            val bridge = AutoDeckJsInterface()
+            val bridge = DashMateJsInterface()
             addJavascriptInterface(bridge, "DashMate")
             addJavascriptInterface(bridge, "DashMateWeb")
-            addJavascriptInterface(bridge, "AutoDeck")
-            addJavascriptInterface(bridge, "AutoDeckWeb")
         }
         browserWebView = wv
         rootLayout.addView(wv, rootLayout.indexOfChild(deckWebView) + 1)
@@ -841,12 +851,16 @@ class DashMatePresentation(
     }
 
     override fun onStop() {
+        isPresentationActive = false
         DashMateStateBridge.removeListener(this)
+        DashMateStateBridge.notifyStateChanged(context)
         super.onStop()
     }
 
     override fun dismiss() {
+        isPresentationActive = false
         DashMateStateBridge.removeListener(this)
+        DashMateStateBridge.notifyStateChanged(context)
         super.dismiss()
     }
 
@@ -918,7 +932,7 @@ class DashMatePresentation(
             .replace("\r", "\\r")
     }
 
-    inner class AutoDeckJsInterface {
+    inner class DashMateJsInterface {
         @JavascriptInterface
         fun ready() {
             Log.d(TAG, "Deck WebView requested ready sync")

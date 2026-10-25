@@ -813,7 +813,7 @@
       b.addEventListener('click', function () {
         var a = b.getAttribute('data-media');
         if (a === 'toggle') setPlayIcon(!isPlaying);   // flip now; the app's state follows
-        var host = window.DashMate || window.AutoDeck;
+        var host = window.DashMate;
         if (host && host.media) host.media(a);
       });
     });
@@ -1021,7 +1021,7 @@
       // No icon (offline / unknown site): the name's first letter.
       img.onerror = function () { a.textContent = (sc.name || '?').charAt(0).toUpperCase(); };
       a.appendChild(img);
-      a.addEventListener('click', function () { var host = window.DashMate || window.AutoDeck; if (host && host.site) host.site(sc.url); });
+      a.addEventListener('click', function () { var host = window.DashMate; if (host && host.site) host.site(sc.url); });
       box.appendChild(a);
     });
   }
@@ -1536,7 +1536,7 @@
   }
   document.addEventListener('click', function (ev) {
     var y = ev.target.closest && ev.target.closest('[data-yt]');
-    var host = window.DashMate || window.AutoDeck;
+    var host = window.DashMate;
     if (y && host && host.youtube) host.youtube(y.getAttribute('data-yt'));
     var c = ev.target.closest && ev.target.closest('[data-nav-lat]');
     if (c && host && host.navigate) host.navigate(+c.getAttribute('data-nav-lat'), +c.getAttribute('data-nav-lng'));

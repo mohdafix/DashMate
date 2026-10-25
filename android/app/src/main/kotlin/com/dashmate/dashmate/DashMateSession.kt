@@ -10,18 +10,27 @@ import com.dashmate.dashmate.deck.PrayerAlertManager
 
 class DashMateSession : Session() {
 
+    companion object {
+        @Volatile var isSessionActive: Boolean = false
+    }
+
     init {
         lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onCreate(owner: LifecycleOwner) {
+                isSessionActive = true
                 CarNav.attach(carContext)
                 val app = carContext.applicationContext
                 ParkingAutoSaver.start(app)
                 PrayerAlertManager.scheduleAsync(app)
+                DashMateStateBridge.notifyStateChanged(app)
             }
 
             override fun onDestroy(owner: LifecycleOwner) {
-                ParkingAutoSaver.onCarSessionEnded(carContext.applicationContext)
+                isSessionActive = false
+                val app = carContext.applicationContext
+                ParkingAutoSaver.onCarSessionEnded(app)
                 CarNav.detach()
+                DashMateStateBridge.notifyStateChanged(app)
             }
         })
     }

@@ -239,8 +239,20 @@ object DashMateStateBridge {
         }
     }
 
+    fun isCarConnected(context: Context?): Boolean {
+        return DashMatePresentation.isPresentationActive ||
+               DashMateSession.isSessionActive ||
+               com.dashmate.dashmate.deck.ParkingAutoSaver.isConnected()
+    }
+
     fun buildStateJson(context: Context?): String {
         val root = JSONObject()
+        val connected = isCarConnected(context)
+        root.put("carConnected", connected)
+        root.put("connected", connected)
+        root.put("scr_w", DashMatePresentation.activeDisplayWidth)
+        root.put("scr_h", DashMatePresentation.activeDisplayHeight)
+        root.put("scr_name", DashMatePresentation.activeHeadUnitName)
         root.put("speed", currentSpeed.toInt())
         root.put("speedOnly", false)
         root.put("gps", isGps)

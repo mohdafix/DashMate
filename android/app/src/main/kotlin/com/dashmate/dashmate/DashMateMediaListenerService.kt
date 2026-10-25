@@ -66,7 +66,7 @@ class DashMateMediaListenerService : NotificationListenerService() {
 
         for (controller in controllers) {
             val pkg = controller.packageName
-            if (pkg == packageName || pkg == "com.nasri.autodeck") continue
+            if (pkg == packageName) continue
 
             if (!activeCallbacks.containsKey(controller)) {
                 val cb = object : MediaController.Callback() {
@@ -89,7 +89,7 @@ class DashMateMediaListenerService : NotificationListenerService() {
             }
         }
 
-        val target = playingController ?: fallbackController ?: controllers.firstOrNull { it.packageName != packageName && it.packageName != "com.nasri.autodeck" }
+        val target = playingController ?: fallbackController ?: controllers.firstOrNull { it.packageName != packageName }
         if (target != null) {
             updateFromController(target)
         }
@@ -180,7 +180,7 @@ class DashMateMediaListenerService : NotificationListenerService() {
 
     private fun updateFromController(controller: MediaController) {
         val pkg = controller.packageName
-        if (pkg == packageName || pkg == "com.nasri.autodeck") return
+        if (pkg == packageName) return
         activeController = controller
 
         val metadata = controller.metadata
@@ -247,8 +247,8 @@ class DashMateMediaListenerService : NotificationListenerService() {
         sbn ?: return
 
         val pkg = sbn.packageName
-        // Filter out DashMate self, AutoDeck, System UI, and non-music notifications
-        if (pkg == packageName || pkg == "com.nasri.autodeck" || pkg == "com.android.systemui") return
+        // Filter out DashMate self, System UI, and non-music notifications
+        if (pkg == packageName || pkg == "com.android.systemui") return
 
         val notification = sbn.notification ?: return
         val extras = notification.extras ?: return
@@ -344,7 +344,7 @@ class DashMateMediaListenerService : NotificationListenerService() {
         super.onNotificationRemoved(sbn)
         sbn ?: return
         val pkg = sbn.packageName
-        if (pkg == packageName || pkg == "com.nasri.autodeck") return
+        if (pkg == packageName) return
 
         val extras = sbn.notification?.extras ?: return
         if (extras.containsKey(Notification.EXTRA_MEDIA_SESSION)) {

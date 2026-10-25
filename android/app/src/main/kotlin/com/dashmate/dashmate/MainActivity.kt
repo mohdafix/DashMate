@@ -746,6 +746,9 @@ class MainActivity : FlutterActivity() {
                 "getState" -> {
                     result.success(DashMateStateBridge.buildStateJson(this))
                 }
+                "isCarConnected" -> {
+                    result.success(DashMateStateBridge.isCarConnected(this))
+                }
                 "getButtonPrefs" -> {
                     val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
                     val scale = sp.getFloat("nav_scale", 1.0f) * 100

@@ -216,7 +216,7 @@
       b.addEventListener('click', function () {
         var a = b.getAttribute('data-media');
         if (a === 'toggle') setPlayIcon(!isPlaying);   // flip now; the app's state follows
-        var host = window.DashMate || window.AutoDeck;
+        var host = window.DashMate;
         if (host && host.media) host.media(a);
       });
     });
