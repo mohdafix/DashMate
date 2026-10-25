@@ -529,17 +529,40 @@ class DashMateMediaCardService : MediaBrowserServiceCompat(), DashMateStateBridg
         val station = p?.station ?: lastRadioStation ?: return
         val np = com.dashmate.dashmate.deck.radio.RadioNowPlaying.from(p?.nowPlaying, station.name, station.subtitle)
         val playing = playingOverride ?: (p?.status == RadioPlayer.Status.PLAYING || p?.status == RadioPlayer.Status.BUFFERING)
+        // Cover: the song's album art when found, otherwise the station's badge (never a blank square).
+        val badge = com.dashmate.dashmate.deck.radio.RadioArt.stationBadge(station)
+        var cover = badge
+        if (np.isSong) {
+            val found = com.dashmate.dashmate.deck.radio.RadioArt.cachedCover(np.artist, np.title)
+            if (found == null) {
+                com.dashmate.dashmate.deck.radio.RadioArt.lookUp(np.artist, np.title) {
+                    mainHandler.post {
+                        val url = com.dashmate.dashmate.deck.radio.RadioArt.cachedCover(np.artist, np.title).orEmpty()
+                        // Still the same radio song on screen? Then swap the badge for the cover.
+                        if (url.isNotBlank() && DashMateStateBridge.songApp == RADIO_APP_NAME &&
+                            DashMateStateBridge.songTitle == np.title && DashMateStateBridge.songArtist == np.artist) {
+                            DashMateStateBridge.songCoverUrl = url
+                            DashMateStateBridge.notifyStateChanged(applicationContext)
+                        }
+                    }
+                }
+            } else if (found.isNotBlank()) {
+                cover = found
+            }
+        }
         DashMateStateBridge.updateMediaInfo(
             applicationContext,
             np.title,
             np.artist,
             playing,
+            coverUrl = cover,
             app = RADIO_APP_NAME,
             durationMs = 0L,
-            // -1 = "unknown": a new song starts its lyrics clock at 0; later radio updates (buffering,
-            // playing...) must not reset it, or the karaoke lyrics stay stuck on the first line.
-            positionMs = -1L,
+            // From the radio player's own clock when the song started while listening (exact, pauses
+            // with the radio); -1 = unknown (tuned in mid-song): keep the clock, lyrics show unsynced.
+            positionMs = p?.songPositionMs() ?: -1L,
             fetchLyrics = np.isSong,
+            syncKnown = p?.songStartKnown == true,
         )
     }
 

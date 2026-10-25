@@ -3,6 +3,7 @@ package com.dashmate.dashmate.deck.radio
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
@@ -46,6 +47,7 @@ class RadioPlayer(private val context: Context, private val listener: Listener) 
         private const val TAG = "DashMateRadio"
         private val RETRY_DELAYS_MS = longArrayOf(2_000L, 5_000L, 10_000L)
         private const val USER_AGENT = "DashMate/1.0 (Android; Radio)"
+        private const val NAME_LAG_MS = 800L
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -56,6 +58,27 @@ class RadioPlayer(private val context: Context, private val listener: Listener) 
     var station: RadioStation? = null
         private set
     /** ICY / ID3 "now playing" text, if the stream provides it. */
+    /**
+     * True when the current song started while we were listening (its name changed in the stream,
+     * which the player reports in step with the audio). False for the song that was already playing
+     * when the station was tuned: we don't know how far into it we are, so its lyrics can't be timed.
+     */
+    var songStartKnown: Boolean = false
+        private set
+    private var tunedAtMs = 0L
+    /** Player position (ms) where the current song started, or -1 when unknown. */
+    private var songStartPosMs = -1L
+
+    /**
+     * How far into the current song we are, from the player's own clock (stops while paused or
+     * buffering), or -1 when unknown. Measured on Hitz: the song name changes in the stream about
+     * 0.8 s after the new song begins, hence [NAME_LAG_MS].
+     */
+    fun songPositionMs(): Long {
+        val p = player ?: return -1L
+        if (!songStartKnown || songStartPosMs < 0) return -1L
+        return (p.currentPosition - songStartPosMs).coerceAtLeast(0L)
+    }
     var nowPlaying: String? = null
         private set
     var errorMessage: String? = null
@@ -127,6 +150,10 @@ class RadioPlayer(private val context: Context, private val listener: Listener) 
             }
             val cleaned = text?.trim()?.trim('-')?.trim()
             if (!cleaned.isNullOrBlank() && cleaned != nowPlaying) {
+                // The first name after tuning describes a song already under way.
+                songStartKnown = nowPlaying != null && SystemClock.elapsedRealtime() - tunedAtMs > 8_000L
+                // onMetadata fires when playback reaches the name change, so this is the song's start.
+                songStartPosMs = if (songStartKnown) (player?.currentPosition ?: 0L) - NAME_LAG_MS else -1L
                 nowPlaying = cleaned
                 listener.onRadioStateChanged()
             }
@@ -163,6 +190,9 @@ class RadioPlayer(private val context: Context, private val listener: Listener) 
         reconnecting = false
         errorMessage = null
         nowPlaying = null
+        songStartKnown = false
+        songStartPosMs = -1L
+        tunedAtMs = SystemClock.elapsedRealtime()
         station = newStation
         val p = ensurePlayer()
         val item = MediaItem.Builder()

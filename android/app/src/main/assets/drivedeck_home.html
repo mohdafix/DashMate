@@ -1099,6 +1099,49 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
     .yt-s span, .yt-c { display: none; }
   }
   @container tile (max-height: 80px) { .yt-c { display: none; } .yt button { min-height: min(48px, calc(100cqh - 12px)); } }
+  /* Owner, 26 Oct: up to 5 lyric lines on Home (previous · current · 3 next), smaller text, smaller
+     album art and play button. Lines that don't fit the tile are dropped whole by fitLyrics(). */
+  #lyr { display: flex; flex-direction: column; gap: .15em; min-height: 0; overflow: hidden; }
+  #music > #lyr { flex: 0 1 auto; }
+  #lyr > div { flex: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; -webkit-line-clamp: unset;
+               line-height: 1.3; font-weight: 500; color: var(--dim); font-size: max(var(--f13), calc(min(4.2cqw, 6cqh) * var(--k))); }
+  #lyr > #line { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+                 font-weight: 700; color: var(--ink); font-size: max(var(--f15), calc(min(5.4cqw, 7.5cqh) * var(--k))); }
+  #lyr > #prevL { opacity: .55; }
+  #lyr > .lx:empty, #lyr > .fitHide { display: none !important; }
+  .w[data-w="music"] .ctl { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
+  .w[data-w="music"] .ctl.play { width: 54px; height: 54px; min-width: 54px; min-height: 54px; }
+  .w[data-w="music"] #cover { width: calc(min(14cqw, 34cqh) * var(--as, 1)); height: auto; max-width: none; align-self: center; flex: none; }
+  @container tile (min-aspect-ratio: 13/5) { .w[data-w="music"] #cover { height: auto; width: calc(min(14cqw, 60cqh) * var(--as, 1)); } }
+  @container tile (max-aspect-ratio: 1/1) {
+    .w[data-w="music"] #cover { width: calc(min(24cqw, 11cqh) * var(--as, 1)); }
+    #lyr > div { font-size: max(var(--f13), calc(min(6cqw, 3cqh) * var(--k))); }
+    #lyr > #line { font-size: max(var(--f15), calc(min(7.5cqw, 3.8cqh) * var(--k))); }
+  }
+  @container tile (max-height: 80px) { #lyr { display: none; } }
+  .w[data-w="music"] #progress { height: 4px; }
+  .w.unsync #lyr > #line { font-weight: 500; color: var(--dim); font-size: max(var(--f13), calc(min(6cqw, 3cqh) * var(--k))); }
+  .w.unsync #lyr > #prevL { opacity: 1; color: var(--accent); font-weight: 600; }
+  #lyr > .lx.xl { display: none; }
+  /* Owner, 26 Oct: tall music card = art, song and artist on top · lyrics fill the middle ·
+     buttons at the bottom, with clear space between the three groups. */
+  @container tile (max-aspect-ratio: 1/1) and (min-height: 300px) {
+    .w[data-w="music"] .mus, .w.noart[data-w="music"] .mus { display: grid; grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto auto minmax(0, 1fr) auto auto; grid-template-areas: "cover" "song" "lyr" "prog" "ctl";
+      align-content: stretch; justify-items: center; row-gap: 0; text-align: center; }
+    .w[data-w="music"] #music { display: contents; }
+    .w[data-w="music"] #cover { grid-area: cover; grid-row: auto; align-self: end; }
+    .w[data-w="music"] #songRow { grid-area: song; margin-top: max(8px, 1.6cqh); max-width: 100%; justify-content: center;
+      font-size: max(var(--f15), calc(min(6cqw, 2.8cqh) * var(--k))); }
+    .w[data-w="music"] #lyr { grid-area: lyr; width: 100%; height: 100%; justify-content: safe center; align-items: center;
+      padding: max(14px, 3cqh) 0; box-sizing: border-box; }
+    .w[data-w="music"] #lyr > div { max-width: 100%; }
+    #lyr > .lx.xl:not(:empty) { display: block; }
+    #lyr > .fitHide { display: none !important; }
+    .w[data-w="music"] #progress { grid-area: prog; width: 100%; margin: 0 0 max(10px, 2cqh); }
+    .w[data-w="music"] #controls { grid-area: ctl; grid-column: auto; align-self: start; justify-content: center; }
+  }
+  .w[data-w="music"].nodur #progress { display: none; }   /* radio: no song length, no empty bar */
 </style>
 <script src="dd_tall.js"></script>
 </head>
@@ -1120,8 +1163,7 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
     <div id="cover">♪</div>
     <div id="music">
       <div id="songRow"><span id="song" class="ellipsis">Waiting for music…</span><span id="artist" class="ellipsis"></span></div>
-      <div id="line" class="ellipsis"></div>
-      <div id="next" class="ellipsis"></div>
+      <div id="lyr"><div id="prevL" class="lx"></div><div id="line" class="ellipsis"></div><div id="next" class="ellipsis lx"></div><div id="n2" class="lx"></div><div id="n3" class="lx"></div><div id="n4" class="lx xl"></div><div id="n5" class="lx xl"></div><div id="n6" class="lx xl"></div><div id="n7" class="lx xl"></div><div id="n8" class="lx xl"></div><div id="n9" class="lx xl"></div><div id="n10" class="lx xl"></div><div id="n11" class="lx xl"></div><div id="n12" class="lx xl"></div><div id="n13" class="lx xl"></div><div id="n14" class="lx xl"></div></div>
       <div id="progress"><div id="progressFill"></div></div>
     </div>
     <div id="controls">
@@ -1206,6 +1248,18 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
     while (lo <= hi) { var mid = (lo + hi) >> 1; if (state.lines[mid][0] <= pos) { found = mid; lo = mid + 1; } else hi = mid - 1; }
     return found;
   }
+  // Show as many lyric lines as the tile has room for: drop next lines from the bottom first,
+  // then the previous line; the current line always stays.
+  function fitLyrics() {
+    var box = $('lyr'), mus = $('music');
+    if (!box || !mus) return;
+    var order = ['n14', 'n13', 'n12', 'n11', 'n10', 'n9', 'n8', 'n7', 'n6', 'n5', 'n4', 'n3', 'n2', 'prevL', 'next'];
+    order.forEach(function (id) { $(id).classList.remove('fitHide'); });
+    for (var k = 0; k < order.length && (mus.scrollHeight > mus.clientHeight + 1 || box.scrollHeight > box.clientHeight + 1); k++) {
+      $(order[k]).classList.add('fitHide');
+    }
+  }
+  window.addEventListener('resize', function () { fitLyrics(); });
   function frame() {
     if (!layout.music) { setTimeout(frame, 1000); return; }
     var pos = position();
@@ -1213,14 +1267,19 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
       var sx = (pos / state.duration).toFixed(4);
       if (sx !== frame.sx) { frame.sx = sx; $('progressFill').style.transform = 'scaleX(' + sx + ')'; }
     }
-    if (state.lines.length) {
+    if (state.lines.length && !state.unsynced) {
       var i = findIndex(pos + LEAD);
       if (i !== state.idx) {
         state.idx = i;
         var cur = i >= 0 ? (state.lines[i][1] || '').trim() : '';
         $('line').textContent = cur || '♪';
-        var nx = state.lines[i + 1];
-        $('next').textContent = nx ? (nx[1] || '').trim() : '';
+        var L = function (k) { var x = state.lines[k]; return x ? (x[1] || '').trim() || '♪' : ''; };
+        $('prevL').textContent = i >= 1 ? L(i - 1) : '';
+        $('next').textContent = L(i + 1);
+        $('n2').textContent = L(i + 2);
+        $('n3').textContent = L(i + 3);
+        for (var q = 4; q <= 14; q++) $('n' + q).textContent = L(i + q);
+        fitLyrics();
       }
     }
     // 10 fps is plenty for a progress bar + line swap; idle at 1 fps when the Music widget is off.
@@ -1278,12 +1337,26 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
     state.playing = !!m.playing;
     setPlayIcon(state.playing);
     state.duration = m.durationMs || 0;
-    var key = (m.title || '') + '|' + (m.lines ? m.lines.length : 0);
+    var mw = document.querySelector('.w[data-w="music"]'); if (mw) mw.classList.toggle('nodur', !(state.duration > 0));
+    var key = (m.title || '') + '|' + (m.lines ? m.lines.length : 0) + '|' + (m.unsynced ? 'u' : 's');
+    state.unsynced = !!m.unsynced;
     if (key !== state.songKey) {
       state.songKey = key;
       state.lines = m.lines || [];
       state.idx = -2;
-      $('next').textContent = '';
+      ['prevL', 'next', 'n2', 'n3', 'n4', 'n5', 'n6', 'n7', 'n8', 'n9', 'n10', 'n11', 'n12', 'n13', 'n14'].forEach(function (id) { $(id).textContent = ''; });
+      var mw2 = document.querySelector('.w[data-w="music"]');
+      if (mw2) mw2.classList.toggle('unsync', state.unsynced && state.lines.length > 0);
+      if (state.unsynced && state.lines.length) {
+        // Tuned in mid-song: the lyrics can't be timed, so show them plainly (no moving highlight)
+        // until the next song starts.
+        $('prevL').textContent = tr('syncNext', 'Lyrics sync from the next song');
+        var T = function (k) { var x = state.lines[k]; return x ? (x[1] || '').trim() || '♪' : ''; };
+        $('line').textContent = T(0);
+        $('next').textContent = T(1); $('n2').textContent = T(2); $('n3').textContent = T(3);
+        for (var q = 4; q <= 14; q++) $('n' + q).textContent = T(q);
+        fitLyrics();
+      }
       if (!state.lines.length) {
         $('line').textContent = waiting ? (m.app ? '' : tr('playSomething', 'Play something in Spotify')) :
           ({ loading: tr('findingLyrics', 'Finding lyrics…'), notFound: m.playing ? '♪' : tr('paused', 'Paused'),
@@ -1413,6 +1486,7 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   }
   var DEFAULT_TA = { speed: 'center', shortcuts: 'center' };   // same as home_layout.dart
   function applyLayout(l) {
+    setTimeout(function () { if (typeof fitLyrics === "function") fitLyrics(); }, 80);
     l = l || pickLayout();
     var cols = 12;   // same grid on every screen, so the phone editor matches the car
     // Tall screens use their own layout on an 18-row grid (the phone editor's "Tall" board).

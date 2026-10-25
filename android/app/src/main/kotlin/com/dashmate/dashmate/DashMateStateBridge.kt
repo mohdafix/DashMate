@@ -91,6 +91,8 @@ object DashMateStateBridge {
         }
     }
 
+    @Volatile var lyricsSyncKnown: Boolean = true
+
     fun updatePlaybackProgress(positionMs: Long, durationMs: Long = 0L, speed: Float = 1.0f) {
         playbackPositionMs = positionMs
         playbackPositionTimestampMs = SystemClock.elapsedRealtime()
@@ -211,18 +213,23 @@ object DashMateStateBridge {
         coverUrl: String = "",
         app: String = "",
         durationMs: Long = 0L,
-        positionMs: Long = 0L,
+        /** -1 = unknown (song notifications carry no position): keep the running clock. */
+        positionMs: Long = -1L,
         lastUpdateTime: Long = 0L,
         speed: Float = 1.0f,
         /** False for DashMate radio without a song name: don't search lyrics for a station name. */
         fetchLyrics: Boolean = true,
+        /** False: the song was already playing when the radio was tuned, so lyrics can't be timed. */
+        syncKnown: Boolean = true,
     ) {
+        lyricsSyncKnown = syncKnown
         val titleChanged = title != songTitle || artist != songArtist
         val playStateChanged = playing != isPlaying
         val now = System.currentTimeMillis()
         val currentKey = "$title|$artist|$playing"
         val isSamePlayback = currentKey == lastMediaKey
-        if (!titleChanged && !playStateChanged && isSamePlayback && now - lastMediaUpdateMs < 1500) {
+        // Skip quick repeats, but never one that carries a fresh position (that is the sync fix).
+        if (!titleChanged && !playStateChanged && isSamePlayback && now - lastMediaUpdateMs < 1500 && positionMs < 0) {
             return
         }
         lastMediaKey = currentKey
@@ -462,6 +469,8 @@ object DashMateStateBridge {
             // Radio can't tell how far into the song it is: the lyrics count from when the song
             // name arrived, so the Lyrics page shows "approx. sync".
             put("approx", songApp == DashMateMediaCardService.RADIO_APP_NAME)
+            // Tuned in mid-song: show the lyrics as plain text until the next song starts.
+            put("unsynced", !lyricsSyncKnown)
         })
         state.put("positionMs", currentPos)
         state.put("durationMs", playbackDurationMs)
@@ -610,7 +619,7 @@ object DashMateStateBridge {
         state.put("artist", songArtist)
         state.put("art", songCoverUrl)
         state.put("playing", isPlaying)
-        state.put("positionMs", playbackPositionMs)
+        state.put("positionMs", currentPos)   // live position, not the last saved one
         state.put("durationMs", playbackDurationMs)
         state.put("status", musicStatus)
         state.put("app", songApp)

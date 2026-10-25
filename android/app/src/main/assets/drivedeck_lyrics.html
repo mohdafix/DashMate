@@ -407,7 +407,8 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
     if (p.app) chips += '<span class="chip">' + escapeHtml(p.app) + '</span>';
     if (p.playing) chips += '<span class="chip live">▶ ' + escapeHtml(tr('playing', 'Playing')) + '</span>';
     if (p.cached) chips += '<span class="chip">' + escapeHtml(tr('cached', 'Cached')) + '</span>';
-    if (p.approx) chips += '<span class="chip">' + escapeHtml(tr('approx', 'approx. sync')) + '</span>';
+    if (p.unsynced) chips += '<span class="chip">' + escapeHtml(tr('syncNext', 'Lyrics sync from the next song')) + '</span>';
+    else if (p.approx) chips += '<span class="chip">' + escapeHtml(tr('approx', 'approx. sync')) + '</span>';
     $('chips').innerHTML = chips;
 
     // Cover is re-sent with every update; only repaint (re-decode + 48px blur) when it changes.
@@ -418,7 +419,7 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
       $('bg').style.backgroundImage = art;
     }
 
-    var key = (p.title || '') + '|' + (p.artist || '') + '|' + p.status + '|' + (p.lines ? p.lines.length : 0);
+    var key = (p.title || '') + '|' + (p.artist || '') + '|' + p.status + '|' + (p.lines ? p.lines.length : 0) + '|' + (p.unsynced ? 'u' : 's');
     var transit = p.sentAtMs ? Math.min(Math.max(0, Date.now() - p.sentAtMs), 1500) : 0;
     var target = (p.positionMs || 0) + (p.playing ? transit : 0);
     syncClock(target, !!p.playing, key !== state.key);
@@ -428,7 +429,12 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
     if (key === state.key) return;   // same song & state: only the clock was resynced
     state.key = key;
 
-    if (p.status === 'found' && p.lines && p.lines.length) {
+    if (p.status === 'found' && p.unsynced && p.lines && p.lines.length) {
+      // Tuned in mid-song: no moving highlight on a guessed clock; plain lyrics until the next song.
+      state.lines = [];
+      state.plain = p.lines.map(function (l) { return l[1] || ''; }).join('\n');
+      renderPlain();
+    } else if (p.status === 'found' && p.lines && p.lines.length) {
       state.lines = p.lines;
       renderLines();
     } else if (p.status === 'found' && p.plain) {
