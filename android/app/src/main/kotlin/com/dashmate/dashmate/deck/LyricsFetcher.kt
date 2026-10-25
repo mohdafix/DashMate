@@ -49,7 +49,8 @@ object LyricsFetcher {
                         val obj = arr.getJSONObject(i)
                         list.add(LyricLine(obj.getLong("time"), obj.getString("text")))
                     }
-                    if (list.isNotEmpty()) {
+                    // Older builds cached the word "null" as a lyric (see text()); ignore that cache.
+                    if (list.isNotEmpty() && list.any { !isNullWord(it.text) }) {
                         memoryCache[cacheKey] = list
                         return@withContext list
                     }
@@ -109,11 +110,11 @@ object LyricsFetcher {
             if (conn.responseCode == 200) {
                 val response = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
                 val json = JSONObject(response)
-                val syncedLyrics = json.optString("syncedLyrics", "")
+                val syncedLyrics = json.text("syncedLyrics")
                 if (syncedLyrics.isNotBlank()) {
                     return parseLrc(syncedLyrics)
                 }
-                val plainLyrics = json.optString("plainLyrics", "")
+                val plainLyrics = json.text("plainLyrics")
                 if (plainLyrics.isNotBlank()) {
                     return plainToLines(plainLyrics)
                 }
@@ -133,11 +134,11 @@ object LyricsFetcher {
                 val array = JSONArray(response)
                 if (array.length() > 0) {
                     val first = array.getJSONObject(0)
-                    val synced = first.optString("syncedLyrics", "")
+                    val synced = first.text("syncedLyrics")
                     if (synced.isNotBlank()) {
                         return parseLrc(synced)
                     }
-                    val plain = first.optString("plainLyrics", "")
+                    val plain = first.text("plainLyrics")
                     if (plain.isNotBlank()) {
                         return plainToLines(plain)
                     }
@@ -159,7 +160,7 @@ object LyricsFetcher {
             if (conn.responseCode == 200) {
                 val response = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
                 val json = JSONObject(response)
-                val lyrics = json.optString("lyrics", "")
+                val lyrics = json.text("lyrics")
                 if (lyrics.isNotBlank()) {
                     Log.d(TAG, "Fetched fallback lyrics from Lyrics.ovh for $artist - $track")
                     return lyrics.lines()
@@ -218,4 +219,10 @@ object LyricsFetcher {
             .replace(Regex("(?i)\\s*-\\s*topic"), "")
             .replace(Regex("(?i)vevo"), "")
             .trim()
+
+    /** JSON null comes back from optString as the word "null": treat it (and blanks) as no lyrics. */
+    private fun JSONObject.text(key: String): String =
+        if (isNull(key)) "" else optString(key, "").let { if (isNullWord(it)) "" else it }
+
+    private fun isNullWord(s: String) = s.trim().equals("null", ignoreCase = true)
 }

@@ -13,9 +13,8 @@ class _WelcomeSoundScreenState extends State<WelcomeSoundScreen> {
   static const MethodChannel _channel = MethodChannel('com.dashmate.dashmate/channel');
 
   int _selectedSoundMode = 1; // 0: Off, 1: Chime, 2: Custom
-  bool _voiceGreeting = true;
+  bool _voiceGreeting = false; // no voice unless the owner types a greeting
   final TextEditingController _greetingController = TextEditingController();
-  final String _selectedVoice = 'Phone default';
   double _speed = 1.0;
   double _pitch = 1.0;
   double _volume = 0.8;
@@ -40,7 +39,7 @@ class _WelcomeSoundScreenState extends State<WelcomeSoundScreen> {
       if (res != null && res is Map && mounted) {
         setState(() {
           _selectedSoundMode = (res['mode'] as num?)?.toInt() ?? 1;
-          _voiceGreeting = (res['voiceGreeting'] as bool?) ?? true;
+          _voiceGreeting = (res['voiceGreeting'] as bool?) ?? false;
           _greetingController.text = (res['customText'] as String?) ?? '';
           _speed = (res['speed'] as num?)?.toDouble() ?? 1.0;
           _pitch = (res['pitch'] as num?)?.toDouble() ?? 1.0;
@@ -251,38 +250,6 @@ class _WelcomeSoundScreenState extends State<WelcomeSoundScreen> {
                 ),
 
                 const SizedBox(height: 24),
-
-                // 5. Voice Dropdown Box
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: t.border),
-                  ),
-                  // Not a picker: the greeting uses the phone's text-to-speech voice.
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Voice', style: TextStyle(fontSize: 10, color: t.ink3)),
-                            const SizedBox(height: 2),
-                            Text(_selectedVoice, style: TextStyle(fontSize: 14, color: t.ink)),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Change it in Android Settings › Text-to-speech',
-                              style: TextStyle(fontSize: 11, color: t.ink2),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Icon(Icons.record_voice_over_outlined, color: t.ink3, size: 20),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 20),
 
                 // 6. Speed Slider
                 Row(

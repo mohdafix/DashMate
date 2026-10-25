@@ -122,6 +122,12 @@ object DashMateStateBridge {
 
     /** Which Custom page the phone picked: weather (default), calendar, sports, radar or ev. */
     var customMode: String = "weather"
+
+    /**
+     * Set when the Custom page is opened by tapping a Home card (weather, sports, calendar...):
+     * shows that card's topic without changing the mode saved on the phone. Cleared on leaving.
+     */
+    var customCardMode: String? = null
     var appLanguage: String = "en"
     var carCardMode: String = "music"
 
@@ -170,6 +176,7 @@ object DashMateStateBridge {
     private var lastMediaKey: String = ""
 
     fun setPage(page: String) {
+        if (page != "custom") customCardMode = null
         if (currentPage != page || page == "custom" || pendingWebUrl != null) {
             currentPage = page
             mainHandler.post {
@@ -207,6 +214,8 @@ object DashMateStateBridge {
         positionMs: Long = 0L,
         lastUpdateTime: Long = 0L,
         speed: Float = 1.0f,
+        /** False for DashMate radio without a song name: don't search lyrics for a station name. */
+        fetchLyrics: Boolean = true,
     ) {
         val titleChanged = title != songTitle || artist != songArtist
         val playStateChanged = playing != isPlaying
@@ -244,7 +253,11 @@ object DashMateStateBridge {
         }
         playbackSpeed = if (speed > 0f) speed else 1.0f
 
-        if (titleChanged && title.isNotBlank() && title != "Not Playing") {
+        if (titleChanged && !fetchLyrics) {
+            currentLyrics = emptyList()
+            isFetchingLyrics = false
+        }
+        if (fetchLyrics && titleChanged && title.isNotBlank() && title != "Not Playing") {
             isFetchingLyrics = true
             currentLyrics = emptyList()
             notifyStateChanged(context)
@@ -301,7 +314,7 @@ object DashMateStateBridge {
         state.put("speed", currentSpeed.toInt())
         state.put("speedOnly", false)
         state.put("gps", isGps)
-        state.put("fn", if (currentPage == "custom") customMode else activeFont)
+        state.put("fn", if (currentPage == "custom") (customCardMode ?: customMode) else activeFont)
         state.put("page", currentPage)
         state.put("carCard", carCardMode)
         state.put("layoutMode", layoutMode(context))
@@ -315,7 +328,7 @@ object DashMateStateBridge {
                 put("textScale", 1)
                 put("clockFont", "thin")
                 put("widgets", JSONArray().apply {
-                    when (customMode) {
+                    when (customCardMode ?: customMode) {
                         "calendar" -> put(tile("calendar", 1, 1, 12, 8))
                         "sports" -> put(tile("sports", 1, 1, 12, 8))
                         "radar" -> put(tile("radar", 1, 1, 12, 8))
@@ -446,6 +459,9 @@ object DashMateStateBridge {
             put("sentAtMs", System.currentTimeMillis())
             put("app", songApp)
             put("lyrics", lyricsArr)
+            // Radio can't tell how far into the song it is: the lyrics count from when the song
+            // name arrived, so the Lyrics page shows "approx. sync".
+            put("approx", songApp == DashMateMediaCardService.RADIO_APP_NAME)
         })
         state.put("positionMs", currentPos)
         state.put("durationMs", playbackDurationMs)

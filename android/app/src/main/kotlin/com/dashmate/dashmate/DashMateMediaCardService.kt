@@ -44,6 +44,8 @@ class DashMateMediaCardService : MediaBrowserServiceCompat(), DashMateStateBridg
 
     companion object {
         private const val TAG = "DashMateMediaCard"
+        /** The "app" Now Playing shows while DashMate's own radio plays. */
+        const val RADIO_APP_NAME = "DashMate Radio"
         private const val ROOT_ID = "__DASHMATE_CARD_ROOT__"
         private const val MEDIA_ID = "dashmate_live_card"
         private const val CHANNEL_ID = "dashmate_media_card_channel"
@@ -181,6 +183,7 @@ class DashMateMediaCardService : MediaBrowserServiceCompat(), DashMateStateBridg
             if (radioMode) {
                 renderRadioSession()
                 scheduleLongPauseCheck()
+                pushRadioToNowPlaying()
             }
         }
 
@@ -516,10 +519,36 @@ class DashMateMediaCardService : MediaBrowserServiceCompat(), DashMateStateBridg
         ensureStartedForRadio()
     }
 
+    /**
+     * DashMate's own radio is ignored by the media listener (it skips our package), so feed Now
+     * Playing directly: the song when the station sends one (lyrics are then looked up, timed from
+     * when the song started), otherwise the station.
+     */
+    private fun pushRadioToNowPlaying(playingOverride: Boolean? = null) {
+        val p = radioPlayer
+        val station = p?.station ?: lastRadioStation ?: return
+        val np = com.dashmate.dashmate.deck.radio.RadioNowPlaying.from(p?.nowPlaying, station.name, station.subtitle)
+        val playing = playingOverride ?: (p?.status == RadioPlayer.Status.PLAYING || p?.status == RadioPlayer.Status.BUFFERING)
+        DashMateStateBridge.updateMediaInfo(
+            applicationContext,
+            np.title,
+            np.artist,
+            playing,
+            app = RADIO_APP_NAME,
+            durationMs = 0L,
+            // -1 = "unknown": a new song starts its lyrics clock at 0; later radio updates (buffering,
+            // playing...) must not reset it, or the karaoke lyrics stay stuck on the first line.
+            positionMs = -1L,
+            fetchLyrics = np.isSong,
+        )
+    }
+
     /** Leave radio mode and fall back to the lyrics / prayer / football card. */
     private fun exitRadioMode() {
         mainHandler.removeCallbacks(radioLongPauseRunnable)
         if (!radioMode && radioPlayer == null) return
+        // Now Playing: the radio has stopped (only if it is still the radio being shown).
+        if (DashMateStateBridge.songApp == RADIO_APP_NAME) pushRadioToNowPlaying(playingOverride = false)
         radioMode = false
         radioPlayer?.release()
         radioPlayer = null

@@ -37,6 +37,8 @@ class MainActivity : FlutterActivity() {
     private val REQ_LOCATION = 4107
     private val CH_CAR_BROWSER = "drivedeck/car_browser"
     private val CH_CAR_STATE = "drivedeck/car_state"
+    /** The owner's name from the first-run setup (dd_car_browser prefs). */
+    private val USER_NAME_KEY = "user_name"
     private val CH_NOW_PLAYING = "drivedeck/now_playing"
     private val CH_MEDIA_CONTROL = "drivedeck/media_control"
     private val CH_MEDIA_STORE = "drivedeck/media_store"
@@ -415,15 +417,38 @@ class MainActivity : FlutterActivity() {
                 DashMateStateBridge.highlightWidget(id)
                 result.success(true)
             }
+            "getUserSetup" -> {
+                // First-run setup: done once the owner has entered a name.
+                result.success(
+                    mapOf(
+                        "name" to (browserPrefs().getString(USER_NAME_KEY, null) ?: ""),
+                        "shape" to CarPreviewActivity.savedShape(this),
+                        "size" to CarPreviewActivity.savedSize(this),
+                    )
+                )
+            }
+            "saveUserSetup" -> {
+                val name = (call.argument<String>("name") ?: "").trim().take(40)
+                val shape = call.argument<String>("shape")
+                if (name.isNotEmpty()) browserPrefs().edit().putString(USER_NAME_KEY, name).apply()
+                if (shape == "tall" || shape == "wide") CarPreviewActivity.chooseShape(this, shape == "tall")
+                result.success(true)
+            }
             "testVoiceGreeting" -> {
                 val rawText = call.argument<String>("text") ?: ""
                 val speed = call.argument<Double>("speed")?.toFloat() ?: 1.0f
                 val pitch = call.argument<Double>("pitch")?.toFloat() ?: 1.0f
-                val text = if (rawText.isBlank()) {
-                    "Welcome back, Mohamad Afix"
-                } else {
+                if (rawText.isBlank()) {
+                    // Nothing typed: no voice, just the chime the car plays.
+                    tts?.stop()
+                    DashMateStateBridge.playWelcomeChime(this)
+                    result.success(true)
+                    return
+                }
+                val ownerName = browserPrefs().getString(USER_NAME_KEY, null) ?: ""
+                val text = run {
                     rawText
-                        .replace("{name}", "Mohamad Afix")
+                        .replace("{name}", ownerName)
                         .replace("{prayer_name}", "Maghrib")
                         .replace("{prayer_time}", "6:59 PM")
                         .replace("{time}", "7:15 PM")
@@ -656,7 +681,7 @@ class MainActivity : FlutterActivity() {
                 result.success(
                     mapOf(
                         "mode" to sp.getInt("welcome_mode", 1),
-                        "voiceGreeting" to sp.getBoolean("welcome_voice", true),
+                        "voiceGreeting" to sp.getBoolean("welcome_voice", false),
                         "customText" to sp.getString("welcome_text", ""),
                         "speed" to sp.getFloat("welcome_speed", 1.0f).toDouble(),
                         "pitch" to sp.getFloat("welcome_pitch", 1.0f).toDouble(),

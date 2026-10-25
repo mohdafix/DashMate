@@ -102,7 +102,8 @@ class DashMateDockBar(
             Triple("lyrics", R.drawable.dd_ic_lyrics, "Lyrics"),
             Triple("prayer", R.drawable.dd_ic_prayer, "Prayer Times"),
             Triple("radio", R.drawable.dd_ic_radio, "Radio"),
-            Triple("custom", R.drawable.dd_ic_grid, "Custom Dashboard"),
+            // No "custom" button: it looked like a second Home (owner, 25 Oct). The Custom page
+            // (forecast / air / radar) opens from the weather card on Home instead.
             Triple("web", R.drawable.dd_ic_web, "Browser"),
             Triple("nav", R.drawable.dd_ic_nav, "Navigation (Waze Live Map)"),
         )

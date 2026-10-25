@@ -733,6 +733,372 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
     .w[data-ta="left"] .mus { justify-items: start; text-align: left; } .w[data-ta="left"] #songRow, .w[data-ta="left"] #controls { justify-content: flex-start; }
     .w[data-ta="right"] .mus { justify-items: end; text-align: right; } .w[data-ta="right"] #songRow, .w[data-ta="right"] #controls { justify-content: flex-end; }
   }
+  /* Owner, 25 Oct: much smaller album art on Home, so the lyrics get the space (several lines
+     instead of one). --as (album art size from the phone) still scales it. */
+  @container tile (min-aspect-ratio: 1/1) and (max-aspect-ratio: 13/5) {
+    #cover { height: auto; width: calc(min(20cqw, 50cqh) * var(--as, 1)); max-width: none; align-self: center; }
+  }
+  @container tile (max-aspect-ratio: 1/1) {
+    #cover { width: min(calc(min(30cqw, 16cqh) * var(--as, 1)), 22cqh, 40cqw); }
+    #line { -webkit-line-clamp: 5; }
+    #next { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  }
+
+  /* ================= Any tile size (phone "Edit widgets": 1–12 columns × 1–18 rows) =================
+     A tall J7 cell is only ~47 × 44 px and a wide one ~100 × 75 px, so every widget gets size tiers:
+     tiny tiles keep only their main value, short strips go one-row, narrow columns stack, and big
+     tiles scale text with the tile. Less important parts are dropped whole, never squashed or cut. */
+
+  /* Tiny / one-row tiles: thinner padding so the content gets the room. */
+  @container tile (max-width: 130px) or (max-height: 80px) {
+    .in { padding: 6px 8px; }
+  }
+
+  /* Clock: bigger digits (still fit "12:59 PM"); the date wraps on narrow tiles, drops when there's no room. */
+  #time { font-size: max(var(--f14), calc(min(58cqh, 30cqw) * var(--k))); }
+  #date { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  @container tile (max-width: 200px) { #date { white-space: normal; line-height: 1.2; } }
+  @container tile (max-height: 70px) { #time { font-size: max(var(--f14), calc(min(80cqh, 30cqw) * var(--k))); } #date { display: none; } }
+  @container tile (max-width: 70px) { #date { display: none; } }
+
+  /* Info tiles (prayer, weather, football, fuel). */
+  .info .ic { font-size: calc(min(44cqh, 20cqw) * var(--k)); }
+  .big { font-size: calc(min(36cqh, 13cqw) * var(--k)); }
+  .t1 { font-size: max(var(--f16), calc(min(17cqh, 7.5cqw) * var(--k))); }
+  .sub { font-size: max(var(--f15), calc(min(16cqh, 7cqw) * var(--k))); }
+  /* Long names wrap onto a second line instead of "Arsenal 2 – 1 Liv…". */
+  #scoreText, .w[data-w="prayer"] .t1 { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.2; }
+  @container tile (max-aspect-ratio: 1/1) {
+    /* Stacked: the icon + text group sits in the middle of the tile (not stuck at the top). */
+    .info { justify-content: center; }
+    .w[data-ta] .info .txt { flex: none; max-width: 100%; }
+    .info .ic { font-size: calc(min(26cqh, 34cqw) * var(--k)); }
+    .big { font-size: calc(min(16cqh, 20cqw) * var(--k)); }
+    .t1, .sub { font-size: max(var(--f14), calc(min(8cqh, 12cqw) * var(--k))); }
+  }
+  .info .txt > * { max-width: 100%; }
+  /* Narrow row: no icon, the text gets the width (and grows into it). */
+  @container tile (max-width: 199px) and (min-aspect-ratio: 1/1) {
+    .info .ic { display: none; }
+    .big { font-size: calc(min(36cqh, 20cqw) * var(--k)); }
+    .t1, .sub { font-size: max(var(--f14), calc(min(17cqh, 11cqw) * var(--k))); }
+  }
+  @container tile (max-width: 130px) { .info .ic { display: none; } }
+  /* A single J7 column (~47 px) holds no words: the icon alone. */
+  @container tile (max-width: 70px) {
+    .info .ic { display: flex; font-size: min(70cqw, 60cqh); } .info .txt { display: none; }
+    .w[data-w="weather"] .info .ic, #wDesc { display: none; } .w[data-w="weather"] .info .txt { display: flex; }
+    #wTemp { font-size: max(var(--f14), calc(min(40cqh, 34cqw) * var(--k))); }
+  }
+  /* One-row strip: text side by side, one line each. */
+  @container tile (max-height: 80px) {
+    .info .ic { font-size: calc(min(70cqh, 20cqw) * var(--k)); }
+    .info .txt { flex-direction: row; align-items: baseline; gap: .6em; }
+    .big { font-size: max(var(--f16), calc(min(60cqh, 13cqw) * var(--k))); }
+    .t1, .sub { font-size: max(var(--f14), calc(min(36cqh, 7cqw) * var(--k))); }
+    #scoreText, .w[data-w="prayer"] .t1 { -webkit-line-clamp: 1; }
+    .info .txt > * { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  }
+  @container tile (max-height: 80px) and (max-width: 260px) {
+    #wDesc, #scoreSub, .w[data-w="prayer"] .t1 { display: none; }
+  }
+  /* Fuel: on narrow or tall tiles each fuel is its own row (name · price), so none overlap or drop. */
+  @container tile (max-width: 299px) or (max-aspect-ratio: 1/1) {
+    #fuelText { flex-direction: column; align-items: stretch; gap: .25em; width: 100%; }
+    #fuelText .fu { flex-direction: row; align-items: baseline; justify-content: space-between; gap: .5em; }
+    #fuelText .fu small { font-size: .9em; }
+    #fuelText .fu b { font-size: 1.2em; line-height: 1.1; }
+    .w[data-w="fuel"] .info .txt { align-self: stretch; justify-content: center; }
+    .w[data-w="fuel"] .info .txt, .w[data-w="fuel"] #fuelText { width: 100%; }
+  }
+  @container tile (max-width: 299px) and (min-aspect-ratio: 1/1) { .w[data-w="fuel"] .info .ic { display: none; } }
+  /* Row of three prices: sized so all three always fit beside the pump. */
+  .w[data-w="fuel"] .sub { font-size: max(var(--f15), calc(min(16cqh, 4.2cqw) * var(--k))); }
+  @container tile (max-width: 299px) and (min-aspect-ratio: 1/1) {
+    .w[data-w="fuel"] .sub { font-size: max(var(--f15), calc(min(13cqh, 8cqw) * var(--k))); }
+  }
+  @container tile (max-aspect-ratio: 1/1) {
+    .w[data-w="fuel"] .sub { font-size: max(var(--f14), calc(min(6cqh, 9cqw) * var(--k))); }
+    .w[data-w="fuel"] .info .txt { flex: none; width: 100%; }
+  }
+  @container tile (max-width: 130px) {
+    #fuelText .fu small { font-size: max(var(--f12), .8em); }
+    #fuelText .fu b { font-size: 1.1em; }
+    #fuelText .fu { gap: .3em; }
+  }
+  @container tile (max-height: 80px) and (max-width: 130px) { #fuelText .fu small { display: none; } }
+  @container tile (max-width: 70px) { #fuelText { font-size: 12px; } #fuelText .fu b { font-size: 1.1em; } #fuelText .fu small { display: none; } .w[data-w="fuel"] .info .txt { display: flex; } .w[data-w="fuel"] .info .ic { display: none; } }
+  @container tile (max-aspect-ratio: 1/1) and (max-height: 200px) { .w[data-w="fuel"] .info .ic { display: none; } }
+  /* Blocky tiles (not a strip): pump on the left, the three prices as a list beside it. */
+  @container tile (min-aspect-ratio: 1/1) and (max-aspect-ratio: 9/5) and (min-height: 200px) and (min-width: 300px) {
+    #fuelText { flex-direction: column; align-items: stretch; gap: .25em; width: 100%; }
+    #fuelText .fu { flex-direction: row; align-items: baseline; justify-content: space-between; gap: .8em; }
+    #fuelText .fu b { font-size: 1.2em; line-height: 1.1; }
+    .w[data-w="fuel"] .info .txt { flex: 1; }
+    #fuelText { max-width: 10em; }
+    .w[data-w="fuel"] .sub { font-size: max(var(--f15), calc(min(9cqh, 6cqw) * var(--k))); }
+  }
+  /* One-row fuel strip that's too narrow for three: the first price only. */
+  @container tile (max-height: 80px) and (max-width: 299px) {
+    #fuelText { flex-direction: row; }
+    #fuelText .fu + .fu { display: none; }
+  }
+
+  /* Speed: bigger number; on a long strip the unit sits beside it. */
+  #speed { font-size: max(var(--f16), calc(min(55cqh, 44cqw) * var(--k))); }
+  #speedUnit { font-size: max(var(--f14), calc(min(13cqh, 10cqw) * var(--k))); }
+  @container tile (min-aspect-ratio: 3/1) or (max-height: 80px) {
+    .spd { flex-direction: row; align-items: baseline; justify-content: center; gap: .4em; }
+    .w[data-ta="left"] .spd { justify-content: flex-start; } .w[data-ta="right"] .spd { justify-content: flex-end; }
+    #speed { font-size: max(var(--f16), calc(min(72cqh, 30cqw) * var(--k))); }
+    #speedUnit { font-size: max(var(--f14), calc(min(24cqh, 8cqw) * var(--k))); margin-top: 0; }
+  }
+
+  @container tile (max-width: 70px) { #speedUnit { display: none; } }
+
+  /* Shortcuts: never bigger than the tile; a column of icons on tall tiles. */
+  #shortcuts { --ic: max(min(48px, 80cqh, calc(72cqw / var(--n, 2))), min(60cqh, calc(76cqw / var(--n, 2)))); }
+  @container tile (max-aspect-ratio: 3/4) {
+    #shortcuts { flex-direction: column; flex-wrap: nowrap; align-items: center;
+                 --ic: max(min(48px, 80cqw, calc(72cqh / var(--n, 2))), min(60cqw, calc(76cqh / var(--n, 2)))); }
+    .w[data-ta="left"] #shortcuts { align-items: flex-start; } .w[data-ta="right"] #shortcuts { align-items: flex-end; }
+  }
+
+  /* Music. Short tile (≤ 2 tall rows / one wide row): one row — text · controls. */
+  @container tile (max-height: 130px) and (min-aspect-ratio: 1/1) {
+    .mus, .w.noart .mus { display: flex; align-items: center; gap: max(10px, min(6cqh, 3cqw)); }
+    #cover { height: 100%; width: auto; max-width: none; flex: none; }
+    #music { flex: 1; min-width: 0; align-self: center; }
+    #line { -webkit-line-clamp: 1; }
+    #next { display: none; }
+    #controls { align-self: center; flex: none; }
+    .ctl, .w .ctl { width: min(48px, calc(100cqh - 12px)); height: min(48px, calc(100cqh - 12px)); min-width: 0; min-height: 0; }
+    .ctl.play, .w .ctl.play { width: min(56px, calc(100cqh - 12px)); height: min(56px, calc(100cqh - 12px)); }
+  }
+  @container tile (max-height: 130px) and (min-aspect-ratio: 1/1) and (max-width: 599px) { #cover { display: none; } }
+  @container tile (max-height: 130px) and (min-aspect-ratio: 1/1) and (max-width: 429px) { .ctl:not(.play) { display: none; } }
+  @container tile (max-height: 80px) { #progress { display: none; } #songRow { font-size: max(var(--f14), calc(30cqh * var(--k))); } #line { display: none; } }
+  /* Block tile: the lyric line sized so song · line · next line · progress fit above the controls. */
+  @container tile (min-aspect-ratio: 1/1) and (max-aspect-ratio: 13/5) and (min-height: 131px) {
+    #line { font-size: max(var(--f17), calc(min(9cqw, 10cqh) * var(--k))); }
+    #next { font-size: max(var(--f14), calc(min(6cqw, 7cqh) * var(--k))); }
+  }
+  /* Narrow text column: the artist gives way to the song title. */
+  @container (max-width: 170px) { #artist { display: none; } }
+  /* Small block (e.g. wide 2×2): song, lyric and one big play button. */
+  @container tile (max-width: 199px) and (min-aspect-ratio: 1/1) {
+    .ctl:not(.play) { display: none; }
+    .ctl.play, .w .ctl.play { width: max(48px, min(30cqh, 20cqw)); height: max(48px, min(30cqh, 20cqw)); }
+  }
+  /* Narrow column: play only (three buttons don't fit side by side). */
+  @container tile (max-width: 259px) and (max-aspect-ratio: 1/1) {
+    .ctl:not(.play) { display: none; }
+    .ctl.play, .w .ctl.play { width: min(64px, 80cqw); height: min(64px, 80cqw); min-width: 0; min-height: 0; }
+  }
+  /* Too small for any text: just the play / pause button, centred. */
+  @container tile (max-width: 130px) {
+    .mus, .w.noart .mus { display: flex; align-items: center; justify-content: center; }
+    #cover, #music { display: none; }
+    #controls { justify-content: center; align-self: center; }
+    .ctl.play, .w .ctl.play { width: min(64px, calc(100cqw - 12px), calc(100cqh - 12px)); height: min(64px, calc(100cqw - 12px), calc(100cqh - 12px)); min-width: 0; min-height: 0; }
+  }
+  @container tile (max-aspect-ratio: 1/1) and (max-height: 260px) { #cover { display: none; } #next { display: none; } }
+
+  /* Forecast: tiny → temperature + icon only; short strip → one row; narrow → fewer columns. */
+  #fcHours .h .r, #fcDays .r { font-size: max(var(--f14), .85em); }
+  @container tile (max-width: 260px) { #fcNow .d { display: none; } #fcNow { justify-content: center; } }
+  @container tile (max-height: 80px) { #fcNow { font-size: max(var(--f14), calc(30cqh * var(--k))); } #fcNow .d br, #fcNow .d br + span { display: none; } }
+  @container tile (max-width: 130px) or (max-height: 60px) { #fcNow .ic { font-size: 1.6em; } #fcNow .t { font-size: 1.8em; } }
+  @container tile (max-width: 130px) { #fcNow { font-size: max(var(--f14), calc(min(14cqh, 13cqw) * var(--k))); } }
+  .w[data-w="forecast"]:not(.big) #fcNow { flex: none; padding: .35em .7em; border-radius: .9em; }
+  @container tile (max-width: 260px) and (min-height: 151px) { #fcHours .h:nth-child(n+4) { display: none; } }
+  /* Short tiles: hours keep time · icon · temperature (rain % drops) so the row is never cut. */
+  @container tile (max-height: 250px) {
+    #fcHours .h .r { display: none; }
+    #fcHours .h { padding: .25em 0; gap: .05em; }
+    #fcHours .h .i { font-size: 1.35em; }
+    .w[data-w="forecast"]:not(.big) #fcNow .d br, .w[data-w="forecast"]:not(.big) #fcNow .d br + span { display: none; }
+  }
+  @container tile (max-height: 150px) { .fc { justify-content: center; } }
+  @container tile (max-width: 130px) { #fcHours, #fcDays { display: none; } .fc { justify-content: center; } }
+  @container tile (max-width: 70px) { #fcNow .ic { display: none; } #fcNow { padding: .2em; justify-content: center; } }
+  /* Tall dashboard: the hero keeps its own height, days and hours share the rest; text from the width. */
+  @container tile (min-width: 440px) and (min-height: 280px) and (max-aspect-ratio: 1/1) {
+    .fc { font-size: max(var(--f15), calc(min(3.2cqh, 3cqw) * var(--k))); }
+    #fcNow { flex: none; }
+  }
+  /* Narrow + tall (e.g. 3 or 6 columns wide on the J7): rows sized from the width, fewer columns. */
+  @container tile (max-aspect-ratio: 1/1) and (max-width: 439px) {
+    #fcNow { font-size: max(var(--f14), calc(min(6cqh, 8cqw) * var(--k))); }
+    #fcHours { font-size: max(var(--f14), calc(min(4.5cqh, 6cqw) * var(--k))); }
+    #fcDays { font-size: max(var(--f14), calc(min(4.5cqh, 6.4cqw) * var(--k))); gap: .35em; }
+    #fcDays .d { grid-template-columns: 3em 1.6em 2.6em 2.4em minmax(0, 1fr) 2.4em; }
+    #fcDays .bar { display: block; }
+    /* Hero: temperature + icon on one line, the words centred under them. */
+    .w[data-w="forecast"]:not(.big) #fcNow { flex-wrap: wrap; justify-content: center; row-gap: .2em; }
+    .w[data-w="forecast"]:not(.big) #fcNow .d { flex-basis: 100%; text-align: center; }
+  }
+  @container tile (max-aspect-ratio: 1/1) and (max-width: 299px) {
+    #fcDays .d { grid-template-columns: 3em 1.6em 2.4em 2.4em; }
+    #fcDays .d .r, #fcDays .bar { display: none; }
+  }
+  @container tile (max-width: 199px) {
+    #fcDays .d { grid-template-columns: 3em 1.6em 2.4em; }
+    #fcDays .d .lo, #fcDays .d .r, #fcDays .bar { display: none; }
+  }
+  /* Dashboard tile: the side note only when there's room for it. */
+  @container tile (min-width: 440px) and (min-height: 280px) and ((max-height: 380px) or (max-width: 700px)) {
+    #fcNow .note { display: none; }
+  }
+
+  /* Air quality: short tiles keep the number + band; the details drop whole lines (fixed line boxes). */
+  #aqCat { font-size: max(var(--f14), calc(min(8cqh, 8cqw) * var(--k))); }
+  #aqMore { row-gap: .3em; overflow: hidden; max-height: 4.4em; }
+  #aqMore > span { display: inline-flex; align-items: center; gap: .25em; height: 1.4em; line-height: 1.4em; white-space: nowrap; }
+  @container tile (max-height: 260px) { .aq .tl { display: none; } #aqMore { max-height: 3.1em; } }
+  @container tile (max-height: 200px) { #aqMore { max-height: 1.4em; } }
+  @container tile (max-height: 130px) { #aqMore { display: none; } }
+  @container tile (max-height: 130px) and (min-aspect-ratio: 2/1) { #aqMore { display: flex; max-height: 3.1em; } }
+  @container tile (max-height: 80px) { #aqMore { max-height: 1.4em; } #aqVal { font-size: max(var(--f16), calc(min(70cqh, 30cqw) * var(--k))); } }
+  @container tile (min-aspect-ratio: 2/1) and (max-width: 299px) { #aqMore { display: none; } }
+  @container tile (max-width: 130px) { #aqMore { display: none; } }
+  @container tile (max-width: 70px) or ((max-height: 80px) and (max-width: 199px)) { #aqCat { display: none; } }
+  @container tile (min-aspect-ratio: 2/1) and (max-width: 699px) { .aq .tl { display: none; } }
+  @container tile (max-aspect-ratio: 1/1) {
+    #aqVal { font-size: max(var(--f16), calc(min(24cqh, 34cqw) * var(--k))); }
+    #aqMore { font-size: max(var(--f14), calc(min(5cqh, 8cqw) * var(--k))); }
+    .aq .tl, #aqCat { font-size: max(var(--f14), calc(min(5cqh, 8cqw) * var(--k))); }
+  }
+
+  /* Radar: labels stay on one line inside the tile. */
+  #rdInfo, #rdAttr { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: calc(100% - 1em); }
+  @container tile (max-width: 199px) or (max-height: 80px) { #rdAttr { display: none; } }
+
+  /* Sports. */
+  .sp-live, .pill, .lh, .g .sc.vs { font-size: max(var(--f14), .78em); }
+  .g .tm span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Short tile: one game, never split into columns. */
+  @container tile (max-height: 160px) {
+    #spList { display: flex; column-count: auto; }
+    #spList .lg { margin-bottom: 0; }
+  }
+  @container tile (max-height: 80px) {
+    .g { padding: .1em .7em; border-radius: .7em; }
+    .g .mid { flex-direction: row; gap: .5em; }
+    .g .tm img { display: none; }
+    #spList { font-size: max(var(--f14), calc(36cqh * var(--k))); }
+  }
+  /* Narrow: home / away on two lines, score + status on the right (names get the width). */
+  @container tile (max-width: 300px) {
+    .g { grid-template-columns: minmax(0, 1fr) auto; gap: .2em .6em; }
+    .g .tm, .g .tm.a { grid-column: 1; flex-direction: row; text-align: left; font-size: 1em; }
+    .g .tm.a { grid-row: 2; }
+    .g .mid { grid-column: 2; grid-row: 1 / 3; min-width: 0; }
+    .g.title .tm { grid-row: 1 / 3; }
+    .g.title .pill { grid-column: 2; grid-row: 1 / 3; }
+    .lg .g + .g { display: grid; }
+  }
+  @container tile (max-width: 300px) and (max-height: 160px) { .lg .g + .g, .lg + .lg { display: none; } }
+  @container tile (max-width: 300px) and (max-height: 80px) { .g .tm.a { display: none; } .g .mid .pill { display: none; } }
+  @container tile (max-width: 130px) {
+    .g .tm, .sp-h, .lh { display: none; }
+    .g { grid-template-columns: 1fr; padding: .3em; } .g .mid { grid-column: 1; }
+    .g .sc { white-space: nowrap; }
+    #spList { font-size: max(var(--f14), calc(min(14cqh, 14cqw) * var(--k))); }
+  }
+  @container tile (max-width: 70px) { #spList { font-size: 12px; } .g .sc { font-size: 1.1em; } .g { padding: .2em 0; } .g .mid .pill { display: none; } }
+  /* Two league columns only on a tile tall enough for whole cards in each. */
+  @container tile (min-width: 640px) and (max-height: 259px) { #spList { display: flex; column-count: auto; } }
+  /* Whatever doesn't fit fades out at the bottom instead of a hard cut through a card. */
+  #spList { -webkit-mask-image: linear-gradient(#000 calc(100% - 1.4em), transparent); mask-image: linear-gradient(#000 calc(100% - 1.4em), transparent); }
+  @container tile (max-height: 200px) { #spList { -webkit-mask-image: none; mask-image: none; } }
+  /* Tall tiles: one column, text sized from the width. */
+  @container tile (max-aspect-ratio: 1/1) {
+    #spList { display: flex; column-count: auto; font-size: max(var(--f14), calc(min(5cqh, 5.2cqw) * var(--k))); }
+    .sp-h { font-size: max(var(--f14), calc(min(5cqh, 5.2cqw) * var(--k))); }
+  }
+
+  /* EV charging. */
+  #evList { font-size: max(var(--f16), calc(min(6cqh, 5cqw) * var(--k))); }
+  .ch .sub, .plug, .acc, .ch .nm .acc { font-size: max(var(--f14), .82em); }
+  @container tile (max-height: 220px) { #evTitle { display: none; } }
+  @container tile (max-height: 150px) {
+    .ch { padding: .45em .8em; row-gap: 0; }
+    .ch .sub { display: none; }
+    .ch .n { grid-row: auto; }
+    #evList { font-size: max(var(--f16), calc(min(18cqh, 5cqw) * var(--k))); gap: .4em; }
+  }
+  @container tile (max-height: 80px) { #evAttr { display: none; } #evList { -webkit-mask-image: none; mask-image: none; } }
+  @container tile (max-width: 260px) {
+    .ch { grid-template-columns: minmax(0, 1fr) auto; padding: .55em .7em; }
+    .ch .n { display: none; }
+    .ch .sub { grid-column: 1 / 3; }
+    .ch .op, .ch .sub .plug + .plug { display: none; }
+    #evAttr { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  }
+  @container tile (max-width: 130px) { .ch .km { display: none; } .ch { grid-template-columns: minmax(0, 1fr); } }
+  @container tile (max-width: 70px) { .ch .nm, .ch .sub { display: none; } .ch .km { display: block; text-align: center; } .ch { padding: .3em 0; } #evAttr { display: none; } }
+  /* Name first; the access pill moves under it when both don't fit (never over the distance). */
+  .ch .nm { flex-wrap: wrap; row-gap: .2em; }
+  .ch .nm b { flex: 0 1 auto; }
+  .ch .km { white-space: nowrap; }
+  @container tile (max-width: 70px) { #evList { font-size: 12px; } }
+  /* Map beside the list: the list's text is sized for its own column. */
+  @container tile (min-width: 620px) and (min-height: 300px) { #evList { font-size: max(var(--f16), calc(min(4.6cqh, 2.1cqw) * var(--k))); } }
+  /* Big tall tile: list on top, map below (not a squeezed side-by-side). */
+  @container tile (min-width: 620px) and (min-height: 300px) and (max-aspect-ratio: 1/1) {
+    .ev-b { flex-direction: column; }
+    #evList { flex: none; max-height: 55%; font-size: max(var(--f16), calc(min(4cqh, 3.4cqw) * var(--k))); }
+    #evMap { flex: 1; }
+  }
+
+  /* Calendar. */
+  #calEvents { font-size: max(var(--f14), calc(min(7.5cqh, 4.8cqw) * var(--k))) !important; }
+  .ag-d { font-size: max(var(--f13), .8em); }
+  .ag .at small { font-size: max(var(--f13), .82em); }
+  .ag .ab span { font-size: max(var(--f14), .85em); }
+  #calStrip { font-size: max(var(--f13), calc(min(7cqh, 4.4cqw) * var(--k))); }
+  #calStrip .sd small { font-size: max(var(--f12), .72em); }
+  /* Week board fills a tall tile too (the tile stacks its parts in a column there). */
+  @container tile (min-width: 620px) and (min-height: 300px) { #calWeek { flex: 1 1 auto; } }
+  @container tile (max-aspect-ratio: 1/1) and (min-width: 620px) and (min-height: 300px) {
+    #calWeek { font-size: max(var(--f16), calc(min(2.4cqh, 2.6cqw) * var(--k))); }
+  }
+  /* Narrow: time above the title (the title gets the whole width); no week strip. */
+  @container tile (max-width: 180px) {
+    #calStrip { display: none !important; }
+    .ag { grid-template-columns: .25em minmax(0, 1fr); column-gap: .5em; row-gap: .1em; }
+    .ag i { grid-column: 1; grid-row: 1 / 3; }
+    .ag .at { grid-column: 2; grid-row: 1; text-align: left; }
+    .ag .at small { display: none; }
+    .ag .ab { grid-column: 2; grid-row: 2; }
+  }
+  /* One-row strip: the next event only. */
+  @container tile (max-height: 80px) {
+    .ag-d, .ag .at small, .ag .ab span { display: none; }
+    #calEvents { -webkit-mask-image: none; mask-image: none; justify-content: center;
+                 font-size: max(var(--f14), calc(min(34cqh, 6cqw) * var(--k))) !important; }
+    .ag + .ag, .ag + .ag-d, .ag-d ~ * ~ .ag { display: none; }
+    .ag { grid-template-columns: auto .25em minmax(0, 1fr); }
+    .ag .at, .ag .ab { grid-column: auto; grid-row: auto; }
+    .ag i { grid-column: auto; grid-row: auto; }
+  }
+  @container tile (max-height: 80px) and (max-width: 180px) { .ag .at, .ag i { display: none; } .ag { grid-template-columns: minmax(0, 1fr); } }
+
+  /* YouTube: buttons grow with big tiles; quick pages stack on narrow ones; tiny = the search button. */
+  .yt { font-size: max(var(--f16), calc(min(9cqh, 5cqw) * var(--k))); }
+  .yt button { min-height: max(48px, min(16cqh, 3em)); }
+  .yt .yt-c button { font-size: max(var(--f14), .82em); }
+  @container tile (max-width: 359px) { .yt-c { flex-direction: column; } }
+  @container tile (max-width: 359px) and (max-height: 300px) { .yt-c { flex-direction: row; } .yt-c button:not(#ytHome) { display: none; } }
+  @container tile (max-height: 130px) and (max-width: 359px) { .yt-c { display: none; } }
+  .yt .yt-c button { padding: 0 .4em; }
+  @container tile (max-width: 130px) {
+    .yt { align-items: center; }
+    .yt .yt-s { padding: 0; width: 100%; justify-content: center; }
+    .yt-s span, .yt-c { display: none; }
+  }
+  @container tile (max-height: 80px) { .yt-c { display: none; } .yt button { min-height: min(48px, calc(100cqh - 12px)); } }
 </style>
 <script src="dd_tall.js"></script>
 </head>
@@ -962,16 +1328,28 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   }
 
   var bgUrl = null;
+  function tallBgUrl(u) {
+    if (!isTallScreen() || u.indexOf('images.unsplash.com') < 0) return u;
+    try {
+      var x = new URL(u);
+      x.searchParams.set('w', '1080'); x.searchParams.set('h', '1920');
+      x.searchParams.set('fit', 'crop'); x.searchParams.set('crop', 'entropy');
+      return x.toString();
+    } catch (e) { return u; }
+  }
   function renderBg(b) {
     b = b || { mode: 'cover', dim: .35 };
     document.body.className = document.body.className.replace(/\bmode-\w+/g, '').trim() + ' mode-' + b.mode;
     $('dim').style.opacity = b.mode === 'plain' ? 0 : (b.dim == null ? .35 : b.dim);
-    if (b.url && b.url !== bgUrl) {
-      bgUrl = b.url;
+    // Tall screens (Jaecoo J7): ask for the same photo cut to a tall shape, so it isn't a
+    // blown-up slice of a wide picture.
+    var url = b.url ? tallBgUrl(b.url) : b.url;
+    if (url && url !== bgUrl) {
+      bgUrl = url;
       // Swap only once loaded, so it never flashes empty.
       var img = new Image();
-      img.onload = function () { if (bgUrl === b.url) $('photo').style.backgroundImage = 'url("' + b.url + '")'; };
-      img.src = b.url;
+      img.onload = function () { if (bgUrl === url) $('photo').style.backgroundImage = 'url("' + url + '")'; };
+      img.src = url;
     }
     $('credit').textContent = b.credit || '';
   }
@@ -1614,10 +1992,20 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
     if (y && window.AutoDeck && window.AutoDeck.youtube) window.AutoDeck.youtube(y.getAttribute('data-yt'));
     var c = ev.target.closest && ev.target.closest('[data-nav-lat]');
     if (c && window.AutoDeck && window.AutoDeck.navigate) window.AutoDeck.navigate(+c.getAttribute('data-nav-lat'), +c.getAttribute('data-nav-lng'));
-    // DashMate: prayer tile -> nearest masjid, fuel tile -> nearest petrol station (opens in the car's Waze/Maps).
-    var t = ev.target.closest && ev.target.closest('.w.tile[data-w="prayer"], .w.tile[data-w="fuel"]');
-    if (t && window.AutoDeck && window.AutoDeck.site)
-      window.AutoDeck.site(t.getAttribute('data-w') === 'prayer' ? 'dashmate://masjid' : 'dashmate://petrol');
+    // A tap on a Home card opens that card's own page (owner, 25 Oct: never Waze from a card).
+    // Taps on a card's own controls (buttons, tabs, links, calendar days...) keep doing their job.
+    if (y || c) return;
+    if (ev.target.closest('button, a, input, select, textarea, [data-sptab], [data-spcomp], [data-cv], [data-ev], [data-day], [data-close], [data-yt], .ctl, [onclick]')) return;
+    var tile = ev.target.closest('.w.tile');
+    if (!tile || document.body.classList.contains('editing')) return;
+    var CARD_PAGE = { prayer: 'prayer', music: 'lyrics', weather: 'custom:weather', forecast: 'custom:weather',
+      air: 'custom:weather', radar: 'custom:radar', football: 'custom:sports', sports: 'custom:sports',
+      calendar: 'custom:calendar', ev: 'custom:ev' };
+    var target = CARD_PAGE[tile.getAttribute('data-w')];
+    if (!target || !window.AutoDeck || !window.AutoDeck.page) return;
+    // Already showing that page (e.g. a card on the Custom page itself): nothing to do.
+    if (target.indexOf('custom:') === 0 && document.body.classList.contains('pg-custom')) return;
+    window.AutoDeck.page(target);
   });
 
   var extras = {}, rainNote = null;

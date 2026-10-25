@@ -25,8 +25,13 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
   bool _tall = true;
   int get _gridRows => _tall ? 18 : 8;
 
-  static List<Map<String, dynamic>> _tallDefaults() => CarLayout.defaultWidgets(true);
-  static List<Map<String, dynamic>> _wideDefaults() => CarLayout.defaultWidgets(false);
+  /// Narrowest widget: on the tall screen one column is ~47 px, too narrow for any words.
+  int get _minW => _tall ? 2 : 1;
+
+  static List<Map<String, dynamic>> _tallDefaults() =>
+      CarLayout.defaultWidgets(true);
+  static List<Map<String, dynamic>> _wideDefaults() =>
+      CarLayout.defaultWidgets(false);
 
   // Page-wide options saved with each layout (clock font, 12/24-hour clock, …), kept as loaded
   // so saving the widgets doesn't wipe what Settings chose.
@@ -152,7 +157,10 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
       final mode = await _channel.invokeMethod<String>('getLayoutMode');
       final size = await _channel.invokeMethod<String>('getCarScreenSize');
       if (mounted) {
-        setState(() => _tall = mode != 'auto' || size == null || !size.contains('landscape'));
+        setState(
+          () => _tall =
+              mode != 'auto' || size == null || !size.contains('landscape'),
+        );
       }
     } catch (_) {}
     for (final tall in [false, true]) {
@@ -246,7 +254,7 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
 
   /// True when [w] fits at (x, y) with size ww × hh: inside the grid and not overlapping others.
   bool _fits(Map<String, dynamic> w, int x, int y, int ww, int hh) {
-    if (x < 1 || y < 1 || ww < 1 || hh < 1) return false;
+    if (x < 1 || y < 1 || ww < _minW || hh < 1) return false;
     if (x + ww - 1 > _gridCols || y + hh - 1 > _gridRows) return false;
     for (final o in _widgets) {
       if (identical(o, w)) continue;
@@ -340,7 +348,7 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
   ) {
     _gMoved += delta;
     final int ww = (_gStartW + (_gMoved.dx / wUnit).round()).clamp(
-      1,
+      _minW,
       _gridCols,
     );
     final int hh = (_gStartH + (_gMoved.dy / hUnit).round()).clamp(
@@ -414,7 +422,10 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
             (a['y'] as int) + (a['h'] as int) - 1 < (b['y'] as int) ||
             (b['y'] as int) + (b['h'] as int) - 1 < (a['y'] as int));
     for (final w in list) {
-      final int ww = ((w['w'] as num?)?.toInt() ?? 2).clamp(1, _gridCols);
+      final int ww = ((w['w'] as num?)?.toInt() ?? 2).clamp(
+        rows == 18 ? 2 : 1,
+        _gridCols,
+      );
       final int hh = ((w['h'] as num?)?.toInt() ?? 2).clamp(1, rows);
       int x = ((w['x'] as num?)?.toInt() ?? 1).clamp(1, _gridCols - ww + 1);
       int y = ((w['y'] as num?)?.toInt() ?? 1).clamp(1, rows - hh + 1);
@@ -464,7 +475,9 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
       ScaffoldMessenger.of(context).hideCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Tap a widget on the board first, then pick its alignment.'),
+          content: Text(
+            'Tap a widget on the board first, then pick its alignment.',
+          ),
           duration: Duration(seconds: 2),
         ),
       );
@@ -517,19 +530,11 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
         ),
         actions: [
           IconButton(
-            icon: Icon(
-              Icons.bookmark_border_outlined,
-              color: t.ink,
-              size: 24,
-            ),
+            icon: Icon(Icons.bookmark_border_outlined, color: t.ink, size: 24),
             tooltip: 'Saved car layouts',
             onPressed: () {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text(
-                    'Layout saved for this car',
-                  ),
-                ),
+                const SnackBar(content: Text('Layout saved for this car')),
               );
             },
           ),
@@ -584,10 +589,7 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
                       decoration: BoxDecoration(
                         color: t.bg,
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: t.border,
-                          width: 1.5,
-                        ),
+                        border: Border.all(color: t.border, width: 1.5),
                       ),
                       child: LayoutBuilder(
                         builder: (context, constraints) {
@@ -598,6 +600,18 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
                           return Stack(
                             clipBehavior: Clip.none,
                             children: [
+                              // Cell grid: shows where widgets snap (12 columns × 8 or 18 rows).
+                              Positioned.fill(
+                                child: IgnorePointer(
+                                  child: CustomPaint(
+                                    painter: _BoardGridPainter(
+                                      cols: _gridCols,
+                                      rows: _gridRows,
+                                      color: context.tokens.ink3,
+                                    ),
+                                  ),
+                                ),
+                              ),
                               // Placed Widgets
                               ..._widgets.map((w) {
                                 final bool isSel = w['id'] == _selectedId;
@@ -635,7 +649,8 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
                                         Container(
                                           alignment: Alignment.center,
                                           decoration: BoxDecoration(
-                                            color: t.surface.withValues(alpha: 0.9),
+                                            // Opaque, so the board grid never shows through a tile.
+                                            color: t.surface,
                                             borderRadius: BorderRadius.circular(
                                               12,
                                             ),
@@ -674,11 +689,10 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
                                                 child: Container(
                                                   width: 24,
                                                   height: 24,
-                                                  decoration:
-                                                      BoxDecoration(
-                                                        color: t.accent,
-                                                        shape: BoxShape.circle,
-                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: t.accent,
+                                                    shape: BoxShape.circle,
+                                                  ),
                                                   child: Icon(
                                                     Icons.open_in_full,
                                                     size: 13,
@@ -790,9 +804,7 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
                             : t.surface,
                         borderRadius: BorderRadius.circular(18),
                         border: Border.all(
-                          color: isSel
-                              ? t.accent
-                              : t.border,
+                          color: isSel ? t.accent : t.border,
                           width: isSel ? 2.0 : 1.0,
                         ),
                       ),
@@ -801,9 +813,7 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
                         children: [
                           Icon(
                             meta['icon'] as IconData,
-                            color: isSel
-                                ? t.accent
-                                : t.ink2,
+                            color: isSel ? t.accent : t.ink2,
                             size: 24,
                           ),
                           const SizedBox(height: 6),
@@ -811,9 +821,7 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
                             meta['name'] as String,
                             style: TextStyle(
                               fontSize: 11,
-                              color: isSel
-                                  ? t.accent
-                                  : t.ink2,
+                              color: isSel ? t.accent : t.ink2,
                               fontWeight: isSel
                                   ? FontWeight.bold
                                   : FontWeight.normal,
@@ -839,11 +847,7 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
                 children: [
                   Row(
                     children: [
-                      Icon(
-                        Icons.access_time,
-                        color: t.accent,
-                        size: 24,
-                      ),
+                      Icon(Icons.access_time, color: t.accent, size: 24),
                       const SizedBox(width: 10),
                       Text(
                         currentTitle,
@@ -856,11 +860,7 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
                     ],
                   ),
                   IconButton(
-                    icon: Icon(
-                      Icons.delete_outline,
-                      color: t.ink2,
-                      size: 22,
-                    ),
+                    icon: Icon(Icons.delete_outline, color: t.ink2, size: 22),
                     tooltip: 'Remove',
                     onPressed: _deleteSelectedWidget,
                   ),
@@ -901,9 +901,7 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
-                                color: isTab
-                                    ? t.accent
-                                    : t.ink2,
+                                color: isTab ? t.accent : t.ink2,
                               ),
                             ),
                           ),
@@ -947,9 +945,7 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
                           color: t.surface,
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: isPresetActive
-                                ? t.accent
-                                : t.border,
+                            color: isPresetActive ? t.accent : t.border,
                             width: isPresetActive ? 2.0 : 1.0,
                           ),
                         ),
@@ -957,30 +953,27 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
                         child: FittedBox(
                           fit: BoxFit.scaleDown,
                           child: Column(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            // Graphic Diagram Box
-                            _buildPresetGraphic(
-                              p['iconType'] as String,
-                              isPresetActive,
-                            ),
-                            Text(
-                              p['name'] as String,
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                                color: t.ink,
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              // Graphic Diagram Box
+                              _buildPresetGraphic(
+                                p['iconType'] as String,
+                                isPresetActive,
                               ),
-                            ),
-                            Text(
-                              p['sub'] as String,
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: t.ink2,
+                              Text(
+                                p['name'] as String,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: t.ink,
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
+                              Text(
+                                p['sub'] as String,
+                                style: TextStyle(fontSize: 11, color: t.ink2),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     );
@@ -1055,11 +1048,7 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
                   ),
                   child: Row(
                     children: [
-                      Icon(
-                        Icons.swap_horiz,
-                        color: t.ink2,
-                        size: 20,
-                      ),
+                      Icon(Icons.swap_horiz, color: t.ink2, size: 20),
                       const SizedBox(width: 8),
                       Text(
                         'Width',
@@ -1172,10 +1161,7 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
                       SizedBox(height: 8),
                       Text(
                         'Dynamic live content synced from vehicle sensors, Open-Meteo, JAKIM, and Spotify.',
-                        style: TextStyle(
-                          color: t.ink2,
-                          fontSize: 12,
-                        ),
+                        style: TextStyle(color: t.ink2, fontSize: 12),
                       ),
                     ],
                   ),
@@ -1210,18 +1196,12 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
         decoration: BoxDecoration(
           color: active ? t.accent : t.surface,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: active ? t.accent : t.border,
-          ),
+          border: Border.all(color: active ? t.accent : t.border),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: 16,
-              color: active ? t.onAccent : t.ink2,
-            ),
+            Icon(icon, size: 16, color: active ? t.onAccent : t.ink2),
             const SizedBox(width: 6),
             Flexible(
               child: Text(
@@ -1273,18 +1253,12 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
           decoration: BoxDecoration(
             color: active ? t.accent.withValues(alpha: 0.12) : t.surface2,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: active ? t.accent : Colors.transparent,
-            ),
+            border: Border.all(color: active ? t.accent : Colors.transparent),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                icon,
-                size: 16,
-                color: active ? t.accent : t.ink2,
-              ),
+              Icon(icon, size: 16, color: active ? t.accent : t.ink2),
               const SizedBox(width: 6),
               Text(
                 label,
@@ -1448,25 +1422,25 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
       case 'clock':
         return fit(
           Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: cross,
-              children: [
-                Text(
-                  '08:29',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: t.ink,
-                    height: 1.1,
-                  ),
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: cross,
+            children: [
+              Text(
+                '08:29',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: t.ink,
+                  height: 1.1,
                 ),
-                Text(
-                  'Saturday, 24 Oct',
-                  style: TextStyle(fontSize: 8, color: t.ink2),
-                ),
-              ],
-            ),
-          );
+              ),
+              Text(
+                'Saturday, 24 Oct',
+                style: TextStyle(fontSize: 8, color: t.ink2),
+              ),
+            ],
+          ),
+        );
       case 'music':
         final hasMusic =
             _currentSongTitle.isNotEmpty && _currentSongTitle != "Not Playing";
@@ -1478,188 +1452,199 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
                   : 'Play something in YouTube Music or Spotify');
         return fit(
           Row(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: t.surface2,
-                    borderRadius: BorderRadius.circular(8),
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: t.surface2,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: _buildThumbnail(),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: cross,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: t.ink,
+                    ),
+                    maxLines: 1,
                   ),
-                  clipBehavior: Clip.antiAlias,
-                  child: _buildThumbnail(),
-                ),
-                const SizedBox(width: 8),
-                Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: cross,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: t.ink,
-                      ),
-                      maxLines: 1,
-                    ),
-                    Text(
-                      artist,
-                      style: TextStyle(
-                        fontSize: 8,
-                        color: t.ink2,
-                      ),
-                      maxLines: 1,
-                    ),
-                    const SizedBox(height: 3),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.skip_previous,
-                          size: 12,
-                          color: t.ink2,
-                        ),
-                        SizedBox(width: 4),
-                        Icon(
-                          Icons.play_circle_fill,
-                          size: 16,
-                          color: t.ink,
-                        ),
-                        SizedBox(width: 4),
-                        Icon(Icons.skip_next, size: 12, color: t.ink2),
-                      ],
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          );
+                  Text(
+                    artist,
+                    style: TextStyle(fontSize: 8, color: t.ink2),
+                    maxLines: 1,
+                  ),
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      Icon(Icons.skip_previous, size: 12, color: t.ink2),
+                      SizedBox(width: 4),
+                      Icon(Icons.play_circle_fill, size: 16, color: t.ink),
+                      SizedBox(width: 4),
+                      Icon(Icons.skip_next, size: 12, color: t.ink2),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
       case 'weather':
         return fit(
           Row(
-              children: [
-                Icon(Icons.beach_access, size: 16, color: t.accent),
-                SizedBox(width: 4),
-                Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: cross,
-                  children: [
-                    Text(
-                      '25°',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: t.ink,
-                      ),
+            children: [
+              Icon(Icons.beach_access, size: 16, color: t.accent),
+              SizedBox(width: 4),
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: cross,
+                children: [
+                  Text(
+                    '25°',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: t.ink,
                     ),
-                    Text(
-                      'Rain in ~45 min',
-                      style: TextStyle(fontSize: 7, color: t.ink2),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          );
+                  ),
+                  Text(
+                    'Rain in ~45 min',
+                    style: TextStyle(fontSize: 7, color: t.ink2),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
       case 'prayer':
         return fit(
           Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: cross,
-              children: [
-                Text(
-                  'Zohar 13:00',
-                  style: TextStyle(fontSize: 8, color: t.ink2),
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: cross,
+            children: [
+              Text('Zohar 13:00', style: TextStyle(fontSize: 8, color: t.ink2)),
+              Text(
+                '4:30:56',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: t.accent,
                 ),
-                Text(
-                  '4:30:56',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    color: t.accent,
-                  ),
-                ),
-              ],
-            ),
-          );
+              ),
+            ],
+          ),
+        );
       case 'sports':
         return fit(
           Text(
-              '1 - 0\nFT Ku...',
-              textAlign: tAlign,
-              style: TextStyle(fontSize: 8, color: t.ink2),
-            ),
-          );
-      case 'speed':
-        return fit(
-          Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: cross,
-              children: [
-                Text(
-                  '4',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: t.ink,
-                  ),
-                ),
-                Text(
-                  'km/h',
-                  style: TextStyle(fontSize: 7, color: t.ink3),
-                ),
-              ],
-            ),
-          );
-      case 'shortcuts':
-        return fit(
-          Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                Container(
-                  width: 14,
-                  height: 14,
-                  decoration: BoxDecoration(
-                    color: t.danger,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.play_arrow,
-                    size: 9,
-                    color: t.ink,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Container(
-                  width: 14,
-                  height: 14,
-                  decoration: BoxDecoration(
-                    color: t.accent,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.live_tv,
-                    size: 9,
-                    color: t.ink,
-                  ),
-                ),
-              ],
-            ),
-          );
-      case 'fuel':
-        return fit(
-          Text(
-              '⛽ RON95 2.05 · RON97 3.19 · Diesel 2.95',
-              style: TextStyle(fontSize: 7, color: t.ink2),
-            ),
-          );
-      default:
-        return fit(
-          Text(
-            id.toUpperCase(),
+            '1 - 0\nFT Ku...',
+            textAlign: tAlign,
             style: TextStyle(fontSize: 8, color: t.ink2),
           ),
         );
+      case 'speed':
+        return fit(
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: cross,
+            children: [
+              Text(
+                '4',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: t.ink,
+                ),
+              ),
+              Text('km/h', style: TextStyle(fontSize: 7, color: t.ink3)),
+            ],
+          ),
+        );
+      case 'shortcuts':
+        return fit(
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              Container(
+                width: 14,
+                height: 14,
+                decoration: BoxDecoration(
+                  color: t.danger,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.play_arrow, size: 9, color: t.ink),
+              ),
+              const SizedBox(width: 4),
+              Container(
+                width: 14,
+                height: 14,
+                decoration: BoxDecoration(
+                  color: t.accent,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.live_tv, size: 9, color: t.ink),
+              ),
+            ],
+          ),
+        );
+      case 'fuel':
+        return fit(
+          Text(
+            '⛽ RON95 2.05 · RON97 3.19 · Diesel 2.95',
+            style: TextStyle(fontSize: 7, color: t.ink2),
+          ),
+        );
+      default:
+        return fit(
+          Text(id.toUpperCase(), style: TextStyle(fontSize: 8, color: t.ink2)),
+        );
     }
   }
+}
+
+/// Faint lines between the board's cells, plus a dot at every crossing, so sizes and
+/// positions are easy to read while dragging.
+class _BoardGridPainter extends CustomPainter {
+  _BoardGridPainter({
+    required this.cols,
+    required this.rows,
+    required this.color,
+  });
+
+  final int cols;
+  final int rows;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final line = Paint()
+      ..color = color.withValues(alpha: 0.16)
+      ..strokeWidth = 1;
+    final dot = Paint()..color = color.withValues(alpha: 0.35);
+    final cw = size.width / cols;
+    final rh = size.height / rows;
+    for (int c = 1; c < cols; c++) {
+      canvas.drawLine(Offset(c * cw, 0), Offset(c * cw, size.height), line);
+    }
+    for (int r = 1; r < rows; r++) {
+      canvas.drawLine(Offset(0, r * rh), Offset(size.width, r * rh), line);
+    }
+    for (int c = 1; c < cols; c++) {
+      for (int r = 1; r < rows; r++) {
+        canvas.drawCircle(Offset(c * cw, r * rh), 1.2, dot);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_BoardGridPainter old) =>
+      old.cols != cols || old.rows != rows || old.color != color;
 }

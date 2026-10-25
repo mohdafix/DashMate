@@ -382,6 +382,10 @@ class DashMatePresentation(
         }
 
         exitBrowserToHome(false)
+        // exitBrowserToHome marks the page as "home"; record the page really shown, or the Home
+        // button (and any card) would think it is already there and do nothing.
+        currentPage = page
+        DashMateStateBridge.currentPage = page
         if (kbdTarget === deckWebView) dropKeyboardTarget() // the field goes away with the page
         val assetUrl = when (page) {
             "lyrics" -> "file:///android_asset/drivedeck_lyrics.html"
@@ -876,7 +880,17 @@ class DashMatePresentation(
 
         @JavascriptInterface
         fun page(target: String) {
-            onSwitchPage(target)
+            // From a Home card. "custom:<mode>" opens the Custom page on that topic (weather,
+            // sports, calendar, radar, ev). Goes through the shared state so the car and the
+            // phone agree on the page; same page again just refreshes it.
+            val page = target.substringBefore(':')
+            val mode = target.substringAfter(':', "")
+            Handler(Looper.getMainLooper()).post {
+                if (page == "custom" && mode.isNotBlank()) DashMateStateBridge.customCardMode = mode
+                if (DashMateStateBridge.currentPage == page && page != "custom") onSwitchPage(page)
+                else DashMateStateBridge.setPage(page)
+                if (page == "custom") DashMateStateBridge.notifyStateChanged(hostContext)
+            }
         }
 
         @JavascriptInterface

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../theme/app_tokens.dart';
 import '../theme/localization.dart';
 import 'background_screen.dart';
+import 'setup_screen.dart';
 import 'browse_screen.dart';
 import 'button_size_screen.dart';
 import 'car_card_screen.dart';
@@ -39,9 +40,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // First run: ask for the owner's name and the car screen shape.
+      final name = await SetupScreen.showIfNeeded(context);
+      if (mounted && name != null) setState(() => _userName = name);
       _loadState();
     });
+  }
+
+  /// The owner's name from setup (shown in the welcome card); empty until entered.
+  String _userName = '';
+
+  Future<void> _editSetup() async {
+    final name = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const SetupScreen()),
+    );
+    if (mounted && name != null) setState(() => _userName = name);
+    _loadState();
   }
 
   void _loadCarScreenSize() async {
@@ -57,8 +72,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } catch (_) {}
   }
 
+  void _loadUserName() async {
+    try {
+      final res = await _channel.invokeMethod<Map>('getUserSetup');
+      final name = (res?['name'] as String?) ?? '';
+      if (mounted) setState(() => _userName = name);
+    } catch (_) {}
+  }
+
   void _loadState() async {
     _loadCarScreenSize();
+    _loadUserName();
     try {
       final res = await _channel.invokeMethod('getState');
       if (res != null && mounted) {
@@ -130,9 +154,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   style: TextStyle(color: t.ink2, fontSize: 13, fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 6),
-                Text(
-                  'Wakjilat',
-                  style: TextStyle(color: t.ink, fontSize: 22, fontWeight: FontWeight.bold),
+                GestureDetector(
+                  onTap: _editSetup,
+                  child: Text(
+                    _userName.isEmpty ? 'Set your name' : _userName,
+                    style: TextStyle(color: t.ink, fontSize: 22, fontWeight: FontWeight.bold),
+                  ),
                 ),
                 const SizedBox(height: 14),
                 // Capsule pill

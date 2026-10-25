@@ -9,6 +9,7 @@ import 'car_card_screen.dart';
 import 'floating_menu_screen.dart';
 import 'football_settings_screen.dart';
 import 'prayer_screen.dart';
+import 'setup_screen.dart';
 import 'welcome_sound_screen.dart';
 import 'widgets_screen.dart';
 
@@ -40,11 +41,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
+    _channel
+        .invokeMethod<Map>('getUserSetup')
+        .then((res) {
+          final name = (res?['name'] as String?) ?? '';
+          if (mounted) setState(() => _userName = name);
+        })
+        .catchError((_) {});
     _loadCarOptions();
   }
 
   // "tall" (default) or "auto"; MainActivity keeps it in prefs (dashmate_layout_mode).
   String _layoutMode = 'tall';
+
+  /// The owner's name from the first-run setup.
+  String _userName = '';
 
   void _setLayoutMode(String mode) {
     setState(() => _layoutMode = mode);
@@ -210,57 +221,69 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         children: [
-          // Account Card (Matches AutoDeck)
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: t.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: t.border),
-              boxShadow: t.cardShadow,
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: t.accent,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: Text(
-                      'W',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: t.onAccent,
+          // Account card: tap to edit your name (and the car screen shape).
+          InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () async {
+              final name = await Navigator.of(context).push<String>(
+                MaterialPageRoute(builder: (_) => const SetupScreen()),
+              );
+              if (mounted && name != null) setState(() => _userName = name);
+            },
+            child: Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: t.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: t.border),
+                boxShadow: t.cardShadow,
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: t.accent,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Text(
+                        _userName.isEmpty
+                            ? '?'
+                            : _userName.characters.first.toUpperCase(),
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: t.onAccent,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'DashMate Deck Pro',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: t.ink,
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'DashMate Deck Pro',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: t.ink,
+                          ),
                         ),
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        'Wakjilat · All features unlocked',
-                        style: TextStyle(fontSize: 12, color: t.accent),
-                      ),
-                    ],
+                        SizedBox(height: 2),
+                        Text(
+                          '${_userName.isEmpty ? 'Owner' : _userName} · All features unlocked',
+                          style: TextStyle(fontSize: 12, color: t.accent),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                  Icon(Icons.edit_outlined, size: 20, color: t.ink3),
+                ],
+              ),
             ),
           ),
 

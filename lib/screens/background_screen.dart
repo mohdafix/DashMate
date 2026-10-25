@@ -10,8 +10,12 @@ class BackgroundScreen extends StatefulWidget {
 }
 
 class _BackgroundScreenState extends State<BackgroundScreen> {
-  static const MethodChannel _browserChannel = MethodChannel('drivedeck/car_browser');
-  static const MethodChannel _channel = MethodChannel('com.dashmate.dashmate/channel');
+  static const MethodChannel _browserChannel = MethodChannel(
+    'drivedeck/car_browser',
+  );
+  static const MethodChannel _channel = MethodChannel(
+    'com.dashmate.dashmate/channel',
+  );
 
   String _bgMode = 'cover'; // 'cover', 'plain', 'photo'
   String _selectedPhotoUrl = '';
@@ -19,19 +23,23 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
   final List<Map<String, String>> _curatedPhotos = const [
     {
       'name': 'Midnight Highway',
-      'url': 'https://images.unsplash.com/photo-1509316975850-ff9c5deb0cd9?auto=format&fit=crop&w=1200&q=80',
+      'url':
+          'https://images.unsplash.com/photo-1509316975850-ff9c5deb0cd9?auto=format&fit=crop&w=1200&q=80',
     },
     {
       'name': 'Neon Cyber City',
-      'url': 'https://images.unsplash.com/photo-1519501025264-65ba15a82390?auto=format&fit=crop&w=1200&q=80',
+      'url':
+          'https://images.unsplash.com/photo-1519501025264-65ba15a82390?auto=format&fit=crop&w=1200&q=80',
     },
     {
       'name': 'Mountain Mist',
-      'url': 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1200&q=80',
+      'url':
+          'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1200&q=80',
     },
     {
       'name': 'Dark Horizon',
-      'url': 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1200&q=80',
+      'url':
+          'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1200&q=80',
     },
   ];
 
@@ -41,7 +49,27 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
     _loadPrefs();
   }
 
+  /// True when the car screen is tall (Jaecoo J7): previews use the same tall crop the car shows.
+  bool _tallCar = true;
+
+  /// The photo cut to a tall shape (Unsplash crops on request), as the car shows it on a tall screen.
+  static String tallUrl(String url) {
+    if (!url.contains('images.unsplash.com')) return url;
+    final u = Uri.parse(url);
+    final q = Map<String, String>.from(u.queryParameters)
+      ..['w'] = '540'
+      ..['h'] = '960'
+      ..['fit'] = 'crop'
+      ..['crop'] = 'entropy';
+    return u.replace(queryParameters: q).toString();
+  }
+
   void _loadPrefs() async {
+    try {
+      final size = await _channel.invokeMethod<String>('getCarScreenSize');
+      if (mounted && size != null)
+        setState(() => _tallCar = !size.contains('landscape'));
+    } catch (_) {}
     try {
       final res = await _channel.invokeMethod('getBgPrefs');
       if (res != null && res is Map && mounted) {
@@ -101,11 +129,7 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
           // Subtitle
           Text(
             'What shows behind your widgets on the car screen. Choose live music album cover, clean plain dark, or landscape photography.',
-            style: TextStyle(
-              fontSize: 13.5,
-              color: t.ink2,
-              height: 1.4,
-            ),
+            style: TextStyle(fontSize: 13.5, color: t.ink2, height: 1.4),
           ),
           const SizedBox(height: 18),
 
@@ -121,15 +145,23 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
                   ? DecorationImage(
                       image: NetworkImage(_selectedPhotoUrl),
                       fit: BoxFit.cover,
-                      colorFilter: ColorFilter.mode(_scrim.withValues(alpha: 0.55), BlendMode.srcOver),
+                      colorFilter: ColorFilter.mode(
+                        _scrim.withValues(alpha: 0.55),
+                        BlendMode.srcOver,
+                      ),
                     )
                   : (_bgMode == 'cover'
-                      ? DecorationImage(
-                          image: const NetworkImage('https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?auto=format&fit=crop&w=600&q=80'),
-                          fit: BoxFit.cover,
-                          colorFilter: ColorFilter.mode(_scrim.withValues(alpha: 0.65), BlendMode.srcOver),
-                        )
-                      : null),
+                        ? DecorationImage(
+                            image: const NetworkImage(
+                              'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?auto=format&fit=crop&w=600&q=80',
+                            ),
+                            fit: BoxFit.cover,
+                            colorFilter: ColorFilter.mode(
+                              _scrim.withValues(alpha: 0.65),
+                              BlendMode.srcOver,
+                            ),
+                          )
+                        : null),
             ),
             child: Stack(
               children: [
@@ -139,7 +171,10 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
                   child: Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
                         decoration: BoxDecoration(
                           color: _hudFill,
                           borderRadius: BorderRadius.circular(12),
@@ -149,14 +184,27 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text('10:42 PM', style: TextStyle(color: _hudInk, fontSize: 16, fontWeight: FontWeight.bold)),
-                            Text('Friday · 28°C', style: TextStyle(color: _hudInk2, fontSize: 10)),
+                            Text(
+                              '10:42 PM',
+                              style: TextStyle(
+                                color: _hudInk,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              'Friday · 28°C',
+                              style: TextStyle(color: _hudInk2, fontSize: 10),
+                            ),
                           ],
                         ),
                       ),
                       const Spacer(),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
                         decoration: BoxDecoration(
                           color: _hudFill,
                           borderRadius: BorderRadius.circular(12),
@@ -165,9 +213,20 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.music_note, color: _onImage ? _onPhoto : t.accent, size: 14),
+                            Icon(
+                              Icons.music_note,
+                              color: _onImage ? _onPhoto : t.accent,
+                              size: 14,
+                            ),
                             const SizedBox(width: 6),
-                            Text('Midnight City', style: TextStyle(color: _hudInk, fontSize: 11, fontWeight: FontWeight.bold)),
+                            Text(
+                              'Midnight City',
+                              style: TextStyle(
+                                color: _hudInk,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -178,7 +237,10 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
                   bottom: 10,
                   right: 14,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
                       color: t.surface,
                       borderRadius: BorderRadius.circular(8),
@@ -186,7 +248,11 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
                     ),
                     child: Text(
                       'Mode: ${_bgMode.toUpperCase()}',
-                      style: TextStyle(color: t.accent, fontSize: 10, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        color: t.accent,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ),
@@ -200,7 +266,8 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
           _buildModeOption(
             mode: 'cover',
             title: 'Cover',
-            description: 'Shows the album cover of what is playing right now in Spotify, YouTube Music, or other apps.',
+            description:
+                'Shows the album cover of what is playing right now in Spotify, YouTube Music, or other apps.',
             icon: Icons.album_outlined,
           ),
           const SizedBox(height: 12),
@@ -208,7 +275,8 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
           _buildModeOption(
             mode: 'plain',
             title: 'Plain',
-            description: 'A clean, distraction-free pure dark cockpit background for maximum readability.',
+            description:
+                'A clean, distraction-free pure dark cockpit background for maximum readability.',
             icon: Icons.brightness_2_outlined,
           ),
           const SizedBox(height: 12),
@@ -216,7 +284,8 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
           _buildModeOption(
             mode: 'photo',
             title: 'Photo',
-            description: 'Driving landscapes and night city photography behind your widgets.',
+            description:
+                'Driving landscapes and night city photography behind your widgets.',
             icon: Icons.photo_size_select_actual_outlined,
           ),
 
@@ -224,17 +293,22 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
             const SizedBox(height: 20),
             Text(
               'Select Driving Wallpaper',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: t.ink),
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                color: t.ink,
+              ),
             ),
             const SizedBox(height: 12),
             GridView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: _tallCar ? 3 : 2,
                 crossAxisSpacing: 10,
                 mainAxisSpacing: 10,
-                childAspectRatio: 1.5,
+                // Same shape as the car screen: tall previews for the Jaecoo J7.
+                childAspectRatio: _tallCar ? 9 / 16 : 1.5,
               ),
               itemCount: _curatedPhotos.length,
               itemBuilder: (context, idx) {
@@ -249,9 +323,10 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
                       fit: StackFit.expand,
                       children: [
                         Image.network(
-                          photo['url']!,
+                          _tallCar ? tallUrl(photo['url']!) : photo['url']!,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(color: t.surface2),
+                          errorBuilder: (_, __, ___) =>
+                              Container(color: t.surface2),
                         ),
                         Container(
                           color: isSelected
@@ -263,7 +338,11 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
                             child: CircleAvatar(
                               radius: 14,
                               backgroundColor: t.accent,
-                              child: Icon(Icons.check, size: 16, color: t.onAccent),
+                              child: Icon(
+                                Icons.check,
+                                size: 16,
+                                color: t.onAccent,
+                              ),
                             ),
                           ),
                         Positioned(
@@ -272,7 +351,11 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
                           right: 8,
                           child: Text(
                             photo['name']!,
-                            style: TextStyle(color: _onPhoto, fontSize: 11, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                              color: _onPhoto,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -336,12 +419,20 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
                 children: [
                   Text(
                     title,
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: t.ink),
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: t.ink,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     description,
-                    style: TextStyle(fontSize: 12.5, color: t.ink2, height: 1.3),
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: t.ink2,
+                      height: 1.3,
+                    ),
                   ),
                 ],
               ),
@@ -359,7 +450,9 @@ class _BackgroundScreenState extends State<BackgroundScreen> {
                 color: isSelected ? t.accent : Colors.transparent,
               ),
               child: isSelected
-                  ? Center(child: Icon(Icons.check, size: 14, color: t.onAccent))
+                  ? Center(
+                      child: Icon(Icons.check, size: 14, color: t.onAccent),
+                    )
                   : null,
             ),
           ],

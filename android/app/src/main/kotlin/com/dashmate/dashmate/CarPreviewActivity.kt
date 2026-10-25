@@ -194,13 +194,42 @@ class CarPreviewActivity : Activity(), SurfaceHolder.Callback {
          */
         fun rememberCarScreen(context: Context, width: Int, height: Int, dpi: Int) {
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            val savedArea = prefs.getInt(KEY_W, 0) * prefs.getInt(KEY_H, 0)
-            if (width * height >= savedArea) {
+            val savedW = prefs.getInt(KEY_W, 0)
+            val savedH = prefs.getInt(KEY_H, 0)
+            // Keep the largest size seen (full-screen app, not the small home panel); a different
+            // shape (e.g. the owner picked "wide" at setup but the car is tall) always wins.
+            val shapeDiffers = savedW > 0 && savedH > 0 && (height > width) != (savedH > savedW)
+            if (width * height >= savedW * savedH || shapeDiffers) {
                 val changed = width != prefs.getInt(KEY_W, 0) || height != prefs.getInt(KEY_H, 0)
                 prefs.edit().putInt(KEY_W, width).putInt(KEY_H, height).putInt(KEY_DPI, dpi).apply {
                     if (changed) remove(KEY_AREA)
                 }.apply()
             }
+        }
+
+        /**
+         * First-run setup: the owner's choice of screen shape, saved in the same car_screen_* keys
+         * the car measurement uses. A size already measured with that shape is kept; otherwise a
+         * standard size (tall: the J7 14.8" estimate, wide: 1280 × 720) until the car measures it.
+         */
+        fun chooseShape(context: Context, tall: Boolean) {
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val w = prefs.getInt(KEY_W, 0)
+            val h = prefs.getInt(KEY_H, 0)
+            if (w > 0 && h > 0 && (h > w) == tall) return
+            prefs.edit().apply {
+                if (tall) putInt(KEY_W, DEFAULT_W).putInt(KEY_H, DEFAULT_H).putInt(KEY_DPI, DEFAULT_DPI)
+                else putInt(KEY_W, 1280).putInt(KEY_H, 720).putInt(KEY_DPI, 160)
+                remove(KEY_AREA)
+            }.apply()
+        }
+
+        /** "tall", "wide", or null before setup / the first drive. */
+        fun savedShape(context: Context): String? {
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val w = prefs.getInt(KEY_W, 0)
+            val h = prefs.getInt(KEY_H, 0)
+            return if (w > 0 && h > 0) (if (h > w) "tall" else "wide") else null
         }
 
         /** Saves the car's usable area, but only for the full-size screen we keep. */
