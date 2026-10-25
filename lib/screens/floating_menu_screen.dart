@@ -36,6 +36,7 @@ class _FloatingMenuScreenState extends State<FloatingMenuScreen> {
       MenuItemData(id: 'home', title: 'Home', icon: Icons.home_outlined, enabled: true),
       MenuItemData(id: 'lyrics', title: 'Lyrics', icon: Icons.speaker_notes_outlined, enabled: true),
       MenuItemData(id: 'prayer', title: 'Prayer', icon: Icons.mosque_outlined, enabled: true),
+      MenuItemData(id: 'radio', title: 'Radio FM', icon: Icons.radio_outlined, enabled: true),
       MenuItemData(id: 'custom', title: 'Custom page', icon: Icons.view_quilt_outlined, enabled: true),
       MenuItemData(id: 'web', title: 'Browse', icon: Icons.public_outlined, enabled: true),
     ];
@@ -58,7 +59,11 @@ class _FloatingMenuScreenState extends State<FloatingMenuScreen> {
         }
         for (final item in _items) {
           if (!savedIds.contains(item.id)) {
-            item.enabled = false;
+            if (item.id == 'radio') {
+              item.enabled = true;
+            } else {
+              item.enabled = false;
+            }
             reordered.add(item);
           }
         }
@@ -100,7 +105,7 @@ class _FloatingMenuScreenState extends State<FloatingMenuScreen> {
         children: [
           // Subtitle / Header Description
           const Text(
-            'What the floating AutoDeck menu on the car shows. Switch items on or off and drag to change the order.',
+            'What the floating DashMate menu on the car shows. Switch items on or off and drag to change the order.',
             style: TextStyle(
               fontSize: 13.5,
               color: AppColors.textSub,

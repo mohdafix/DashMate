@@ -51,6 +51,7 @@ android/local.properties
 *.apk
 *.apks
 *.aab
+*.zip
 
 # Temporary analysis & scratch artifacts
 /*.py

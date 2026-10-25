@@ -11,10 +11,13 @@ class ButtonSizeScreen extends StatefulWidget {
 
 class _ButtonSizeScreenState extends State<ButtonSizeScreen> {
   static const MethodChannel _channel = MethodChannel('com.dashmate.dashmate/channel');
+  static const MethodChannel _browserChannel = MethodChannel('drivedeck/car_browser');
 
   double _buttonSize = 100.0;
   double _opacity = 92.0;
   int _selectedColorIndex = 0;
+  String _position = 'top_left'; // 'top_left', 'top_right', 'bottom_left', 'bottom_right'
+  bool _autoCollapse = true;
 
   final List<Color> _colors = const [
     Color(0xFF14E0C1), // Teal
@@ -41,17 +44,23 @@ class _ButtonSizeScreenState extends State<ButtonSizeScreen> {
           _buttonSize = (res['size'] as num?)?.toDouble() ?? 100.0;
           _opacity = (res['opacity'] as num?)?.toDouble() ?? 92.0;
           _selectedColorIndex = (res['colorIndex'] as num?)?.toInt() ?? 0;
+          _position = res['position'] as String? ?? 'top_left';
+          _autoCollapse = res['autoCollapse'] as bool? ?? true;
         });
       }
     } catch (_) {}
   }
 
   void _savePrefs() {
-    _channel.invokeMethod('setNavScale', {
+    final data = {
       'scale': (_buttonSize / 100.0).toStringAsFixed(2),
       'opacity': (_opacity / 100.0).toStringAsFixed(2),
       'colorIndex': _selectedColorIndex,
-    });
+      'position': _position,
+      'autoCollapse': _autoCollapse,
+    };
+    _channel.invokeMethod('setNavScale', data);
+    _browserChannel.invokeMethod('setNavScale', data);
   }
 
   Color get _currentColor {
@@ -97,7 +106,7 @@ class _ButtonSizeScreenState extends State<ButtonSizeScreen> {
                     ),
                     Expanded(
                       child: Text(
-                        "Size of AutoDeck's button bar on the car screen",
+                        "Size of DashMate's button bar on the car screen",
                         style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.8), height: 1.3),
                       ),
                     ),
@@ -279,7 +288,146 @@ class _ButtonSizeScreenState extends State<ButtonSizeScreen> {
               ],
             ),
           ),
+
+          const SizedBox(height: 16),
+
+          // 3. Card: Button Position on Car Screen
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Button position on car screen',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Choose where the floating menu sits on your vehicle head unit.',
+                  style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.6), height: 1.3),
+                ),
+                const SizedBox(height: 16),
+
+                // 2x2 corner grid
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildPositionOption('top_left', 'Top Left', Icons.north_west),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildPositionOption('top_right', 'Top Right', Icons.north_east),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildPositionOption('bottom_left', 'Bottom Left', Icons.south_west),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildPositionOption('bottom_right', 'Bottom Right', Icons.south_east),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // 4. Card: Auto-collapse on Idle
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Auto-collapse when idle',
+                        style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w600, color: Colors.white),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Minimizes to a discreet bubble after 6 seconds of inactivity to keep your view clear.',
+                        style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.6), height: 1.3),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Switch(
+                  value: _autoCollapse,
+                  activeThumbColor: AppColors.accentTeal,
+                  activeTrackColor: const Color(0xFF0F766E),
+                  inactiveThumbColor: Colors.white38,
+                  inactiveTrackColor: Colors.white12,
+                  onChanged: (val) {
+                    setState(() => _autoCollapse = val);
+                    _savePrefs();
+                  },
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 24),
         ],
+      ),
+    );
+  }
+
+  Widget _buildPositionOption(String posKey, String label, IconData icon) {
+    final isSelected = _position == posKey;
+    return GestureDetector(
+      onTap: () {
+        setState(() => _position = posKey);
+        _savePrefs();
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.accentTeal.withValues(alpha: 0.15) : const Color(0xFF161B26),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected ? AppColors.accentTeal : Colors.white12,
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 18,
+              color: isSelected ? AppColors.accentTeal : Colors.white60,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                color: isSelected ? Colors.white : Colors.white70,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

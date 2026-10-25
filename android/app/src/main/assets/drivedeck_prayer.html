@@ -230,7 +230,7 @@
       if (labels && !p.labels) p.labels = labels;
     }
     if (p && typeof p === 'object' && p.labels) { L = p.labels; $('label').textContent = tr('nextPrayer', 'Next prayer'); }
-    if (p.status !== 'ok') {
+    if (p.status !== 'ok' && !p.times) {
       $('message').style.display = 'flex';
       $('message').textContent = p.message || tr('loadingPrayer', 'Loading prayer times…');
       $('app').style.visibility = 'hidden';

@@ -18,50 +18,43 @@ class _PrayerScreenState extends State<PrayerScreen> {
 
   String _zoneCode = "WLY01";
   String _zoneName = "Kuala Lumpur, Putrajaya";
+  String _hijriDate = "13 Jamadilawal 1448";
+  String _gregorianDate = "";
+
   bool _showPrayer = true;
-  bool _playAzan = true;
-  bool _notificationsEnabled = true;
-  int _notifyMinutes = 10;
+  int _remindMinutes = 0; // 0 = Off, 5, 10, 15, 20, 30
+  Set<String> _azanPrayers = {"Subuh", "Zohor", "Asar", "Maghrib", "Isyak"};
+
+  String _nextPrayerName = "Asar";
+  String _nextPrayerTime = "16:19";
+  int _nextPrayerEpochMs = 0;
 
   List<Map<String, String>> _allZones = [];
 
-  final List<Map<String, dynamic>> _times = [
-    {"name": "Imsak", "time": "05:39", "status": "passed"},
-    {"name": "Subuh", "time": "05:49", "status": "passed"},
-    {"name": "Syuruk", "time": "06:56", "status": "passed"},
-    {"name": "Dhuha", "time": "07:21", "status": "passed"},
-    {"name": "Zohor", "time": "13:00", "status": "now"},
-    {"name": "Asar", "time": "16:19", "status": "next"},
-    {"name": "Maghrib", "time": "18:59", "status": "future"},
-    {"name": "Isyak", "time": "20:10", "status": "future"},
+  List<Map<String, dynamic>> _times = [
+    {"name": "Imsak", "time": "05:39", "status": "passed", "epochMs": 0},
+    {"name": "Subuh", "time": "05:49", "status": "passed", "epochMs": 0},
+    {"name": "Syuruk", "time": "06:56", "status": "passed", "epochMs": 0},
+    {"name": "Dhuha", "time": "07:21", "status": "passed", "epochMs": 0},
+    {"name": "Zohor", "time": "13:00", "status": "passed", "epochMs": 0},
+    {"name": "Asar", "time": "16:19", "status": "next", "epochMs": 0},
+    {"name": "Maghrib", "time": "18:59", "status": "future", "epochMs": 0},
+    {"name": "Isyak", "time": "20:10", "status": "future", "epochMs": 0},
   ];
+
+  final List<String> _fardPrayers = const ["Subuh", "Zohor", "Asar", "Maghrib", "Isyak"];
+  final List<int> _reminderOptions = const [0, 5, 10, 15, 20, 30];
 
   @override
   void initState() {
     super.initState();
     _loadZones();
+    _loadAlertSettings();
+    _fetchLivePrayerData();
+
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
     });
-  }
-
-  void _loadZones() async {
-    try {
-      final jsonStr = await rootBundle.loadString('assets/data/zones.json');
-      final data = jsonDecode(jsonStr);
-      final list = data['zones'] as List<dynamic>?;
-      if (list != null) {
-        setState(() {
-          _allZones = list.map((z) {
-            final places = (z['places'] as List<dynamic>?)?.map((p) => p[0].toString()).join(', ') ?? '';
-            return {
-              "code": z['code'].toString(),
-              "name": "${z['state']}: $places",
-            };
-          }).toList();
-        });
-      }
-    } catch (_) {}
   }
 
   @override
@@ -70,10 +63,132 @@ class _PrayerScreenState extends State<PrayerScreen> {
     super.dispose();
   }
 
+  void _loadZones() async {
+    try {
+      final jsonStr = await rootBundle.loadString('assets/data/zones.json');
+      final data = jsonDecode(jsonStr);
+      final list = data['zones'] as List<dynamic>?;
+      if (list != null && mounted) {
+        setState(() {
+          _allZones = list.map((z) {
+            final places = (z['places'] as List<dynamic>?)?.map((p) => p[0].toString()).join(', ') ?? '';
+            return {
+              "code": z['code'].toString(),
+              "name": "${z['state']}: $places",
+              "places": places,
+            };
+          }).toList();
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _loadAlertSettings() async {
+    try {
+      final m = await _channel.invokeMapMethod<String, dynamic>('getPrayerAlerts');
+      if (m != null && mounted) {
+        setState(() {
+          _showPrayer = m['showPrayer'] as bool? ?? true;
+          _remindMinutes = m['remindMinutes'] as int? ?? 0;
+          final azanList = (m['azanPrayers'] as List<dynamic>?)?.map((e) => e.toString()).toList();
+          if (azanList != null) {
+            _azanPrayers = azanList.toSet();
+          }
+        });
+      }
+    } catch (_) {}
+  }
+
+  void _saveAlertSettings() {
+    _channel.invokeMethod('setPrayerAlerts', {
+      'showPrayer': _showPrayer,
+      'azanPrayers': _azanPrayers.toList(),
+      'remindMinutes': _remindMinutes,
+    });
+  }
+
+  Future<void> _fetchLivePrayerData() async {
+    try {
+      final res = await _channel.invokeMethod<String>('getPrayerData');
+      if (res != null && mounted) {
+        final data = jsonDecode(res) as Map<String, dynamic>;
+        _updateFromPrayerJson(data);
+      }
+    } catch (_) {}
+  }
+
+  void _updateFromPrayerJson(Map<String, dynamic> data) {
+    setState(() {
+      if (data['zone'] != null) _zoneCode = data['zone'].toString();
+      if (data['zoneName'] != null) _zoneName = data['zoneName'].toString();
+      if (data['hijri'] != null) _hijriDate = data['hijri'].toString();
+      if (data['gregorian'] != null) _gregorianDate = data['gregorian'].toString();
+
+      final nextObj = data['next'] as Map<String, dynamic>?;
+      if (nextObj != null) {
+        _nextPrayerName = nextObj['name']?.toString() ?? "Asar";
+        _nextPrayerTime = nextObj['time']?.toString() ?? "16:19";
+        _nextPrayerEpochMs = (nextObj['epochMs'] as num?)?.toInt() ?? 0;
+      }
+
+      final timesArr = data['times'] as List<dynamic>?;
+      if (timesArr != null && timesArr.isNotEmpty) {
+        final now = DateTime.now().millisecondsSinceEpoch;
+        _times = timesArr.map((item) {
+          final m = Map<String, dynamic>.from(item as Map);
+          final pEpoch = (m['epochMs'] as num?)?.toInt() ?? 0;
+          String status = "future";
+          if (pEpoch <= now) {
+            status = "passed";
+          }
+          if (m['name'] == _nextPrayerName) {
+            status = "next";
+          }
+          return {
+            "name": m['name'] ?? "",
+            "time": m['time'] ?? "",
+            "status": status,
+            "epochMs": pEpoch,
+          };
+        }).toList();
+      }
+    });
+  }
+
+  String _formatCountdown() {
+    if (_nextPrayerEpochMs <= 0) return "00:00:00";
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final diff = _nextPrayerEpochMs - now;
+    if (diff <= 0) return "00:00:00";
+
+    final totalSeconds = (diff / 1000).floor();
+    final hours = (totalSeconds / 3600).floor();
+    final minutes = ((totalSeconds % 3600) / 60).floor();
+    final seconds = totalSeconds % 60;
+
+    return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  String _formatCountdownShort() {
+    if (_nextPrayerEpochMs <= 0) return "";
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final diff = _nextPrayerEpochMs - now;
+    if (diff <= 0) return "now";
+
+    final totalMins = (diff / 60000).floor();
+    final hours = (totalMins / 60).floor();
+    final mins = totalMins % 60;
+
+    if (hours > 0) {
+      return 'in ${hours}h ${mins}m';
+    }
+    return 'in ${mins}m';
+  }
+
   void _showZonePicker() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.surfaceCard,
+      backgroundColor: const Color(0xFF16253B),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (ctx) {
         return SafeArea(
@@ -125,13 +240,18 @@ class _PrayerScreenState extends State<PrayerScreen> {
                       ),
                       title: Text(z['name']!, style: const TextStyle(fontSize: 13, color: Colors.white)),
                       trailing: isSel ? const Icon(Icons.check, color: AppColors.accentTeal, size: 20) : null,
-                      onTap: () {
+                      onTap: () async {
                         setState(() {
                           _zoneCode = z['code']!;
-                          _zoneName = z['name']!.split(':')[1].trim();
+                          _zoneName = z['places'] ?? z['name']!;
                         });
                         Navigator.pop(ctx);
-                        _channel.invokeMethod('setPrayerZone', {'zone': z['code']});
+                        final res = await _channel.invokeMethod('setPrayerZone', {'zone': z['code']});
+                        if (res != null) {
+                          try {
+                            _updateFromPrayerJson(jsonDecode(res.toString()));
+                          } catch (_) {}
+                        }
                       },
                     );
                   },
@@ -196,62 +316,13 @@ class _PrayerScreenState extends State<PrayerScreen> {
     );
   }
 
-  void _showAsmaulHusna() {
-    final names = [
-      {'ar': 'الرَّحْمَنُ', 'my': 'Ar-Rahman', 'en': 'The Most Gracious'},
-      {'ar': 'الرَّحِيمُ', 'my': 'Ar-Rahim', 'en': 'The Most Merciful'},
-      {'ar': 'الْمَلِكُ', 'my': 'Al-Malik', 'en': 'The King'},
-      {'ar': 'الْقُدُّوسُ', 'my': 'Al-Quddus', 'en': 'The Most Holy'},
-      {'ar': 'السَّلاَمُ', 'my': 'As-Salam', 'en': 'The Source of Peace'},
-      {'ar': 'الْمُؤْمِنُ', 'my': 'Al-Mu\'min', 'en': 'The Guardian of Faith'},
-      {'ar': 'الْمُهَيْمِنُ', 'my': 'Al-Muhaymin', 'en': 'The Protector'},
-      {'ar': 'الْعَزِيزُ', 'my': 'Al-Aziz', 'en': 'The Almighty'},
-    ];
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF16253B),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Row(
-                children: [
-                  Icon(Icons.auto_awesome, color: AppColors.tealAccent, size: 20),
-                  SizedBox(width: 8),
-                  Text('Asmaul Husna / 99 Names of Allah', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Expanded(
-                child: ListView.separated(
-                  itemCount: names.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1, color: Colors.white10),
-                  itemBuilder: (context, i) {
-                    final n = names[i];
-                    return ListTile(
-                      title: Text(n['my']!, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-                      subtitle: Text(n['en']!, style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
-                      trailing: Text(n['ar']!, style: const TextStyle(fontSize: 20, color: AppColors.tealAccent, fontWeight: FontWeight.bold)),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
+    final countdownStr = _formatCountdown();
+    final countdownShort = _formatCountdownShort();
+
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      backgroundColor: const Color(0xFF0C101A),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -268,59 +339,21 @@ class _PrayerScreenState extends State<PrayerScreen> {
             tooltip: 'Qibla',
             onPressed: _showQiblaCompass,
           ),
-          IconButton(
-            icon: const Icon(Icons.auto_awesome, color: AppColors.tealAccent),
-            tooltip: 'Asmaul Husna',
-            onPressed: _showAsmaulHusna,
-          ),
         ],
       ),
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         children: [
-          // Selected Zone Pill
-          GestureDetector(
-            onTap: _showZonePicker,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.location_on, color: AppColors.accentTeal, size: 20),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Prayer Zone (JAKIM e-Solat)', style: TextStyle(fontSize: 11, color: AppColors.textSub)),
-                        const SizedBox(height: 2),
-                        Text('$_zoneCode · $_zoneName', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white)),
-                      ],
-                    ),
-                  ),
-                  const Icon(Icons.keyboard_arrow_down, color: AppColors.accentTeal),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          // Top Radial Countdown Card (Matches Screenshot 4)
+          // 1. Top Radial Countdown Card (Matches Screenshot 2)
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: AppColors.surface,
+              color: const Color(0xFF131A26),
               borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: AppColors.border),
+              border: Border.all(color: const Color(0xFF1E2838)),
             ),
             child: Row(
               children: [
-                // Circular Progress Dial
                 SizedBox(
                   width: 120,
                   height: 120,
@@ -329,40 +362,39 @@ class _PrayerScreenState extends State<PrayerScreen> {
                     children: [
                       CustomPaint(
                         size: const Size(120, 120),
-                        painter: _RadialCountdownPainter(progress: 0.65),
+                        painter: _RadialCountdownPainter(progress: 0.68),
                       ),
-                      const Column(
+                      Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Text('2:45:10', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                          SizedBox(height: 2),
-                          Text('remaining', style: TextStyle(fontSize: 11, color: AppColors.textSub)),
+                          Text(countdownStr, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                          const SizedBox(height: 2),
+                          const Text('remaining', style: TextStyle(fontSize: 11, color: AppColors.textSub)),
                         ],
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(width: 20),
-                // Next Prayer Details
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Next prayer', style: TextStyle(fontSize: 13, color: AppColors.textSub)),
-                      SizedBox(height: 4),
+                      const Text('Next prayer', style: TextStyle(fontSize: 13, color: AppColors.textSub)),
+                      const SizedBox(height: 4),
                       Text(
-                        'Asar',
-                        style: TextStyle(
+                        _nextPrayerName,
+                        style: const TextStyle(
                           fontSize: 32,
                           fontWeight: FontWeight.w900,
                           color: AppColors.accentTeal,
                           letterSpacing: 0.5,
                         ),
                       ),
-                      SizedBox(height: 2),
-                      Text('16:19', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                      SizedBox(height: 2),
-                      Text('in 2h 45m', style: TextStyle(fontSize: 13, color: AppColors.textSub)),
+                      const SizedBox(height: 2),
+                      Text(_nextPrayerTime, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
+                      const SizedBox(height: 2),
+                      Text(countdownShort, style: const TextStyle(fontSize: 13, color: AppColors.textSub)),
                     ],
                   ),
                 ),
@@ -372,23 +404,23 @@ class _PrayerScreenState extends State<PrayerScreen> {
 
           const SizedBox(height: 12),
 
-          // Dual Date Cards (Hijri & Gregorian)
+          // 2. Dual Date Cards (Hijri & Gregorian)
           Row(
             children: [
               Expanded(
                 child: Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: AppColors.surface,
+                    color: const Color(0xFF131A26),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: AppColors.border),
+                    border: Border.all(color: const Color(0xFF1E2838)),
                   ),
-                  child: const Column(
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Hijri', style: TextStyle(fontSize: 11, color: AppColors.textSub)),
-                      SizedBox(height: 4),
-                      Text('13 Jamadilawal 1448', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                      const Text('Hijri', style: TextStyle(fontSize: 11, color: AppColors.textSub)),
+                      const SizedBox(height: 4),
+                      Text(_hijriDate, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white)),
                     ],
                   ),
                 ),
@@ -398,16 +430,19 @@ class _PrayerScreenState extends State<PrayerScreen> {
                 child: Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: AppColors.surface,
+                    color: const Color(0xFF131A26),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: AppColors.border),
+                    border: Border.all(color: const Color(0xFF1E2838)),
                   ),
-                  child: const Column(
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Gregorian', style: TextStyle(fontSize: 11, color: AppColors.textSub)),
-                      SizedBox(height: 4),
-                      Text('24 October 2026', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                      const Text('Gregorian', style: TextStyle(fontSize: 11, color: AppColors.textSub)),
+                      const SizedBox(height: 4),
+                      Text(
+                        _gregorianDate.isNotEmpty ? _gregorianDate : "${DateTime.now().day} October ${DateTime.now().year}",
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
                     ],
                   ),
                 ),
@@ -415,46 +450,150 @@ class _PrayerScreenState extends State<PrayerScreen> {
             ],
           ),
 
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
 
-          // Prayer Settings Controls (AutoDeck parity)
+          // 3. Show Prayer Times Switch Card (Matches Screenshot 1 & 2)
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: AppColors.border),
+              color: const Color(0xFF131A26),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFF1E2838)),
             ),
-            child: Column(
+            child: Row(
               children: [
-                SwitchListTile(
-                  secondary: const Icon(Icons.mosque_outlined, color: AppColors.accentTeal),
-                  title: const Text('Show prayer times', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
-                  subtitle: const Text('Prayer tab, car Prayer screen, home countdown and greeting', style: TextStyle(fontSize: 11, color: AppColors.textSub)),
+                const Icon(Icons.mosque_outlined, color: Colors.white70, size: 24),
+                const SizedBox(width: 14),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Show prayer times', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white)),
+                      SizedBox(height: 3),
+                      Text(
+                        'Prayer tab, car Prayer screen, home countdown and prayer in the greeting',
+                        style: TextStyle(fontSize: 12, color: AppColors.textSub, height: 1.25),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
                   value: _showPrayer,
-                  activeColor: AppColors.accentTeal,
+                  activeThumbColor: AppColors.accentTeal,
                   onChanged: (val) {
                     setState(() => _showPrayer = val);
+                    _saveAlertSettings();
                     _channel.invokeMethod('setShowPrayer', {'show_prayer': val});
                   },
                 ),
-                const Divider(height: 1, color: Colors.white10),
-                SwitchListTile(
-                  secondary: const Icon(Icons.volume_up, color: AppColors.accentTeal),
-                  title: const Text('Play the azan at prayer times', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
-                  subtitle: const Text('Play the azan at these prayer times (phone notification)', style: TextStyle(fontSize: 11, color: AppColors.textSub)),
-                  value: _playAzan,
-                  activeColor: AppColors.accentTeal,
-                  onChanged: (val) => setState(() => _playAzan = val),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // 4. Prayer Zones Header & Card (Matches Screenshot 1)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Prayer zones', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                InkWell(
+                  onTap: _showZonePicker,
+                  borderRadius: BorderRadius.circular(8),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    child: Text('+ Add zone', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.accentTeal)),
+                  ),
                 ),
-                const Divider(height: 1, color: Colors.white10),
-                SwitchListTile(
-                  secondary: const Icon(Icons.notifications_active, color: AppColors.accentTeal),
-                  title: const Text('Prayer reminders', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white)),
-                  subtitle: Text('Reminder $_notifyMinutes minutes before each prayer time', style: const TextStyle(fontSize: 11, color: AppColors.textSub)),
-                  value: _notificationsEnabled,
-                  activeColor: AppColors.accentTeal,
-                  onChanged: (val) => setState(() => _notificationsEnabled = val),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          // Selected Zone Card (Matches Screenshot 1)
+          InkWell(
+            onTap: _showZonePicker,
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF131A26),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFF1E2838)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 20,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.accentTeal, width: 2.5),
+                    ),
+                    child: Center(
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: AppColors.accentTeal,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(_zoneName, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white)),
+                        const SizedBox(height: 2),
+                        Text('$_zoneCode · $_zoneName', style: const TextStyle(fontSize: 12, color: AppColors.textSub)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // 5. Prayer Reminder Dropdown Card (Matches Screenshot 1)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF131A26),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFF1E2838)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.notifications_none_outlined, color: Colors.white70, size: 22),
+                const SizedBox(width: 12),
+                const Text('Prayer reminder', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white)),
+                const Spacer(),
+                DropdownButtonHideUnderline(
+                  child: DropdownButton<int>(
+                    value: _remindMinutes,
+                    dropdownColor: const Color(0xFF1A2333),
+                    icon: const Icon(Icons.arrow_drop_down, color: Colors.white70),
+                    style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+                    items: _reminderOptions.map((min) {
+                      return DropdownMenuItem<int>(
+                        value: min,
+                        child: Text(min == 0 ? 'Off' : '$min min before'),
+                      );
+                    }).toList(),
+                    onChanged: (newVal) {
+                      if (newVal != null) {
+                        setState(() => _remindMinutes = newVal);
+                        _saveAlertSettings();
+                      }
+                    },
+                  ),
                 ),
               ],
             ),
@@ -462,24 +601,101 @@ class _PrayerScreenState extends State<PrayerScreen> {
 
           const SizedBox(height: 12),
 
-          // Full Prayer Timetable List Card
+          // 6. Azan Prayer Selection Card (Matches Screenshot 1 & 3)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF131A26),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFF1E2838)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.volume_up_outlined, color: Colors.white70, size: 22),
+                    SizedBox(width: 10),
+                    Text('Azan', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Play the azan at these prayer times (phone notification).',
+                  style: TextStyle(fontSize: 12, color: AppColors.textSub, height: 1.3),
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _fardPrayers.map((prayer) {
+                    final bool isChecked = _azanPrayers.contains(prayer);
+                    return InkWell(
+                      onTap: () {
+                        setState(() {
+                          if (isChecked) {
+                            _azanPrayers.remove(prayer);
+                          } else {
+                            _azanPrayers.add(prayer);
+                          }
+                        });
+                        _saveAlertSettings();
+                      },
+                      borderRadius: BorderRadius.circular(24),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: isChecked ? const Color(0xFF1B3D37) : const Color(0xFF182232),
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: isChecked ? AppColors.accentTeal : const Color(0xFF28364A),
+                            width: 1.2,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (isChecked) ...[
+                              const Icon(Icons.check, size: 16, color: AppColors.accentTeal),
+                              const SizedBox(width: 6),
+                            ],
+                            Text(
+                              prayer,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: isChecked ? Colors.white : Colors.white70,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // 7. Full Prayer Timetable List Card
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: AppColors.surface,
+              color: const Color(0xFF131A26),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppColors.border),
+              border: Border.all(color: const Color(0xFF1E2838)),
             ),
             child: Column(
               children: _times.map((item) {
-                final isNow = item['status'] == 'now';
                 final isNext = item['status'] == 'next';
 
                 return Container(
                   margin: const EdgeInsets.symmetric(vertical: 4),
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   decoration: BoxDecoration(
-                    color: isNow ? AppColors.accentTeal.withValues(alpha: 0.16) : Colors.transparent,
+                    color: isNext ? AppColors.accentTeal.withValues(alpha: 0.16) : Colors.transparent,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
@@ -489,7 +705,7 @@ class _PrayerScreenState extends State<PrayerScreen> {
                         height: 10,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: isNow || isNext ? AppColors.accentTeal : Colors.white24,
+                          color: isNext ? AppColors.accentTeal : Colors.white24,
                         ),
                       ),
                       const SizedBox(width: 14),
@@ -497,27 +713,22 @@ class _PrayerScreenState extends State<PrayerScreen> {
                         item['name'],
                         style: TextStyle(
                           fontSize: 15,
-                          fontWeight: isNow || isNext ? FontWeight.bold : FontWeight.w500,
-                          color: isNow ? AppColors.accentTeal : Colors.white,
+                          fontWeight: isNext ? FontWeight.bold : FontWeight.w500,
+                          color: isNext ? AppColors.accentTeal : Colors.white,
                         ),
                       ),
                       const Spacer(),
-                      if (isNow)
-                        const Padding(
-                          padding: EdgeInsets.only(right: 8.0),
-                          child: Text('now', style: TextStyle(fontSize: 12, color: AppColors.accentTeal, fontWeight: FontWeight.w600)),
-                        ),
                       if (isNext)
                         const Padding(
                           padding: EdgeInsets.only(right: 8.0),
-                          child: Text('next', style: TextStyle(fontSize: 12, color: AppColors.accentTeal, fontWeight: FontWeight.w600)),
+                          child: Text('next', style: TextStyle(fontSize: 12, color: AppColors.accentTeal, fontWeight: FontWeight.bold)),
                         ),
                       Text(
                         item['time'],
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.bold,
-                          color: isNow ? AppColors.accentTeal : Colors.white,
+                          color: isNext ? AppColors.accentTeal : Colors.white,
                         ),
                       ),
                     ],
@@ -526,7 +737,7 @@ class _PrayerScreenState extends State<PrayerScreen> {
               }).toList(),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 24),
         ],
       ),
     );

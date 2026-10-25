@@ -134,7 +134,7 @@
   <div id="side">
     <div id="cover"></div>
     <div id="meta">
-      <div id="title">AutoDeck</div>
+      <div id="title">DashMate</div>
       <div id="artist">Waiting for music…</div>
       <div id="chips"></div>
     </div>
@@ -170,7 +170,7 @@
   function messages() {
     return {
       waiting: [tr('waiting', 'Waiting for music…'), tr('playSomethingAny', 'Play something in Spotify, YouTube Music or any app')],
-      access: [tr('allowAccess', 'Allow notification access'), tr('allowAccessHint', 'Open AutoDeck on your phone to grant it')],
+      access: [tr('allowAccess', 'Allow notification access'), tr('allowAccessHint', 'Open DashMate on your phone to grant it')],
       loading: ['<span class="eq"><i></i><i></i><i></i></span><br>' + escapeHtml(tr('findingLyrics', 'Finding lyrics…')), ''],
       notFound: [escapeHtml(tr('noLyricsFound', 'No lyrics found')), ''],
       instrumental: ['♪ ' + escapeHtml(tr('instrumental', 'Instrumental')) + ' ♪', ''],
@@ -216,7 +216,8 @@
       b.addEventListener('click', function () {
         var a = b.getAttribute('data-media');
         if (a === 'toggle') setPlayIcon(!isPlaying);   // flip now; the app's state follows
-        if (window.AutoDeck && window.AutoDeck.media) window.AutoDeck.media(a);
+        var host = window.DashMate || window.AutoDeck;
+        if (host && host.media) host.media(a);
       });
     });
   }
@@ -323,7 +324,7 @@
     }
     if (p.labels) L = p.labels;
 
-    $('title').textContent = p.title || 'AutoDeck';
+    $('title').textContent = p.title || 'DashMate';
     $('artist').textContent = p.artist || (p.status === 'waiting' ? tr('waiting', 'Waiting for music…') : '');
     var chips = '';
     if (p.app) chips += '<span class="chip">' + escapeHtml(p.app) + '</span>';

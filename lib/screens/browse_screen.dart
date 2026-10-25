@@ -199,7 +199,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
 
             const SizedBox(height: 16),
 
-            // YouTube Account Status Card (Matches AutoDeck)
+            // YouTube Account Status Card
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
@@ -332,7 +332,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
 
             const SizedBox(height: 24),
 
-            // Safe Parking Advisory Banner (Matches AutoDeck)
+            // Safe Parking Advisory Banner
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(

@@ -7,6 +7,7 @@ import 'background_screen.dart';
 import 'browse_screen.dart';
 import 'button_size_screen.dart';
 import 'car_card_screen.dart';
+import 'car_preview_screen.dart';
 import 'custom_page_screen.dart';
 import 'floating_menu_screen.dart';
 import 'lyrics_screen.dart';
@@ -55,6 +56,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
         AppLocalizations.setLocale(lang);
 
         setState(() {
+          if (parsed['customPage'] != null) {
+            final cp = (parsed['customPage'] as String).toLowerCase();
+            if (cp == 'weather') {
+              _customPageSubtitle = 'Weather';
+            } else if (cp == 'calendar') {
+              _customPageSubtitle = 'Calendar';
+            } else if (cp == 'sports') {
+              _customPageSubtitle = 'Sports';
+            } else if (cp == 'radar') {
+              _customPageSubtitle = 'Rain radar';
+            } else if (cp == 'ev') {
+              _customPageSubtitle = 'EV charging';
+            }
+          }
           if (prayer != null && prayer['next'] != null && prayer['time'] != null) {
             _prayerTime = '${prayer['next']} ${prayer['time']}';
           }
@@ -112,48 +127,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: Column(
               children: [
                 const Text(
-                  'Welcome back',
+                  'Welcome',
                   style: TextStyle(color: Color(0xFFD4B892), fontSize: 13, fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 6),
                 const Text(
                   'Mohamad Afix',
-                  style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+                  style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 14),
                 // Capsule pill
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
                   decoration: BoxDecoration(
                     color: Colors.black26,
                     borderRadius: BorderRadius.circular(30),
                   ),
-                  child: Row(
+                  child: const Row(
                     children: [
-                      const CircleAvatar(
+                      CircleAvatar(
                         radius: 13,
                         backgroundColor: Color(0xFF8C5C26),
                         child: Icon(Icons.person, size: 16, color: Colors.white),
                       ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF9E5C0D),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Text(
-                          'Trial',
-                          style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'DashMate Edition · Ready for Android Auto',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Free trial · 2d 1h left',
-                        style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: 12),
-                      ),
-                      const Spacer(),
-                      const Icon(Icons.arrow_forward_ios, size: 12, color: Colors.white70),
+                      SizedBox(width: 6),
+                      Icon(Icons.check_circle, size: 16, color: Color(0xFF5EF2D6)),
                     ],
                   ),
                 ),
@@ -183,7 +190,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   iconBg: const Color(0xFF3D2A10),
                   iconColor: const Color(0xFFFFB86C),
                   title: 'Welcome sound',
-                  subtitle: 'A chime when AutoDeck opens in the car',
+                  subtitle: 'A chime when DashMate opens in the car',
                   onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WelcomeSoundScreen())),
                 ),
               ],
@@ -288,7 +295,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   title: 'Custom page',
                   subtitle: _customPageSubtitle,
                   hasSettings: false,
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CustomPageScreen())),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CustomPageScreen())).then((_) => _loadState()),
                 ),
               ),
               const SizedBox(width: 10),
@@ -384,19 +391,35 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   style: TextStyle(fontSize: 12, color: AppColors.textSub, height: 1.3),
                 ),
                 const SizedBox(height: 14),
-                // Outlined "Edit widgets" Button
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WidgetsScreen())),
-                    icon: const Icon(Icons.edit_outlined, size: 16, color: AppColors.accentTeal),
-                    label: const Text('Edit widgets', style: TextStyle(color: AppColors.accentTeal, fontWeight: FontWeight.bold)),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: AppColors.accentTeal),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                // Action Buttons Row (Edit widgets & 16:9 Live Preview)
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WidgetsScreen())),
+                        icon: const Icon(Icons.edit_outlined, size: 16, color: AppColors.accentTeal),
+                        label: const Text('Edit widgets', style: TextStyle(color: AppColors.accentTeal, fontWeight: FontWeight.bold, fontSize: 13)),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: AppColors.accentTeal),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CarPreviewScreen())),
+                        icon: const Icon(Icons.tv_rounded, size: 16, color: Color(0xFF090E17)),
+                        label: const Text('Live preview', style: TextStyle(color: Color(0xFF090E17), fontWeight: FontWeight.bold, fontSize: 13)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.accentTeal,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

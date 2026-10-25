@@ -16,8 +16,6 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
-data class PrayerZone(val code: String, val name: String, val lat: Double, val lon: Double)
-
 object PrayerTimesManager {
     private const val TAG = "PrayerTimesManager"
     private const val PREFS_NAME = "DashMatePrefs"
@@ -50,6 +48,35 @@ object PrayerTimesManager {
     fun setSelectedZone(context: Context, zoneCode: String) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().putString(PREF_ZONE_KEY, zoneCode).apply()
+    }
+
+    fun getEnrichedPrayerData(context: Context): JSONObject {
+        val zone = getSelectedZone(context)
+        val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("Asia/Kuala_Lumpur")
+        }.format(Date())
+
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val cached = prefs.getString("$PREF_CACHE_PREFIX${zone.code}_$todayStr", null)
+        val raw = if (!cached.isNullOrBlank()) {
+            try { JSONObject(cached) } catch (_: Throwable) { calculateFallbackPrayers(zone) }
+        } else {
+            calculateFallbackPrayers(zone)
+        }
+        return enrichPrayerJson(raw, zone)
+    }
+
+    fun syncNextPrayerToBridge(context: Context) {
+        try {
+            val zone = getSelectedZone(context)
+            val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
+                timeZone = TimeZone.getTimeZone("Asia/Kuala_Lumpur")
+            }.format(Date())
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val cached = prefs.getString("$PREF_CACHE_PREFIX${zone.code}_$todayStr", null)
+            val raw = if (!cached.isNullOrBlank()) JSONObject(cached) else calculateFallbackPrayers(zone)
+            enrichPrayerJson(raw, zone)
+        } catch (_: Throwable) {}
     }
 
     suspend fun getPrayerData(context: Context): JSONObject = withContext(Dispatchers.IO) {
@@ -282,6 +309,12 @@ object PrayerTimesManager {
         val hours = minutesRemaining / 60
         val mins = minutesRemaining % 60
         val formattedCountdown = if (hours > 0) "${hours}h ${mins}m" else "${mins}m"
+
+        val nextName = nextPrayerObj?.optString("name", "Subuh") ?: "Subuh"
+        val nextTime = nextPrayerObj?.optString("time", "05:49") ?: "05:49"
+        com.dashmate.dashmate.DashMateStateBridge.nextPrayerName = nextName
+        com.dashmate.dashmate.DashMateStateBridge.nextPrayerTime = nextTime
+        com.dashmate.dashmate.DashMateStateBridge.prayerCountdown = formattedCountdown
 
         result.put("times", timesArr)
         result.put("current", currentPrayerObj)

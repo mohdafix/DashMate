@@ -16,6 +16,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.VIBRATE"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
@@ -75,6 +76,26 @@
             android:authorities="com.dashmate.dashmate.carart"
             android:exported="true"/>
 
+        <!-- Android Auto Media Card Service (Displays music player & live synced lyrics next to Waze) -->
+        <service
+            android:name=".DashMateMediaCardService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback"
+            android:icon="@mipmap/ic_launcher"
+            android:label="DashMate Card">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService"/>
+            </intent-filter>
+        </service>
+
+        <receiver
+            android:name="androidx.media.session.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON"/>
+            </intent-filter>
+        </receiver>
+
         <!-- Media Notification Listener for Live Now Playing widget -->
         <service
             android:name=".DashMateMediaListenerService"
@@ -86,12 +107,26 @@
             </intent-filter>
         </service>
 
+        <!-- Solat alerts: fires reminders/azan alerts, reschedules after reboot/update -->
+        <receiver
+            android:name=".deck.PrayerAlertReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                <action android:name="android.intent.action.TIMEZONE_CHANGED"/>
+                <action android:name="android.intent.action.TIME_SET"/>
+            </intent-filter>
+        </receiver>
+
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
     </application>
 
     <queries>
+        <package android:name="com.waze"/>
+        <package android:name="com.google.android.apps.maps"/>
         <intent>
             <action android:name="android.intent.action.MAIN"/>
             <category android:name="android.intent.category.LAUNCHER"/>

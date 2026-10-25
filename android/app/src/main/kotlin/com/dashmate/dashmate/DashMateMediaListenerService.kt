@@ -13,6 +13,7 @@ import android.media.session.MediaSession
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -27,6 +28,7 @@ class DashMateMediaListenerService : NotificationListenerService() {
     private val TAG = "DashMateMediaListener"
     private var mediaSessionManager: MediaSessionManager? = null
     private val activeCallbacks = mutableMapOf<MediaController, MediaController.Callback>()
+    private val latestNotifIconMap = java.util.concurrent.ConcurrentHashMap<String, Bitmap>()
 
     override fun onListenerConnected() {
         super.onListenerConnected()
@@ -59,6 +61,9 @@ class DashMateMediaListenerService : NotificationListenerService() {
 
     private fun handleControllers(controllers: List<MediaController>?) {
         controllers ?: return
+        var playingController: MediaController? = null
+        var fallbackController: MediaController? = null
+
         for (controller in controllers) {
             val pkg = controller.packageName
             if (pkg == packageName || pkg == "com.nasri.autodeck") continue
@@ -76,14 +81,74 @@ class DashMateMediaListenerService : NotificationListenerService() {
                 activeCallbacks[controller] = cb
             }
 
-            if (controller.playbackState?.state == PlaybackState.STATE_PLAYING) {
-                updateFromController(controller)
-                break
+            val state = controller.playbackState?.state
+            if (state == PlaybackState.STATE_PLAYING) {
+                playingController = controller
+            } else if (playingController == null && (state == PlaybackState.STATE_PAUSED || state == PlaybackState.STATE_BUFFERING)) {
+                fallbackController = controller
             }
+        }
+
+        val target = playingController ?: fallbackController ?: controllers.firstOrNull { it.packageName != packageName && it.packageName != "com.nasri.autodeck" }
+        if (target != null) {
+            updateFromController(target)
         }
     }
 
-    private var activeController: MediaController? = null
+    companion object {
+        var activeController: MediaController? = null
+
+        fun play() {
+            try {
+                activeController?.transportControls?.play()
+            } catch (e: Exception) {
+                Log.w("DashMateMediaListener", "play failed: ${e.message}")
+            }
+        }
+
+        fun pause() {
+            try {
+                activeController?.transportControls?.pause()
+            } catch (e: Exception) {
+                Log.w("DashMateMediaListener", "pause failed: ${e.message}")
+            }
+        }
+
+        fun skipToNext() {
+            try {
+                activeController?.transportControls?.skipToNext()
+            } catch (e: Exception) {
+                Log.w("DashMateMediaListener", "skipNext failed: ${e.message}")
+            }
+        }
+
+        fun skipToPrevious() {
+            try {
+                activeController?.transportControls?.skipToPrevious()
+            } catch (e: Exception) {
+                Log.w("DashMateMediaListener", "skipPrev failed: ${e.message}")
+            }
+        }
+
+        fun seekTo(posMs: Long) {
+            try {
+                activeController?.transportControls?.seekTo(posMs)
+            } catch (e: Exception) {
+                Log.w("DashMateMediaListener", "seekTo failed: ${e.message}")
+            }
+        }
+
+        fun fastForward(offsetMs: Long = 10000L) {
+            val cur = DashMateStateBridge.getCurrentPositionMs()
+            seekTo(cur + offsetMs)
+        }
+
+        fun rewind(offsetMs: Long = 10000L) {
+            val cur = DashMateStateBridge.getCurrentPositionMs()
+            seekTo((cur - offsetMs).coerceAtLeast(0L))
+        }
+    }
+
     private val pollHandler = Handler(Looper.getMainLooper())
     private val progressPoller = object : Runnable {
         override fun run() {
@@ -134,17 +199,23 @@ class DashMateMediaListenerService : NotificationListenerService() {
         val elapsed = if (isPlaying && updateTime > 0L) (SystemClock.elapsedRealtime() - updateTime) else 0L
         val currentPosition = (rawPos + (elapsed * speed).toLong()).coerceAtLeast(0L)
 
-        // Extract album art from MediaMetadata
+        // Extract album art from MediaMetadata or Notification Icon cache
         var artDataUrl = ""
         val artBitmap = metadata?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
             ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_ART)
+            ?: latestNotifIconMap[pkg]
+
         if (artBitmap != null) {
             artDataUrl = bitmapToDataUrl(artBitmap)
+            DashMateStateBridge.currentArtBitmap = artBitmap
+            val savedUri = CarArtProvider.saveArt(this, "current_art.png", artBitmap)
+            DashMateStateBridge.currentArtUri = savedUri ?: CarArtProvider.getArtUri("current_art.png")
         } else {
             val artUriStr = metadata?.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)
                 ?: metadata?.getString(MediaMetadata.METADATA_KEY_ART_URI)
             if (!artUriStr.isNullOrBlank()) {
                 artDataUrl = loadUriToDataUrl(artUriStr)
+                DashMateStateBridge.currentArtUri = Uri.parse(artUriStr)
             }
         }
 
@@ -187,7 +258,45 @@ class DashMateMediaListenerService : NotificationListenerService() {
         val isMedia = hasMediaSession || (template != null && template.contains("MediaStyle"))
 
         if (isMedia) {
-            val token = extras.getParcelable<MediaSession.Token>(Notification.EXTRA_MEDIA_SESSION)
+            // Extract album art from notification large icon first so controller callback has it
+            var notifArtDataUrl = ""
+            val largeIcon = notification.getLargeIcon()
+            if (largeIcon != null) {
+                try {
+                    val drawable = largeIcon.loadDrawable(this)
+                    if (drawable != null) {
+                        val bmp = when (drawable) {
+                            is BitmapDrawable -> drawable.bitmap
+                            else -> {
+                                val w = drawable.intrinsicWidth.coerceAtLeast(1)
+                                val h = drawable.intrinsicHeight.coerceAtLeast(1)
+                                val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                                val canvas = Canvas(b)
+                                drawable.setBounds(0, 0, w, h)
+                                drawable.draw(canvas)
+                                b
+                            }
+                        }
+                        if (bmp != null) {
+                            latestNotifIconMap[pkg] = bmp
+                            DashMateStateBridge.currentArtBitmap = bmp
+                            val savedUri = CarArtProvider.saveArt(this, "current_art.png", bmp)
+                            DashMateStateBridge.currentArtUri = savedUri ?: CarArtProvider.getArtUri("current_art.png")
+                            notifArtDataUrl = bitmapToDataUrl(bmp)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error loading notification large icon: ${e.message}")
+                }
+            }
+
+            val token = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                extras.getParcelable(Notification.EXTRA_MEDIA_SESSION, MediaSession.Token::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                extras.getParcelable(Notification.EXTRA_MEDIA_SESSION)
+            }
+
             if (token != null) {
                 try {
                     val controller = MediaController(this, token)
@@ -216,34 +325,6 @@ class DashMateMediaListenerService : NotificationListenerService() {
             if (cleanA.isBlank()) cleanA = "Playing"
 
             if (cleanT.isBlank() || cleanT == "♪" || cleanT == "♪ ♪ ♪") return
-
-            // Extract album art from notification large icon
-            var notifArtDataUrl = ""
-            val largeIcon = notification.getLargeIcon()
-            if (largeIcon != null) {
-                try {
-                    val drawable = largeIcon.loadDrawable(this)
-                    if (drawable != null) {
-                        val bmp = when (drawable) {
-                            is BitmapDrawable -> drawable.bitmap
-                            else -> {
-                                val w = drawable.intrinsicWidth.coerceAtLeast(1)
-                                val h = drawable.intrinsicHeight.coerceAtLeast(1)
-                                val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-                                val canvas = Canvas(b)
-                                drawable.setBounds(0, 0, w, h)
-                                drawable.draw(canvas)
-                                b
-                            }
-                        }
-                        if (bmp != null) {
-                            notifArtDataUrl = bitmapToDataUrl(bmp)
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Error loading notification large icon: ${e.message}")
-                }
-            }
 
             val appName = getFriendlyAppName(pkg)
 

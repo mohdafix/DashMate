@@ -31,7 +31,12 @@ class _CarCardScreenState extends State<CarCardScreen> {
 
   void _loadPrefs() async {
     try {
-      final res = await _channel.invokeMethod('getCarCardMode');
+      dynamic res;
+      try {
+        res = await _channel.invokeMethod('getCarCardMode');
+      } catch (_) {
+        res = await _browserChannel.invokeMethod('getCarCardMode');
+      }
       if (res != null && mounted) {
         if (res is Map) {
           setState(() {
@@ -81,7 +86,7 @@ class _CarCardScreenState extends State<CarCardScreen> {
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         children: [
-          // 1. Top Card: Show AutoDeck Card toggle
+          // 1. Top Card: Show DashMate Card toggle
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
@@ -105,7 +110,7 @@ class _CarCardScreenState extends State<CarCardScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: const [
                       Text(
-                        'Show AutoDeck Card',
+                        'Show DashMate Card',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
@@ -114,7 +119,7 @@ class _CarCardScreenState extends State<CarCardScreen> {
                       ),
                       SizedBox(height: 6),
                       Text(
-                        "Media card next to the map (lyrics, prayer, scores). Turn off if your car's dashboard / meter map or media buttons stop working while AutoDeck is open.",
+                        "Media card next to the map (lyrics, prayer, scores). Turn off if your car's dashboard / meter map or media buttons stop working while DashMate is open.",
                         style: TextStyle(
                           fontSize: 13,
                           color: AppColors.textSub,

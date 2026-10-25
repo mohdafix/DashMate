@@ -52,7 +52,19 @@ class _CustomPageScreenState extends State<CustomPageScreen> {
   @override
   void initState() {
     super.initState();
+    _loadSavedMode();
     _loadWeather();
+  }
+
+  void _loadSavedMode() async {
+    try {
+      final res = await _channel.invokeMethod<String>('getCustomPageMode');
+      if (res != null && res.isNotEmpty && mounted) {
+        setState(() {
+          _selectedMode = res;
+        });
+      }
+    } catch (_) {}
   }
 
   void _loadWeather() async {
@@ -277,7 +289,7 @@ class _CustomPageScreenState extends State<CustomPageScreen> {
 
           const SizedBox(height: 10),
 
-          // Verbatim source attribution from AutoDeck
+          // Verbatim source attribution
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Text(

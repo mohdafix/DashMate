@@ -152,7 +152,7 @@ class _ParkingScreenState extends State<ParkingScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // AutoDeck-style Disconnect Explanation Banner
+            // Disconnect Explanation Banner
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(

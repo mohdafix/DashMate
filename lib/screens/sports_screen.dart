@@ -167,7 +167,7 @@ class _SportsScreenState extends State<SportsScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Add your football-data.org key to AutoDeck (or in lib/core/secrets.dart) to fetch live scores, fixtures and league tables.\n\nTambah kunci football-data.org di lib/core/secrets.dart.',
+                'Add your football-data.org key to DashMate (or in lib/core/secrets.dart) to fetch live scores, fixtures and league tables.\n\nTambah kunci football-data.org di lib/core/secrets.dart.',
                 style: TextStyle(fontSize: 12, color: AppColors.textMuted, height: 1.4),
               ),
               const SizedBox(height: 14),

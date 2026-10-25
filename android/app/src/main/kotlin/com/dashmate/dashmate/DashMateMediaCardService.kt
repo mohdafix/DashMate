@@ -1,0 +1,751 @@
+package com.dashmate.dashmate
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import android.support.v4.media.MediaBrowserCompat
+import android.support.v4.media.MediaDescriptionCompat
+import android.support.v4.media.MediaMetadataCompat
+import android.support.v4.media.session.MediaSessionCompat
+import android.support.v4.media.session.PlaybackStateCompat
+import android.util.Log
+import androidx.core.app.NotificationCompat
+import androidx.media.MediaBrowserServiceCompat
+import androidx.media.session.MediaButtonReceiver
+import com.dashmate.dashmate.deck.RadioStation
+import com.dashmate.dashmate.deck.RadioStations
+import com.dashmate.dashmate.deck.radio.RadioPlayer
+import java.io.File
+import java.io.FileOutputStream
+import java.io.InputStream
+
+/**
+ * MediaBrowserService shown in Android Auto as "DashMate Card". It mirrors the
+ * now-playing state (with the active lyric line as subtitle) or alternate cards
+ * (next prayer / football) next to navigation.
+ *
+ * It also hosts real Malaysian radio playback ("Radio" folder in the browse tree, voice
+ * "play <station> on DashMate"). While radio mode is active the session reflects the radio
+ * player; when radio is stopped, loses focus to another app, stays paused for
+ * [RADIO_LONG_PAUSE_MS], or the user picks the "DashMate Live" card item, it falls back to the
+ * lyrics / prayer / football card.
+ */
+class DashMateMediaCardService : MediaBrowserServiceCompat(), DashMateStateBridge.StateListener {
+
+    companion object {
+        private const val TAG = "DashMateMediaCard"
+        private const val ROOT_ID = "__DASHMATE_CARD_ROOT__"
+        private const val MEDIA_ID = "dashmate_live_card"
+        private const val CHANNEL_ID = "dashmate_media_card_channel"
+        private const val NOTIFICATION_ID = 2001
+        private const val RADIO_FOLDER_ID = "__DASHMATE_RADIO__"
+        private const val RADIO_LONG_PAUSE_MS = 10 * 60 * 1000L
+        private const val RADIO_ERROR_TIMEOUT_MS = 60 * 1000L
+
+        // Android Auto content-style hints
+        private const val CONTENT_STYLE_SUPPORTED = "android.media.browse.CONTENT_STYLE_SUPPORTED"
+        private const val CONTENT_STYLE_BROWSABLE_HINT = "android.media.browse.CONTENT_STYLE_BROWSABLE_HINT"
+        private const val CONTENT_STYLE_PLAYABLE_HINT = "android.media.browse.CONTENT_STYLE_PLAYABLE_HINT"
+        private const val CONTENT_STYLE_LIST = 1
+        private const val CONTENT_STYLE_GRID = 2
+        private const val SEARCH_SUPPORTED = "android.media.browse.SEARCH_SUPPORTED"
+
+        var instance: DashMateMediaCardService? = null
+
+        fun triggerUpdate() {
+            instance?.updateSession()
+        }
+
+        // ---- Radio controls for the Deck's Radio page (same paths as the car's media buttons) ----
+        private fun controls() = instance?.mediaSession?.controller?.transportControls
+
+        fun radioPlay(stationId: String) {
+            val st = RadioStations.byId(stationId) ?: return
+            controls()?.playFromMediaId(st.mediaId, null)
+        }
+
+        fun radioToggle() {
+            val svc = instance ?: return
+            if (svc.radioMode && svc.radioPlayer?.wantsToPlay == true) controls()?.pause()
+            else if (svc.radioMode) controls()?.play()
+            else controls()?.playFromSearch("", null) // resume last station
+        }
+
+        fun radioNext() { if (instance?.radioMode == true) controls()?.skipToNext() }
+        fun radioPrev() { if (instance?.radioMode == true) controls()?.skipToPrevious() }
+        fun radioStop() { if (instance?.radioMode == true) controls()?.stop() }
+
+        /** {on, id, name, subtitle, status, nowPlaying, error} for the Radio page. */
+        fun radioStateJson(): String {
+            val svc = instance
+            val p = svc?.radioPlayer
+            val st = p?.station ?: svc?.lastRadioStation
+            return org.json.JSONObject().apply {
+                put("service", svc != null)
+                put("on", svc?.radioMode == true)
+                put("id", st?.id ?: "")
+                put("name", st?.name ?: "")
+                put("subtitle", st?.subtitle ?: "")
+                put("status", p?.status?.name ?: "IDLE")
+                put("nowPlaying", p?.nowPlaying ?: "")
+                put("error", p?.errorMessage ?: "")
+            }.toString()
+        }
+
+        fun radioStationsJson(): String = org.json.JSONArray().apply {
+            RadioStations.all.forEach { st ->
+                put(org.json.JSONObject().apply {
+                    put("id", st.id); put("name", st.name); put("network", st.network); put("band", st.band)
+                })
+            }
+        }.toString()
+    }
+
+    private lateinit var mediaSession: MediaSessionCompat
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var lastRenderedLyric: String = ""
+    @Suppress("unused")
+    private var isServiceBound: Boolean = false
+
+    // ---------------------------------------------------------------- radio state
+    /** True while the session shows/controls the radio instead of the card. */
+    private var radioMode: Boolean = false
+    private var lastRadioStation: RadioStation? = null
+    private var radioPlayer: RadioPlayer? = null
+
+    private val radioListener = object : RadioPlayer.Listener {
+        override fun onRadioStateChanged() {
+            if (radioMode) {
+                renderRadioSession()
+                scheduleLongPauseCheck()
+            }
+        }
+
+        override fun onRadioFocusLostPermanently() {
+            // Another player (Spotify etc.) took over - go back to the lyrics card.
+            Log.d(TAG, "Radio lost audio focus permanently -> card mode")
+            // Post: don't release the player from inside its own listener callback.
+            mainHandler.post {
+                if (radioMode && radioPlayer?.wantsToPlay != true) exitRadioMode()
+            }
+        }
+    }
+
+    private val radioLongPauseRunnable = Runnable {
+        val p = radioPlayer
+        if (radioMode && (p == null || !p.wantsToPlay)) {
+            Log.d(TAG, "Radio paused/errored for a long time -> card mode")
+            exitRadioMode()
+        }
+    }
+
+    private val transientErrorClear = Runnable { if (!radioMode) updateSession() }
+
+    private val lyricTicker = object : Runnable {
+        override fun run() {
+            try {
+                if (!radioMode && DashMateStateBridge.isPlaying) {
+                    val curLyric = getActiveLyricLine()
+                    if (curLyric != lastRenderedLyric) {
+                        lastRenderedLyric = curLyric
+                        updateMetadataOnly()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Ticker error: ${e.message}")
+            }
+            if (!radioMode && DashMateStateBridge.isPlaying) {
+                mainHandler.postDelayed(this, 350L)
+            }
+        }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        instance = this
+        Log.d(TAG, "DashMateMediaCardService created!")
+        createNotificationChannel()
+
+        mediaSession = MediaSessionCompat(this, "DashMateCard").apply {
+            @Suppress("DEPRECATION")
+            setFlags(
+                MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or
+                    MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS
+            )
+            setCallback(object : MediaSessionCompat.Callback() {
+                override fun onPlay() {
+                    Log.d(TAG, "MediaSession: onPlay received (radioMode=$radioMode)")
+                    if (radioMode) {
+                        radioPlayer?.resume() ?: lastRadioStation?.let { playStation(it) }
+                        return
+                    }
+                    DashMateMediaListenerService.play()
+                }
+
+                override fun onPause() {
+                    Log.d(TAG, "MediaSession: onPause received (radioMode=$radioMode)")
+                    if (radioMode) {
+                        radioPlayer?.pause()
+                        return
+                    }
+                    DashMateMediaListenerService.pause()
+                }
+
+                override fun onStop() {
+                    Log.d(TAG, "MediaSession: onStop received (radioMode=$radioMode)")
+                    if (radioMode) exitRadioMode()
+                }
+
+                override fun onSkipToNext() {
+                    Log.d(TAG, "MediaSession: onSkipToNext received (radioMode=$radioMode)")
+                    if (radioMode) {
+                        playStation(RadioStations.next(radioPlayer?.station ?: lastRadioStation))
+                        return
+                    }
+                    DashMateMediaListenerService.skipToNext()
+                }
+
+                override fun onSkipToPrevious() {
+                    Log.d(TAG, "MediaSession: onSkipToPrevious received (radioMode=$radioMode)")
+                    if (radioMode) {
+                        playStation(RadioStations.previous(radioPlayer?.station ?: lastRadioStation))
+                        return
+                    }
+                    DashMateMediaListenerService.skipToPrevious()
+                }
+
+                override fun onPlayFromMediaId(mediaId: String?, extras: Bundle?) {
+                    Log.d(TAG, "MediaSession: onPlayFromMediaId $mediaId")
+                    val station = RadioStations.byMediaId(mediaId)
+                    when {
+                        station != null -> playStation(station)
+                        mediaId == MEDIA_ID -> exitRadioMode() // back to the live card
+                    }
+                }
+
+                override fun onPlayFromSearch(query: String?, extras: Bundle?) {
+                    Log.d(TAG, "MediaSession: onPlayFromSearch '$query'")
+                    if (query.isNullOrBlank()) {
+                        // "Play DashMate" - resume the last station, else the first one.
+                        playStation(radioPlayer?.station ?: lastRadioStation ?: RadioStations.all.first())
+                        return
+                    }
+                    val station = RadioStations.findBest(query)
+                    if (station != null) {
+                        playStation(station)
+                    } else {
+                        showTransientError("No station found for \"$query\"")
+                    }
+                }
+
+                override fun onSkipToQueueItem(id: Long) {
+                    val idx = id.toInt()
+                    if (idx in RadioStations.all.indices) playStation(RadioStations.all[idx])
+                }
+
+                override fun onFastForward() {
+                    if (radioMode) return
+                    Log.d(TAG, "MediaSession: onFastForward (+10s) received")
+                    DashMateMediaListenerService.fastForward(10000L)
+                }
+
+                override fun onRewind() {
+                    if (radioMode) return
+                    Log.d(TAG, "MediaSession: onRewind (-10s) received")
+                    DashMateMediaListenerService.rewind(10000L)
+                }
+
+                override fun onSeekTo(pos: Long) {
+                    if (radioMode) return
+                    Log.d(TAG, "MediaSession: onSeekTo $pos received")
+                    DashMateMediaListenerService.seekTo(pos)
+                }
+
+                override fun onCustomAction(action: String?, extras: Bundle?) {
+                    if (radioMode) return
+                    when (action) {
+                        "ACTION_REWIND_10" -> DashMateMediaListenerService.rewind(10000L)
+                        "ACTION_FAST_FORWARD_10" -> DashMateMediaListenerService.fastForward(10000L)
+                    }
+                }
+            })
+            setMediaButtonReceiver(
+                PendingIntent.getBroadcast(
+                    this@DashMateMediaCardService,
+                    0,
+                    Intent(Intent.ACTION_MEDIA_BUTTON, null, this@DashMateMediaCardService, MediaButtonReceiver::class.java),
+                    PendingIntent.FLAG_IMMUTABLE,
+                )
+            )
+            isActive = true
+        }
+        sessionToken = mediaSession.sessionToken
+
+        prepareDefaultCardArt()
+        DashMateStateBridge.addListener(this)
+        updateSession()
+    }
+
+    override fun onDestroy() {
+        DashMateStateBridge.removeListener(this)
+        mainHandler.removeCallbacks(lyricTicker)
+        mainHandler.removeCallbacks(radioLongPauseRunnable)
+        mainHandler.removeCallbacks(transientErrorClear)
+        radioMode = false
+        radioPlayer?.release()
+        radioPlayer = null
+        mediaSession.isActive = false
+        mediaSession.release()
+        if (instance == this) {
+            instance = null
+        }
+        super.onDestroy()
+    }
+
+    override fun onGetRoot(clientPackageName: String, clientUid: Int, rootHints: Bundle?): MediaBrowserServiceCompat.BrowserRoot {
+        Log.d(TAG, "onGetRoot called by $clientPackageName")
+        val extras = Bundle().apply {
+            putBoolean(CONTENT_STYLE_SUPPORTED, true)
+            putInt(CONTENT_STYLE_BROWSABLE_HINT, CONTENT_STYLE_LIST)
+            putInt(CONTENT_STYLE_PLAYABLE_HINT, CONTENT_STYLE_LIST)
+            putBoolean(SEARCH_SUPPORTED, true)
+        }
+        return MediaBrowserServiceCompat.BrowserRoot(ROOT_ID, extras)
+    }
+
+    override fun onLoadChildren(parentId: String, result: MediaBrowserServiceCompat.Result<MutableList<MediaBrowserCompat.MediaItem>>) {
+        val items = mutableListOf<MediaBrowserCompat.MediaItem>()
+        when (parentId) {
+            ROOT_ID -> {
+                val title = DashMateStateBridge.songTitle
+                val desc = MediaDescriptionCompat.Builder()
+                    .setMediaId(MEDIA_ID)
+                    .setTitle(if (title.isNotBlank()) title else "DashMate Live")
+                    .setSubtitle(getActiveLyricLine())
+                    .build()
+                items.add(MediaBrowserCompat.MediaItem(desc, MediaBrowserCompat.MediaItem.FLAG_PLAYABLE))
+
+                val radioExtras = Bundle().apply {
+                    putInt(CONTENT_STYLE_PLAYABLE_HINT, CONTENT_STYLE_LIST)
+                }
+                val radioFolder = MediaDescriptionCompat.Builder()
+                    .setMediaId(RADIO_FOLDER_ID)
+                    .setTitle("Radio")
+                    .setSubtitle("Malaysian radio stations")
+                    .setIconUri(launcherIconUri())
+                    .setExtras(radioExtras)
+                    .build()
+                items.add(MediaBrowserCompat.MediaItem(radioFolder, MediaBrowserCompat.MediaItem.FLAG_BROWSABLE))
+            }
+            RADIO_FOLDER_ID -> RadioStations.all.forEach { items.add(stationMediaItem(it)) }
+        }
+        result.sendResult(items)
+    }
+
+    override fun onSearch(query: String, extras: Bundle?, result: MediaBrowserServiceCompat.Result<MutableList<MediaBrowserCompat.MediaItem>>) {
+        val matches = RadioStations.search(query).ifEmpty {
+            // Fall back to a plain substring match so partial typing still shows something.
+            RadioStations.all.filter { it.name.contains(query.trim(), ignoreCase = true) }
+        }
+        result.sendResult(matches.map { stationMediaItem(it) }.toMutableList())
+    }
+
+    private fun launcherIconUri(): Uri =
+        Uri.parse("android.resource://$packageName/${R.mipmap.ic_launcher}")
+
+    private fun stationMediaItem(st: RadioStation): MediaBrowserCompat.MediaItem {
+        val desc = MediaDescriptionCompat.Builder()
+            .setMediaId(st.mediaId)
+            .setTitle(st.name)
+            .setSubtitle(st.subtitle)
+            .setIconUri(launcherIconUri())
+            .build()
+        return MediaBrowserCompat.MediaItem(desc, MediaBrowserCompat.MediaItem.FLAG_PLAYABLE)
+    }
+
+    // ================================================================= radio mode
+
+    private fun playStation(station: RadioStation) {
+        Log.d(TAG, "Radio: tuning to ${station.name}")
+        mainHandler.removeCallbacks(transientErrorClear)
+        mainHandler.removeCallbacks(lyricTicker)
+        val player = radioPlayer ?: RadioPlayer(applicationContext, radioListener).also { radioPlayer = it }
+        val wasRadio = radioMode
+        radioMode = true
+        lastRadioStation = station
+        if (!wasRadio) {
+            mediaSession.setQueue(RadioStations.all.mapIndexed { i, st ->
+                MediaSessionCompat.QueueItem(stationMediaItem(st).description, i.toLong())
+            })
+            mediaSession.setQueueTitle("Radio")
+        }
+        player.play(station)
+        mediaSession.isActive = true
+        renderRadioSession()
+        ensureStartedForRadio()
+    }
+
+    /** Leave radio mode and fall back to the lyrics / prayer / football card. */
+    private fun exitRadioMode() {
+        mainHandler.removeCallbacks(radioLongPauseRunnable)
+        if (!radioMode && radioPlayer == null) return
+        radioMode = false
+        radioPlayer?.release()
+        radioPlayer = null
+        mediaSession.setQueue(null)
+        mediaSession.setQueueTitle(null)
+        updateSession()
+    }
+
+    /**
+     * The service is normally started by MainActivity/Presentation, but Android Auto may only
+     * be bound to it. Make sure it's a started service so it survives an unbind while radio
+     * plays (startForeground has already been called in renderRadioSession, so this is allowed
+     * from the background).
+     */
+    private fun ensureStartedForRadio() {
+        try {
+            startService(Intent(this, DashMateMediaCardService::class.java))
+        } catch (e: Exception) {
+            Log.w(TAG, "ensureStartedForRadio: ${e.message}")
+        }
+    }
+
+    private fun scheduleLongPauseCheck() {
+        mainHandler.removeCallbacks(radioLongPauseRunnable)
+        val p = radioPlayer
+        if (radioMode && (p == null || !p.wantsToPlay)) {
+            val delay = if (p?.status == RadioPlayer.Status.ERROR) RADIO_ERROR_TIMEOUT_MS else RADIO_LONG_PAUSE_MS
+            mainHandler.postDelayed(radioLongPauseRunnable, delay)
+        }
+    }
+
+    private fun renderRadioSession() {
+        val p = radioPlayer ?: return
+        val station = p.station ?: lastRadioStation ?: return
+
+        val state = when (p.status) {
+            RadioPlayer.Status.PLAYING -> PlaybackStateCompat.STATE_PLAYING
+            RadioPlayer.Status.BUFFERING -> PlaybackStateCompat.STATE_BUFFERING
+            RadioPlayer.Status.RECONNECTING -> PlaybackStateCompat.STATE_CONNECTING
+            RadioPlayer.Status.ERROR -> PlaybackStateCompat.STATE_ERROR
+            RadioPlayer.Status.PAUSED -> PlaybackStateCompat.STATE_PAUSED
+            RadioPlayer.Status.IDLE -> PlaybackStateCompat.STATE_STOPPED
+        }
+        val stateBuilder = PlaybackStateCompat.Builder()
+            .setActions(
+                PlaybackStateCompat.ACTION_PLAY or
+                    PlaybackStateCompat.ACTION_PAUSE or
+                    PlaybackStateCompat.ACTION_PLAY_PAUSE or
+                    PlaybackStateCompat.ACTION_STOP or
+                    PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
+                    PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
+                    PlaybackStateCompat.ACTION_SKIP_TO_QUEUE_ITEM or
+                    PlaybackStateCompat.ACTION_PLAY_FROM_MEDIA_ID or
+                    PlaybackStateCompat.ACTION_PLAY_FROM_SEARCH
+            )
+            .setState(state, PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN, if (state == PlaybackStateCompat.STATE_PLAYING) 1f else 0f, SystemClock.elapsedRealtime())
+            .setActiveQueueItemId(RadioStations.indexOf(station).toLong())
+        if (state == PlaybackStateCompat.STATE_ERROR) {
+            stateBuilder.setErrorMessage(PlaybackStateCompat.ERROR_CODE_APP_ERROR, p.errorMessage ?: "Station unavailable")
+        }
+        mediaSession.setPlaybackState(stateBuilder.build())
+
+        val artist = when (p.status) {
+            RadioPlayer.Status.BUFFERING -> "Tuning in…"
+            RadioPlayer.Status.RECONNECTING -> "Reconnecting…"
+            RadioPlayer.Status.ERROR -> p.errorMessage ?: "Station unavailable"
+            else -> p.nowPlaying ?: station.subtitle
+        }
+        val iconUri = launcherIconUri().toString()
+        val meta = MediaMetadataCompat.Builder()
+            .putString(MediaMetadataCompat.METADATA_KEY_MEDIA_ID, station.mediaId)
+            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, station.name)
+            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, station.name)
+            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
+            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_SUBTITLE, artist)
+            .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, station.subtitle)
+            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_DESCRIPTION, station.subtitle)
+            .putString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI, iconUri)
+            .putString(MediaMetadataCompat.METADATA_KEY_ART_URI, iconUri)
+            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON_URI, iconUri)
+            .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, -1L)
+            .build()
+        mediaSession.setMetadata(meta)
+
+        try {
+            startForeground(NOTIFICATION_ID, buildForegroundNotification())
+        } catch (e: Exception) {
+            Log.w(TAG, "startForeground (radio) error: ${e.message}")
+        }
+    }
+
+    /** Briefly show an error on the card (e.g. voice search found nothing), then restore it. */
+    private fun showTransientError(message: String) {
+        if (radioMode) {
+            // Keep whatever station is playing; nothing else to do.
+            Log.d(TAG, message)
+            return
+        }
+        val st = PlaybackStateCompat.Builder()
+            .setActions(PlaybackStateCompat.ACTION_PLAY_FROM_SEARCH or PlaybackStateCompat.ACTION_PLAY_FROM_MEDIA_ID)
+            .setState(PlaybackStateCompat.STATE_ERROR, 0L, 0f)
+            .setErrorMessage(PlaybackStateCompat.ERROR_CODE_NOT_SUPPORTED, message)
+            .build()
+        mediaSession.setPlaybackState(st)
+        mainHandler.removeCallbacks(transientErrorClear)
+        mainHandler.postDelayed(transientErrorClear, 4_000L)
+    }
+
+    override fun onStateUpdated(stateJson: String) {
+        updateSession()
+    }
+
+    override fun onSwitchPage(page: String) {}
+
+    override fun onExecuteScript(script: String) {}
+
+    fun updateSession() {
+        if (radioMode) {
+            // Radio owns the session; ignore card updates from the state bridge.
+            mainHandler.removeCallbacks(lyricTicker)
+            renderRadioSession()
+            return
+        }
+        val prefs = getSharedPreferences("dd_car_browser", MODE_PRIVATE)
+        val showCard = prefs.getBoolean("car_card_show", true)
+        @Suppress("UNUSED_VARIABLE")
+        val cardMode = prefs.getString("car_card_mode", "Auto") ?: "Auto"
+
+        if (!showCard) {
+            mediaSession.isActive = false
+            mainHandler.removeCallbacks(lyricTicker)
+            return
+        }
+        mediaSession.isActive = true
+
+        val isPlaying = DashMateStateBridge.isPlaying
+        @Suppress("UNUSED_VARIABLE")
+        val durationMs = DashMateStateBridge.playbackDurationMs
+        val curPos = DashMateStateBridge.getCurrentPositionMs()
+        val speed = DashMateStateBridge.playbackSpeed
+        val state = if (isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED
+
+        val stateBuilder = PlaybackStateCompat.Builder()
+            .setActions(
+                PlaybackStateCompat.ACTION_PAUSE or
+                    PlaybackStateCompat.ACTION_PLAY or
+                    PlaybackStateCompat.ACTION_REWIND or
+                    PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
+                    PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
+                    PlaybackStateCompat.ACTION_FAST_FORWARD or
+                    PlaybackStateCompat.ACTION_SEEK_TO or
+                    PlaybackStateCompat.ACTION_PLAY_PAUSE or // = 894L
+                    PlaybackStateCompat.ACTION_PLAY_FROM_MEDIA_ID or
+                    PlaybackStateCompat.ACTION_PLAY_FROM_SEARCH
+            )
+            .setState(state, curPos, speed, SystemClock.elapsedRealtime())
+        stateBuilder.addCustomAction("ACTION_REWIND_10", "-10s", R.drawable.dd_ic_back)
+        stateBuilder.addCustomAction("ACTION_FAST_FORWARD_10", "+10s", R.drawable.dd_ic_chevron)
+        mediaSession.setPlaybackState(stateBuilder.build())
+
+        updateMetadataOnly()
+
+        try {
+            val notification = buildForegroundNotification()
+            startForeground(NOTIFICATION_ID, notification)
+        } catch (e: Exception) {
+            Log.w(TAG, "startForeground error: ${e.message}")
+        }
+
+        mainHandler.removeCallbacks(lyricTicker)
+        if (isPlaying) {
+            mainHandler.postDelayed(lyricTicker, 350L)
+        }
+    }
+
+    private fun updateMetadataOnly() {
+        val prefs = getSharedPreferences("dd_car_browser", MODE_PRIVATE)
+        val cardMode = prefs.getString("car_card_mode", "Auto") ?: "Auto"
+
+        var title = DashMateStateBridge.songTitle
+        var subtitle = getActiveLyricLine()
+        var album = DashMateStateBridge.songArtist
+        var artUri: Uri? = DashMateStateBridge.currentArtUri
+        var artBitmap: Bitmap? = DashMateStateBridge.currentArtBitmap
+
+        val nothingPlaying = !DashMateStateBridge.isPlaying && (title.isBlank() || title == "Not Playing")
+        if (cardMode.equals("Next prayer", ignoreCase = true) ||
+            (cardMode.equals("Auto", ignoreCase = true) && nothingPlaying)
+        ) {
+            com.dashmate.dashmate.deck.PrayerTimesManager.syncNextPrayerToBridge(this)
+            title = "Next Prayer: ${DashMateStateBridge.nextPrayerName}"
+            subtitle = "${DashMateStateBridge.nextPrayerTime} (in ${DashMateStateBridge.prayerCountdown})"
+            album = "DashMate Prayer Times"
+            artUri = CarArtProvider.getArtUri("card_prayer.png")
+            artBitmap = loadCachedBitmap("card_prayer.png")
+        } else if (cardMode.equals("Football", ignoreCase = true)) {
+            val scores = DashMateStateBridge.customScoresArr
+            if (scores != null && scores.length() > 0) {
+                val firstMatch = scores.optJSONObject(0)
+                val home = firstMatch?.optString("home", "") ?: ""
+                val away = firstMatch?.optString("away", "") ?: ""
+                val score = firstMatch?.optString("score", "") ?: ""
+                val status = firstMatch?.optString("status", "") ?: ""
+                if (home.isNotBlank() && away.isNotBlank()) {
+                    title = if (score.isNotBlank()) "$home $score $away" else "$home vs $away"
+                    subtitle = if (status.isNotBlank()) status else "Live Match"
+                } else {
+                    title = "Football Live"
+                    subtitle = "Live Scores & Upcoming Fixtures"
+                }
+            } else {
+                title = "Football Live"
+                subtitle = "Live Scores & Upcoming Fixtures"
+            }
+            album = "DashMate Sports"
+            artUri = CarArtProvider.getArtUri("card_football.png")
+            artBitmap = loadCachedBitmap("card_football.png")
+        }
+
+        val metaBuilder = MediaMetadataCompat.Builder()
+            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
+            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, title)
+            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, subtitle)
+            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_SUBTITLE, subtitle)
+            .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, album)
+            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_DESCRIPTION, album)
+            .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, DashMateStateBridge.playbackDurationMs)
+        if (artBitmap != null) {
+            metaBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, artBitmap)
+            metaBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ART, artBitmap)
+        }
+        if (artUri != null) {
+            metaBuilder.putString(MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI, artUri.toString())
+            metaBuilder.putString(MediaMetadataCompat.METADATA_KEY_ART_URI, artUri.toString())
+        }
+        mediaSession.setMetadata(metaBuilder.build())
+    }
+
+    private fun getActiveLyricLine(): String {
+        val lyrics = DashMateStateBridge.currentLyrics
+        if (lyrics.isEmpty()) {
+            val artist = DashMateStateBridge.songArtist
+            return if (artist.isNotBlank()) artist else "DashMate"
+        }
+        val curPos = DashMateStateBridge.getCurrentPositionMs()
+        val activeLine = lyrics.lastOrNull { it.timeMs <= curPos }?.text
+        return if (!activeLine.isNullOrBlank()) activeLine else DashMateStateBridge.songArtist
+    }
+
+    private fun createNotificationChannel() {
+        val channel = NotificationChannel(CHANNEL_ID, "DashMate Card Audio", NotificationManager.IMPORTANCE_LOW)
+        channel.description = "Shows live song lyrics & car cards next to navigation"
+        channel.setShowBadge(false)
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(channel)
+    }
+
+    private fun buildForegroundNotification(): Notification {
+        val openIntent = packageManager.getLaunchIntentForPackage(packageName)
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val radioStation = if (radioMode) (radioPlayer?.station ?: lastRadioStation) else null
+        val title: String
+        val subtitle: String
+        val playing: Boolean
+        if (radioStation != null) {
+            title = radioStation.name
+            subtitle = radioPlayer?.nowPlaying ?: radioStation.subtitle
+            playing = radioPlayer?.wantsToPlay == true
+        } else {
+            val songTitle = DashMateStateBridge.songTitle
+            title = if (songTitle.isNotBlank()) songTitle else "DashMate Card"
+            subtitle = getActiveLyricLine()
+            playing = DashMateStateBridge.isPlaying
+        }
+
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle(title)
+            .setContentText(subtitle)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentIntent(pendingIntent)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setOngoing(playing)
+            .setStyle(
+                androidx.media.app.NotificationCompat.MediaStyle()
+                    .setMediaSession(mediaSession.sessionToken)
+                    .setShowActionsInCompactView(0, 1, 2)
+            )
+
+        val prevPending = MediaButtonReceiver.buildMediaButtonPendingIntent(
+            this, PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS
+        )
+        builder.addAction(R.drawable.dd_ic_back, "Prev", prevPending)
+
+        val playPauseAction = if (playing) PlaybackStateCompat.ACTION_PAUSE else PlaybackStateCompat.ACTION_PLAY
+        val playPausePending = MediaButtonReceiver.buildMediaButtonPendingIntent(this, playPauseAction)
+        builder.addAction(
+            R.drawable.dd_ic_assistive,
+            if (playing) "Pause" else "Play",
+            playPausePending,
+        )
+
+        val nextPending = MediaButtonReceiver.buildMediaButtonPendingIntent(
+            this, PlaybackStateCompat.ACTION_SKIP_TO_NEXT
+        )
+        builder.addAction(R.drawable.dd_ic_chevron, "Next", nextPending)
+
+        if (radioStation == null) {
+            DashMateStateBridge.currentArtBitmap?.let { builder.setLargeIcon(it) }
+        }
+        return builder.build()
+    }
+
+    private fun prepareDefaultCardArt() {
+        try {
+            val artDir = File(cacheDir, "car_art")
+            if (!artDir.exists()) {
+                artDir.mkdirs()
+            }
+
+            fun copyAsset(assetName: String, destFile: String) {
+                val f = File(artDir, destFile)
+                if (f.exists()) return
+                val stream: InputStream = try {
+                    assets.open("flutter_assets/assets/car/$assetName")
+                } catch (e: Exception) {
+                    assets.open("assets/car/$assetName")
+                }
+                FileOutputStream(f).use { out -> stream.copyTo(out) }
+            }
+
+            copyAsset("card_prayer.png", "card_prayer.png")
+            copyAsset("card_football.png", "card_football.png")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed preparing default card art: ${e.message}")
+        }
+    }
+
+    private fun loadCachedBitmap(filename: String): Bitmap? {
+        return try {
+            val f = File(File(cacheDir, "car_art"), filename)
+            if (f.exists()) BitmapFactory.decodeFile(f.absolutePath) else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+}

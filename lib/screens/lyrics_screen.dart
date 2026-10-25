@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -13,13 +14,13 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
   static const MethodChannel _channel = MethodChannel('com.dashmate.dashmate/channel');
 
   // Track state
-  String _title = "Nightcall";
-  String _artist = "Kavinsky";
-  String _appSource = "Spotify";
+  String _title = "Not Playing";
+  String _artist = "Play something in YouTube Music or Spotify";
+  String _appSource = "Media Player";
   String? _coverUrl;
-  bool _isPlaying = true;
-  int _positionMs = 38000;
-  int _durationMs = 259000;
+  bool _isPlaying = false;
+  int _positionMs = 0;
+  int _durationMs = 240000;
   List<Map<String, dynamic>> _lyrics = [];
   bool _isLoadingLyrics = false;
   bool _showSearchBar = false;
@@ -44,8 +45,14 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
       duration: const Duration(milliseconds: 1000),
     )..repeat();
 
+    _channel.setMethodCallHandler((call) async {
+      if (call.method == 'onStateUpdate' && call.arguments != null) {
+        _parseStateJson(call.arguments.toString());
+      }
+    });
+
     _loadState();
-    _startPlaybackSimulation();
+    _startPlaybackProgress();
   }
 
   @override
@@ -57,12 +64,12 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
     super.dispose();
   }
 
-  void _startPlaybackSimulation() {
-    _playbackTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+  void _startPlaybackProgress() {
+    _playbackTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
       if (!_isPlaying || _lyrics.isEmpty) return;
       setState(() {
-        _positionMs += 1000;
-        if (_positionMs > _durationMs) _positionMs = 0;
+        _positionMs += 500;
+        if (_positionMs > _durationMs) _positionMs = _durationMs;
         _updateActiveLine();
       });
     });
@@ -100,34 +107,63 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
     try {
       final String? stateJson = await _channel.invokeMethod<String>('getState');
       if (stateJson != null) {
-        // Media state can be parsed if needed
+        _parseStateJson(stateJson);
       }
     } catch (_) {}
-
-    if (_lyrics.isEmpty) {
-      _loadDefaultSampleLyrics();
-    }
   }
 
-  void _loadDefaultSampleLyrics() {
-    setState(() {
-      _lyrics = [
-        {'time': 4000, 'text': 'I\'m giving you a nightcall to tell you how I feel'},
-        {'time': 14000, 'text': 'I want to drive you through the night, down the hills'},
-        {'time': 24000, 'text': 'I\'m gonna tell you something you don\'t want to hear'},
-        {'time': 34000, 'text': 'I\'m gonna show you where it\'s dark, but have no fear'},
-        {'time': 48000, 'text': 'There\'s something inside you, it\'s hard to explain'},
-        {'time': 58000, 'text': 'They\'re talking about you, boy, but you\'re still the same'},
-        {'time': 70000, 'text': 'There\'s something inside you, it\'s hard to explain'},
-        {'time': 80000, 'text': 'They\'re talking about you, boy, but you\'re still the same'},
-        {'time': 95000, 'text': 'I\'ve been searching through your car, looking for a sign'},
-        {'time': 105000, 'text': 'Did you leave me here behind in another time?'},
-        {'time': 120000, 'text': 'There\'s something inside you, it\'s hard to explain'},
-        {'time': 130000, 'text': 'They\'re talking about you, boy, but you\'re still the same'},
-      ];
-      _positionMs = 35000;
-      _updateActiveLine();
-    });
+  void _parseStateJson(String stateJson) {
+    try {
+      final map = jsonDecode(stateJson);
+      final music = map['music'];
+      if (music != null) {
+        final title = (music['title'] ?? '').toString().trim();
+        final artist = (music['artist'] ?? '').toString().trim();
+        final app = (music['app'] ?? '').toString().trim();
+        final cover = (music['cover'] ?? music['art'] ?? '').toString().trim();
+        final playing = music['playing'] == true || music['isPlaying'] == true;
+        final pos = ((music['positionMs'] ?? 0) as num).toInt();
+        final dur = ((music['durationMs'] ?? 0) as num).toInt();
+        final lyricsList = music['lyrics'];
+
+        if (title.isNotEmpty && title != "Not Playing") {
+          final titleChanged = title != _title || artist != _artist;
+          setState(() {
+            _title = title;
+            _artist = artist;
+            _appSource = app.isNotEmpty ? app : 'Media Player';
+            _coverUrl = cover.isNotEmpty ? cover : null;
+            _isPlaying = playing;
+            _positionMs = pos;
+            if (dur > 0) _durationMs = dur;
+            if (lyricsList is List && lyricsList.isNotEmpty) {
+              _lyrics = lyricsList.map((e) => {
+                'time': ((e['time'] ?? 0) as num).toInt(),
+                'text': (e['text'] ?? '').toString(),
+              }).toList();
+            }
+          });
+          if (_lyrics.isEmpty && titleChanged) {
+            _fetchLyricsLive(artist, title);
+          }
+          _updateActiveLine();
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _fetchLyricsLive(String artist, String track) async {
+    try {
+      final res = await _channel.invokeMethod('fetchLyrics', {'artist': artist, 'track': track});
+      if (res is List && res.isNotEmpty && mounted) {
+        setState(() {
+          _lyrics = List<Map<String, dynamic>>.from(
+            res.map((e) => Map<String, dynamic>.from(e)),
+          );
+          _updateActiveLine();
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _searchLyrics(String artist, String track) async {
@@ -163,20 +199,11 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
   void _skipNext() {
     HapticFeedback.selectionClick();
     _channel.invokeMethod('mediaNext');
-    setState(() {
-      _title = "Starboy";
-      _artist = "The Weeknd";
-      _positionMs = 0;
-      _durationMs = 230000;
-    });
   }
 
   void _skipPrev() {
     HapticFeedback.selectionClick();
     _channel.invokeMethod('mediaPrevious');
-    setState(() {
-      _positionMs = 0;
-    });
   }
 
   void _pushLyricsToCar() {
@@ -195,6 +222,27 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFF14E0C1), width: 1)),
       ),
+    );
+  }
+
+  Widget _buildCoverImage() {
+    if (_coverUrl != null && _coverUrl!.isNotEmpty) {
+      if (_coverUrl!.startsWith('data:image/')) {
+        try {
+          final base64Str = _coverUrl!.contains(',') ? _coverUrl!.split(',').last : _coverUrl!;
+          final bytes = base64Decode(base64Str);
+          return Image.memory(bytes, fit: BoxFit.cover);
+        } catch (_) {}
+      } else if (_coverUrl!.startsWith('http://') || _coverUrl!.startsWith('https://')) {
+        return Image.network(_coverUrl!, fit: BoxFit.cover, errorBuilder: (_, __, ___) => _defaultCoverIcon());
+      }
+    }
+    return _defaultCoverIcon();
+  }
+
+  Widget _defaultCoverIcon() {
+    return const Center(
+      child: Icon(Icons.music_note_rounded, color: Color(0xFF0B0F1A), size: 36),
     );
   }
 
@@ -486,11 +534,7 @@ class _LyricsScreenState extends State<LyricsScreen> with TickerProviderStateMix
                           ),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(19),
-                            child: _coverUrl != null
-                                ? Image.network(_coverUrl!, fit: BoxFit.cover)
-                                : const Center(
-                                    child: Icon(Icons.music_note_rounded, color: Color(0xFF0B0F1A), size: 36),
-                                  ),
+                            child: _buildCoverImage(),
                           ),
                         ),
 

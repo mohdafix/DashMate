@@ -87,7 +87,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         children: [
-          // Account Card (Matches AutoDeck)
+          // Account Card
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
@@ -114,7 +114,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('AutoDeck Pro', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)),
+                      Text('DashMate Edition', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)),
                       SizedBox(height: 2),
                       Text('Mohamad Afix · All features unlocked', style: TextStyle(fontSize: 12, color: AppColors.tealAccent)),
                     ],
@@ -174,7 +174,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _buildSettingTile(
                   icon: Icons.graphic_eq,
                   title: 'Welcome sound',
-                  subtitle: 'A chime when AutoDeck opens in the car · $_sound',
+                  subtitle: 'A chime when DashMate opens in the car · $_sound',
                   onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WelcomeSoundScreen())),
                 ),
                 const Divider(height: 1, indent: 56, color: AppColors.glassBorder),
@@ -206,7 +206,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 SwitchListTile(
                   secondary: const Icon(Icons.radio_button_checked, color: AppColors.textDim, size: 20),
                   title: const Text('Dashboard media buttons', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.white)),
-                  subtitle: const Text('Turn off if your car\'s dashboard / meter map or media buttons stop working while AutoDeck is open', style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
+                  subtitle: const Text('Turn off if your car\'s dashboard / meter map or media buttons stop working while DashMate is open', style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
                   value: _mediaButtonsOverride,
                   activeColor: AppColors.tealAccent,
                   onChanged: (val) => setState(() => _mediaButtonsOverride = val),
@@ -289,7 +289,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 24),
 
-          // Legal Disclaimers verbatim from AutoDeck
+          // Legal Disclaimers
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -309,8 +309,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 10),
                 const Text(
-                  'AutoDeck is a personal, unofficial app. It is not affiliated with or endorsed by Google, Android Auto, Spotify, YouTube, Netflix, RTM, JAKIM, LRCLIB or football-data.org.\n\n'
-                  'AutoDeck ialah aplikasi peribadi dan tidak rasmi. Ia tidak bergabung dengan atau disokong oleh Google, Android Auto, Spotify, YouTube, Netflix, RTM, JAKIM, LRCLIB atau football-data.org.\n\n'
+                  'DashMate is a personal, unofficial app. It is not affiliated with or endorsed by Google, Android Auto, Spotify, YouTube, Netflix, RTM, JAKIM, LRCLIB or football-data.org.\n\n'
+                  'DashMate ialah aplikasi peribadi dan tidak rasmi. Ia tidak bergabung dengan atau disokong oleh Google, Android Auto, Spotify, YouTube, Netflix, RTM, JAKIM, LRCLIB atau football-data.org.\n\n'
                   'Prayer times, lyrics, weather and football data come from third-party sources and may be late, incomplete or wrong. Check official sources when it matters. Always obey traffic laws and never operate the screen while driving.',
                   style: TextStyle(fontSize: 10, color: AppColors.textDim, height: 1.4),
                 ),
@@ -321,7 +321,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 20),
           const Center(
             child: Text(
-              'AutoDeck 2.0.0 (Personal Build)\nBuilt for Android Auto',
+              'DashMate 2.0.0 (Personal Build)\nBuilt for Android Auto',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 11, color: AppColors.textDim, height: 1.4),
             ),

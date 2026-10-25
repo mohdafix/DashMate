@@ -3,6 +3,7 @@ package com.dashmate.dashmate
 import android.annotation.SuppressLint
 import android.app.Presentation
 import android.content.Context
+import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Rect
@@ -35,7 +36,7 @@ class DashMatePresentation(
 
     private val TAG = "DashMatePresentation"
     
-    // AutoDeck Dual-WebView Architecture:
+    // Dual-WebView Architecture:
     // deckWebView: dedicated permanently for in-car dashboard HTML (never reloaded/destroyed on web browsing)
     // browserWebView: dedicated for web navigation, YouTube, RTM Klik
     private var deckWebView: WebView? = null
@@ -49,6 +50,11 @@ class DashMatePresentation(
     private var currentPage: String = "home"
     private var isBrowsingWeb: Boolean = false
     private var currentZoom: Float = 1.0f
+
+    // Fullscreen video custom view
+    private var customView: View? = null
+    private var customViewCallback: WebChromeClient.CustomViewCallback? = null
+    private var fullscreenExitBtn: View? = null
     
     // Google Sign-in Auth Overlay
     private var authOverlay: FrameLayout? = null
@@ -63,6 +69,33 @@ class DashMatePresentation(
 
         // Play welcome audio chime on vehicle connection
         DashMateStateBridge.playWelcomeChime(context)
+
+        // Initialize cached layout from SharedPreferences
+        try {
+            val spBrowser = hostContext.getSharedPreferences("dd_car_browser", Context.MODE_PRIVATE)
+            val spPrefs = hostContext.getSharedPreferences("DashMatePrefs", Context.MODE_PRIVATE)
+            val layoutStr = spBrowser.getString("dashmate_layout", null)
+                ?: spBrowser.getString("car_layouts_current", null)
+                ?: spPrefs.getString("dashmate_layout", null)
+            if (!layoutStr.isNullOrBlank()) {
+                DashMateStateBridge.cachedLayoutJson = layoutStr
+            }
+            val savedCustom = spBrowser.getString("customPage", null)
+                ?: spPrefs.getString("customPage", null)
+            if (!savedCustom.isNullOrBlank()) {
+                DashMateStateBridge.customPageMode = savedCustom
+            }
+        } catch (_: Exception) {}
+
+        // Ensure DashMateMediaCardService is running for side-by-side Coolwalk card
+        try {
+            val cardIntent = Intent(context, DashMateMediaCardService::class.java)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                context.startForegroundService(cardIntent)
+            } else {
+                context.startService(cardIntent)
+            }
+        } catch (_: Exception) {}
 
         rootLayout = FrameLayout(context).apply {
             layoutParams = ViewGroup.LayoutParams(
@@ -101,77 +134,106 @@ class DashMatePresentation(
                 loadWithOverviewMode = true
             }
 
-            webChromeClient = object : WebChromeClient() {}
+            webChromeClient = object : WebChromeClient() {
+                override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
+                    if (view == null) return
+                    if (customView != null) {
+                        callback?.onCustomViewHidden()
+                        return
+                    }
+                    customView = view
+                    customViewCallback = callback
+
+                    browserWebView?.visibility = View.GONE
+                    browserBar.visibility = View.GONE
+
+                    view.layoutParams = FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    rootLayout.addView(view)
+
+                    // Floating Exit Fullscreen Button
+                    fullscreenExitBtn?.let { rootLayout.removeView(it) }
+                    val density = context.resources.displayMetrics.density
+                    val exitBtn = LinearLayout(context).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        setPadding((14 * density).toInt(), (8 * density).toInt(), (14 * density).toInt(), (8 * density).toInt())
+                        background = GradientDrawable().apply {
+                            setColor(Color.parseColor("#E60B0F1A"))
+                            cornerRadius = 20 * density
+                            setStroke((1 * density).toInt(), Color.parseColor("#4D5EF2D6"))
+                        }
+                        val tv = TextView(context).apply {
+                            text = "◀ Exit Fullscreen"
+                            setTextColor(Color.WHITE)
+                            textSize = 14f
+                            typeface = android.graphics.Typeface.DEFAULT_BOLD
+                        }
+                        addView(tv)
+                        layoutParams = FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        ).apply {
+                            gravity = Gravity.TOP or Gravity.START
+                            leftMargin = (20 * density).toInt()
+                            topMargin = (16 * density).toInt()
+                        }
+                        setOnClickListener {
+                            onHideCustomView()
+                        }
+                        elevation = 40 * density
+                    }
+                    fullscreenExitBtn = exitBtn
+                    rootLayout.addView(exitBtn)
+                    exitBtn.bringToFront()
+                    dockBar?.bringToFront()
+                }
+
+                override fun onHideCustomView() {
+                    fullscreenExitBtn?.let { btn ->
+                        rootLayout.removeView(btn)
+                        fullscreenExitBtn = null
+                    }
+                    customView?.let { v ->
+                        rootLayout.removeView(v)
+                        customView = null
+                    }
+                    customViewCallback?.onCustomViewHidden()
+                    customViewCallback = null
+
+                    browserWebView?.visibility = View.VISIBLE
+                    browserBar.visibility = View.VISIBLE
+                    dockBar?.bringToFront()
+                }
+            }
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
                     Log.d(TAG, "Car Deck page finished loading: $url")
-                    onStateUpdated(DashMateStateBridge.buildStateJson(hostContext))
+                    val stateJson = DashMateStateBridge.buildStateJson(hostContext)
+                    onStateUpdated(stateJson)
+                    view?.postDelayed({ onStateUpdated(stateJson) }, 150)
+                    view?.postDelayed({ onStateUpdated(stateJson) }, 400)
+                    view?.postDelayed({ onStateUpdated(stateJson) }, 800)
                 }
             }
 
             val bridge = AutoDeckJsInterface()
+            addJavascriptInterface(bridge, "DashMate")
+            addJavascriptInterface(bridge, "DashMateWeb")
             addJavascriptInterface(bridge, "AutoDeck")
+            addJavascriptInterface(bridge, "DriveDeck")
             addJavascriptInterface(bridge, "DashMateBridge")
             addJavascriptInterface(bridge, "AutoDeckWeb")
+            addJavascriptInterface(RadioJsInterface(context), "DashMateRadio")
 
             loadUrl("file:///android_asset/drivedeck_home.html")
         }
         rootLayout.addView(deckWebView)
 
-        // 2. Initialize dedicated Browser WebView (hidden by default)
-        browserWebView = WebView(context).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
-            setBackgroundColor(Color.parseColor("#0B0F1A"))
-            visibility = View.GONE
-            setLayerType(View.LAYER_TYPE_HARDWARE, null)
-
-            cookieManager.setAcceptThirdPartyCookies(this, true)
-
-            settings.apply {
-                javaScriptEnabled = true
-                domStorageEnabled = true
-                databaseEnabled = true
-                allowFileAccess = true
-                allowContentAccess = true
-                mediaPlaybackRequiresUserGesture = false
-                cacheMode = WebSettings.LOAD_DEFAULT
-                useWideViewPort = true
-                loadWithOverviewMode = true
-                userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
-                setSupportZoom(true)
-                builtInZoomControls = true
-                displayZoomControls = false
-            }
-
-            webChromeClient = object : WebChromeClient() {}
-            webViewClient = object : WebViewClient() {
-                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                    val url = request?.url?.toString() ?: ""
-                    if (isGoogleAuthUrl(url)) {
-                        showAuthOverlay(url)
-                        return true
-                    }
-                    return false
-                }
-
-                override fun onPageFinished(view: WebView?, url: String?) {
-                    super.onPageFinished(view, url)
-                    Log.d(TAG, "Browser page finished loading: $url")
-                    injectBrowserEnhancements(view)
-                }
-            }
-
-            val bridge = AutoDeckJsInterface()
-            addJavascriptInterface(bridge, "AutoDeck")
-            addJavascriptInterface(bridge, "AutoDeckWeb")
-        }
-        rootLayout.addView(browserWebView)
-
-        // 3. Floating in-car browser navigation bar (with zoom & controls)
+        // 2. Floating in-car browser navigation bar (with zoom & controls)
         browserBar = createBrowserControls()
         browserBar.visibility = View.GONE
         rootLayout.addView(browserBar)
@@ -193,6 +255,10 @@ class DashMatePresentation(
             layoutParams = lp
         }
         rootLayout.addView(dockBar)
+        rootLayout.post {
+            dockBar?.restorePosition(rootLayout.width, rootLayout.height)
+            dockBar?.applyStylePrefs()
+        }
 
         // 5. In-car virtual keyboard overlay
         carKeyboard = DashMateCarKeyboard(
@@ -203,7 +269,16 @@ class DashMatePresentation(
             onDismiss = {
                 // dismissed
             }
-        )
+        ).apply {
+            val lp = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.BOTTOM
+            }
+            layoutParams = lp
+            elevation = 24 * density
+        }
         rootLayout.addView(carKeyboard)
 
         setContentView(rootLayout)
@@ -216,8 +291,11 @@ class DashMatePresentation(
         isFullscreen = fullscreen
         val prefs = hostContext.getSharedPreferences("dd_car_browser", Context.MODE_PRIVATE)
         prefs.edit().putBoolean("fullscreen", fullscreen).apply()
-        // In AutoDeck, fullscreen removes system insets/padding; dockBar remains visible!
-        updateVisibleArea(lastVisibleArea)
+        
+        // AutoDeck zoom feature: zoom in / out the interface content
+        val zoomLevel = if (fullscreen) "1.18" else "1.0"
+        deckWebView?.evaluateJavascript("document.documentElement.style.zoom = '$zoomLevel';", null)
+        browserWebView?.evaluateJavascript("document.documentElement.style.zoom = '$zoomLevel';", null)
     }
 
     fun onSizeChanged(width: Int, height: Int) {
@@ -265,8 +343,14 @@ class DashMatePresentation(
                         }
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
+
+                        val bridge = AutoDeckJsInterface()
+                        addJavascriptInterface(bridge, "DashMateWeb")
+                        addJavascriptInterface(bridge, "AutoDeckWeb")
+
                         webViewClient = object : WebViewClient() {
                             override fun onPageFinished(v: WebView?, u: String?) {
+                                injectBrowserEnhancements(v)
                                 if (u != null && !u.contains("accounts.google.com")) {
                                     closeAuthOverlay()
                                     browserWebView?.reload()
@@ -344,14 +428,189 @@ class DashMatePresentation(
                 var el = e.target && e.target.closest ? e.target.closest('input,textarea,[contenteditable=""],[contenteditable="true"]') : null;
                 if (el) field(el);
               }, true);
+
+              // Hook YouTube fullscreen button to invoke HTML5 video.requestFullscreen()
+              document.addEventListener('click', function (e) {
+                var fs = e.target && e.target.closest ? e.target.closest('.fullscreen-icon, button[aria-label*="Fullscreen" i], button[aria-label*="Full screen" i], .ytp-fullscreen-button') : null;
+                if (fs) {
+                  var v = document.querySelector('video');
+                  if (v) {
+                    if (v.requestFullscreen) v.requestFullscreen();
+                    else if (v.webkitRequestFullscreen) v.webkitRequestFullscreen();
+                    else if (v.webkitEnterFullscreen) v.webkitEnterFullscreen();
+                  }
+                }
+              }, true);
             })();
         """.trimIndent()
         view?.evaluateJavascript(script, null)
     }
 
+    private fun ensureBrowser(): WebView {
+        browserWebView?.let { return it }
+        val wv = WebView(context).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+            setBackgroundColor(Color.parseColor("#0B0F1A"))
+            setLayerType(View.LAYER_TYPE_HARDWARE, null)
+            CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+
+            settings.apply {
+                javaScriptEnabled = true
+                domStorageEnabled = true
+                databaseEnabled = true
+                allowFileAccess = true
+                allowContentAccess = true
+                mediaPlaybackRequiresUserGesture = false
+                cacheMode = WebSettings.LOAD_DEFAULT
+                useWideViewPort = true
+                loadWithOverviewMode = true
+                userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
+                setSupportZoom(true)
+                builtInZoomControls = true
+                displayZoomControls = false
+            }
+
+            webChromeClient = object : WebChromeClient() {
+                override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
+                    if (view == null) return
+                    if (customView != null) {
+                        callback?.onCustomViewHidden()
+                        return
+                    }
+                    customView = view
+                    customViewCallback = callback
+
+                    browserWebView?.visibility = View.GONE
+                    browserBar.visibility = View.GONE
+
+                    view.layoutParams = FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    rootLayout.addView(view)
+
+                    // Floating Exit Fullscreen Button
+                    fullscreenExitBtn?.let { rootLayout.removeView(it) }
+                    val density = context.resources.displayMetrics.density
+                    val exitBtn = LinearLayout(context).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        setPadding((14 * density).toInt(), (8 * density).toInt(), (14 * density).toInt(), (8 * density).toInt())
+                        background = GradientDrawable().apply {
+                            setColor(Color.parseColor("#E60B0F1A"))
+                            cornerRadius = 20 * density
+                            setStroke((1 * density).toInt(), Color.parseColor("#4D5EF2D6"))
+                        }
+                        val tv = TextView(context).apply {
+                            text = "◀ Exit Fullscreen"
+                            setTextColor(Color.WHITE)
+                            textSize = 14f
+                            typeface = android.graphics.Typeface.DEFAULT_BOLD
+                        }
+                        addView(tv)
+                        layoutParams = FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        ).apply {
+                            gravity = Gravity.TOP or Gravity.START
+                            leftMargin = (20 * density).toInt()
+                            topMargin = (16 * density).toInt()
+                        }
+                        setOnClickListener {
+                            onHideCustomView()
+                        }
+                        elevation = 40 * density
+                    }
+                    fullscreenExitBtn = exitBtn
+                    rootLayout.addView(exitBtn)
+                    exitBtn.bringToFront()
+                    dockBar?.bringToFront()
+                }
+
+                override fun onHideCustomView() {
+                    fullscreenExitBtn?.let { btn ->
+                        rootLayout.removeView(btn)
+                        fullscreenExitBtn = null
+                    }
+                    customView?.let { v ->
+                        rootLayout.removeView(v)
+                        customView = null
+                    }
+                    customViewCallback?.onCustomViewHidden()
+                    customViewCallback = null
+
+                    browserWebView?.visibility = View.VISIBLE
+                    browserBar.visibility = View.VISIBLE
+                    dockBar?.bringToFront()
+                }
+            }
+            webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                    val url = request?.url?.toString() ?: ""
+                    if (isGoogleAuthUrl(url)) {
+                        showAuthOverlay(url)
+                        return true
+                    }
+                    return false
+                }
+
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    super.onPageFinished(view, url)
+                    Log.d(TAG, "Browser page finished loading: $url")
+                    injectBrowserEnhancements(view)
+                }
+            }
+
+            val bridge = AutoDeckJsInterface()
+            addJavascriptInterface(bridge, "DashMate")
+            addJavascriptInterface(bridge, "DashMateWeb")
+            addJavascriptInterface(bridge, "AutoDeck")
+            addJavascriptInterface(bridge, "AutoDeckWeb")
+        }
+        browserWebView = wv
+        rootLayout.addView(wv, rootLayout.indexOfChild(deckWebView) + 1)
+        updateVisibleArea(lastVisibleArea)
+        return wv
+    }
+
+    private fun releaseBrowser() {
+        fullscreenExitBtn?.let { btn ->
+            rootLayout.removeView(btn)
+            fullscreenExitBtn = null
+        }
+        customView?.let { v ->
+            rootLayout.removeView(v)
+            customView = null
+        }
+        customViewCallback?.onCustomViewHidden()
+        customViewCallback = null
+
+        val wv = browserWebView ?: return
+        browserWebView = null
+        try {
+            wv.stopLoading()
+            wv.loadUrl("about:blank")
+            rootLayout.removeView(wv)
+            wv.removeAllViews()
+            wv.destroy()
+        } catch (_: Exception) {}
+    }
+
     override fun onSwitchPage(page: String) {
         if (currentPage == page && (if (page == "web" || page == "browse") isBrowsingWeb else !isBrowsingWeb)) return
         currentPage = page
+        DashMateStateBridge.currentPage = page
+
+        if (isBrowsingWeb) {
+            isBrowsingWeb = false
+            releaseBrowser()
+            browserBar.visibility = View.GONE
+            closeAuthOverlay()
+            deckWebView?.visibility = View.VISIBLE
+        }
 
         if (page == "web" || page == "browse") {
             loadWebUrl("https://m.youtube.com")
@@ -359,14 +618,21 @@ class DashMatePresentation(
             return
         }
 
-        exitBrowserToHome(false)
+        val isHomeOrCustom = (page == "home" || page == "custom")
+        val wasHomeOrCustom = (deckWebView?.url?.contains("drivedeck_home.html") == true)
 
-        val assetUrl = when (page) {
-            "lyrics" -> "file:///android_asset/drivedeck_lyrics.html"
-            "prayer" -> "file:///android_asset/drivedeck_prayer.html"
-            else -> "file:///android_asset/drivedeck_home.html"
+        if (isHomeOrCustom && wasHomeOrCustom) {
+            val stateJson = DashMateStateBridge.buildStateJson(hostContext)
+            onStateUpdated(stateJson)
+        } else {
+            val assetUrl = when (page) {
+                "lyrics" -> "file:///android_asset/drivedeck_lyrics.html"
+                "prayer" -> "file:///android_asset/drivedeck_prayer.html"
+                "radio" -> "file:///android_asset/dashmate_radio.html"
+                else -> "file:///android_asset/drivedeck_home.html"
+            }
+            deckWebView?.loadUrl(assetUrl)
         }
-        deckWebView?.loadUrl(assetUrl)
         dockBar?.updateCurrentPage(page)
     }
 
@@ -377,6 +643,7 @@ class DashMatePresentation(
     }
 
     fun loadWebUrl(url: String) {
+        ensureBrowser()
         isBrowsingWeb = true
         dockBar?.visibility = View.VISIBLE
         dockBar?.updateCurrentPage("web")
@@ -391,8 +658,8 @@ class DashMatePresentation(
         if (!isBrowsingWeb && currentPage == "home") return
         isBrowsingWeb = false
         currentPage = "home"
-        browserWebView?.stopLoading()
-        browserWebView?.visibility = View.GONE
+        DashMateStateBridge.currentPage = "home"
+        releaseBrowser()
         browserBar.visibility = View.GONE
         closeAuthOverlay()
         dockBar?.visibility = View.VISIBLE
@@ -402,7 +669,8 @@ class DashMatePresentation(
         if (reloadDeck) {
             deckWebView?.loadUrl("file:///android_asset/drivedeck_home.html")
         } else {
-            onStateUpdated(DashMateStateBridge.buildStateJson(hostContext))
+            val stateJson = DashMateStateBridge.buildStateJson(hostContext)
+            onStateUpdated(stateJson)
         }
     }
 
@@ -499,6 +767,7 @@ class DashMatePresentation(
 
     fun showVirtualKeyboard(initialText: String, hint: String, isAddressBar: Boolean) {
         rootLayout.post {
+            carKeyboard?.bringToFront()
             carKeyboard?.show(initialText, hint, isAddressBar)
         }
     }
@@ -543,7 +812,8 @@ class DashMatePresentation(
             })('$escaped');
         """.trimIndent()
 
-        browserWebView?.evaluateJavascript(script, null)
+        val target = if (authOverlay?.visibility == View.VISIBLE) authWebView else browserWebView
+        target?.evaluateJavascript(script, null)
     }
 
     fun updateVisibleArea(visibleArea: Rect?) {
@@ -567,23 +837,29 @@ class DashMatePresentation(
 
             deckWebView?.setPadding(padLeft, padTop, padRight, padBottom)
             browserWebView?.setPadding(padLeft, padTop, padRight, padBottom)
-
-            val density = context.resources.displayMetrics.density
-            val lp = dockBar?.layoutParams as? FrameLayout.LayoutParams
-            if (lp != null) {
-                lp.leftMargin = padLeft + (16 * density + 0.5f).toInt()
-                lp.topMargin = padTop + (16 * density + 0.5f).toInt()
-                dockBar?.layoutParams = lp
-            }
         }
+    }
+
+    override fun onStop() {
+        DashMateStateBridge.removeListener(this)
+        super.onStop()
+    }
+
+    override fun dismiss() {
+        DashMateStateBridge.removeListener(this)
+        super.dismiss()
     }
 
     override fun onStateUpdated(stateJson: String) {
         if (isBrowsingWeb) return
-        val escapedJson = JSONObjectEscape(stateJson)
-        val script = "if (window.ddUpdate) { window.ddUpdate('$escapedJson'); }"
+        val quotedJson = org.json.JSONObject.quote(stateJson)
+        val script = "if (window.ddUpdate) { window.ddUpdate($quotedJson); }"
         deckWebView?.post {
             deckWebView?.evaluateJavascript(script, null)
+        }
+        dockBar?.post {
+            dockBar?.rebuildMenuButtons()
+            dockBar?.applyStylePrefs()
         }
     }
 
@@ -621,7 +897,8 @@ class DashMatePresentation(
                           target.scrollBy(dx, dy);
                         })($distanceX, $distanceY);
                     """.trimIndent()
-                    browserWebView?.evaluateJavascript(script, null)
+                    val target = if (authOverlay?.visibility == View.VISIBLE) authWebView else browserWebView
+        target?.evaluateJavascript(script, null)
                 }
 
                 rootLayout.dispatchTouchEvent(down)
@@ -642,6 +919,15 @@ class DashMatePresentation(
     }
 
     inner class AutoDeckJsInterface {
+        @JavascriptInterface
+        fun ready() {
+            Log.d(TAG, "Deck WebView requested ready sync")
+            deckWebView?.post {
+                val stateJson = DashMateStateBridge.buildStateJson(hostContext)
+                onStateUpdated(stateJson)
+            }
+        }
+
         @JavascriptInterface
         fun media(action: String) {
             Log.d(TAG, "Media control clicked: $action")
@@ -665,7 +951,7 @@ class DashMatePresentation(
 
         @JavascriptInterface
         fun navigate(lat: Double, lng: Double) {
-            DashMateStateBridge.launchNavigationCoords(hostContext, lat, lng)
+            CarNav.toCoords(hostContext, lat, lng)
         }
 
         @JavascriptInterface
@@ -678,6 +964,18 @@ class DashMatePresentation(
         @JavascriptInterface
         fun site(url: String) {
             Log.d(TAG, "Open site requested: $url")
+            if (url.startsWith("dashmate://masjid")) {
+                CarNav.toNearest(hostContext, com.dashmate.dashmate.deck.NearbyFinder.Kind.MASJID)
+                return
+            }
+            if (url.startsWith("dashmate://petrol")) {
+                CarNav.toNearest(hostContext, com.dashmate.dashmate.deck.NearbyFinder.Kind.PETROL)
+                return
+            }
+            if (url.startsWith("geo:")) {
+                CarNav.toQuery(hostContext, android.net.Uri.parse(url).getQueryParameter("q") ?: url.removePrefix("geo:"))
+                return
+            }
             if (url.startsWith("dashmate://parking")) {
                 val spot = com.dashmate.dashmate.deck.ParkingManager.getSpot(hostContext)
                 if (spot != null) {
