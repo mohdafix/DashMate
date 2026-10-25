@@ -1270,10 +1270,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   width: 38,
                   height: 38,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF16253B),
                     borderRadius: BorderRadius.circular(10),
+                    image: const DecorationImage(
+                      image: AssetImage('assets/images/app_icon.png'),
+                      fit: BoxFit.cover,
+                    ),
                   ),
-                  child: const Icon(Icons.info_outline, color: Colors.white54, size: 20),
                 ),
                 title: const Text('About DashMate', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white)),
                 subtitle: const Text('Version 1.0 (Build 30) · Private Edition', style: TextStyle(fontSize: 12, color: AppColors.textSub)),
