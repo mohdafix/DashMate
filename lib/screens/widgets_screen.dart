@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -255,7 +255,7 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
   void _loadLayout() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final mode = prefs.getString('dashmate_layout_mode') ?? 'tall';
+      final mode = prefs.getString('dashmate_layout_mode') ?? 'auto';
       if (mounted) {
         setState(() => _isTall = mode == 'tall');
       }

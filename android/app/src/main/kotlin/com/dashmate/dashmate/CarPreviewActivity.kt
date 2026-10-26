@@ -42,9 +42,10 @@ class CarPreviewActivity : Activity(), SurfaceHolder.Callback {
         super.onCreate(savedInstanceState)
         // No car connected: the preview follows the phone's light/dark mode. While a car session
         // is live, the car's day/night wins.
+        DashMateTheme.init(this)
         if (!DashMateTheme.carSessionActive) {
             val night = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
-            DashMateTheme.set(night == Configuration.UI_MODE_NIGHT_YES)
+            DashMateTheme.applyCurrentMode(night == Configuration.UI_MODE_NIGHT_YES)
         }
         val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         carW = prefs.getInt(KEY_W, DEFAULT_W)

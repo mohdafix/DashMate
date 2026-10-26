@@ -376,14 +376,24 @@ class DashMatePresentation(
             val isWebPage = page == "web" || page == "browse" || page == "nav"
             if (if (isWebPage) isBrowsingWeb else !isBrowsingWeb) return
         }
-        currentPage = page
 
         if (page == "web" || page == "browse") {
+            currentPage = page
             loadWebUrl(pendingUrl ?: "https://m.youtube.com")
             return
         }
 
-        exitBrowserToHome(false)
+        if (isBrowsingWeb) {
+            isBrowsingWeb = false
+            releaseBrowser()
+            browserBar.visibility = View.GONE
+            closeAuthOverlay()
+            deckWebView?.visibility = View.VISIBLE
+        }
+
+        currentPage = page
+        DashMateStateBridge.currentPage = page
+
         if (kbdTarget === deckWebView) dropKeyboardTarget() // the field goes away with the page
         val assetUrl = when (page) {
             "lyrics" -> "file:///android_asset/drivedeck_lyrics.html"
@@ -392,7 +402,12 @@ class DashMatePresentation(
             "nav" -> "file:///android_asset/drivedeck_nav.html"
             else -> "file:///android_asset/drivedeck_home.html"
         }
-        deckWebView?.loadUrl(assetUrl)
+        val currentUrl = deckWebView?.url
+        if (assetUrl.contains("drivedeck_home.html") && currentUrl != null && currentUrl.contains("drivedeck_home.html")) {
+            onStateUpdated(DashMateStateBridge.buildStateJson(hostContext))
+        } else {
+            deckWebView?.loadUrl(assetUrl)
+        }
         dockBar?.updateCurrentPage(page)
     }
 
@@ -506,7 +521,7 @@ class DashMatePresentation(
     }
 
     fun exitBrowserToHome(reloadDeck: Boolean = false) {
-        if (!isBrowsingWeb && currentPage == "home") return
+        if (!isBrowsingWeb) return
 
         isBrowsingWeb = false
         currentPage = "home"
@@ -883,7 +898,7 @@ class DashMatePresentation(
 
         @JavascriptInterface
         fun page(target: String) {
-            onSwitchPage(target)
+            DashMateStateBridge.setPage(target)
         }
 
         @JavascriptInterface

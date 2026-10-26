@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../channels/platform_channels.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_colors.dart';
 import '../theme/localization.dart';
@@ -32,12 +33,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _useKmh = true;
   bool _mediaButtonsOverride = true;
   String _driverName = 'Mohamad Afix';
+  String _themeMode = 'auto';
 
   @override
   void initState() {
     super.initState();
     _loadAutoStart();
     _loadDriverName();
+    _loadThemeMode();
   }
 
   String _getDriverInitials(String name) {
@@ -186,6 +189,134 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } catch (_) {}
   }
 
+  
+  Future<void> _loadThemeMode() async {
+    final mode = await PlatformChannels.getThemeMode();
+    if (mounted) setState(() => _themeMode = mode);
+  }
+
+  Future<void> _updateThemeMode(String mode) async {
+    setState(() => _themeMode = mode);
+    await PlatformChannels.setThemeMode(mode);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('theme_mode', mode);
+    } catch (_) {}
+    if (mounted) {
+      final label = mode == 'day' ? 'Day (Light)' : mode == 'night' ? 'Night (Dark)' : 'Auto (Headlights)';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Car display theme set to $label'),
+          backgroundColor: const Color(0xFF16253B),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    }
+  }
+
+  void _showThemePicker() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.palette_outlined, color: AppColors.tealAccent, size: 22),
+                    SizedBox(width: 10),
+                    Text(
+                      'Car Display Theme',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Choose whether the car display stays in day or night mode, or adapts automatically.',
+                  style: TextStyle(fontSize: 12, color: AppColors.textSub),
+                ),
+                const SizedBox(height: 16),
+                _buildThemeOptionTile(
+                  keyName: 'auto',
+                  title: 'Auto',
+                  subtitle: 'Adapts to car headlights & day / sunset signals',
+                  icon: Icons.brightness_auto,
+                  color: AppColors.tealAccent,
+                ),
+                const Divider(height: 1, color: AppColors.glassBorder),
+                _buildThemeOptionTile(
+                  keyName: 'day',
+                  title: 'Day',
+                  subtitle: 'Forced light theme · High daytime visibility',
+                  icon: Icons.light_mode_rounded,
+                  color: const Color(0xFFFFB86C),
+                ),
+                const Divider(height: 1, color: AppColors.glassBorder),
+                _buildThemeOptionTile(
+                  keyName: 'night',
+                  title: 'Night',
+                  subtitle: 'Forced dark theme · Soft charcoal, reduces glare',
+                  icon: Icons.dark_mode_rounded,
+                  color: const Color(0xFFBA68C8),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildThemeOptionTile({
+    required String keyName,
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+  }) {
+    final isSelected = _themeMode == keyName;
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      leading: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(icon, color: color, size: 20),
+      ),
+      title: Text(
+        title,
+        style: TextStyle(
+          fontSize: 15,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+          color: Colors.white,
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: const TextStyle(fontSize: 12, color: AppColors.textSub),
+      ),
+      trailing: isSelected
+          ? const Icon(Icons.check_circle, color: AppColors.tealAccent, size: 22)
+          : null,
+      onTap: () {
+        Navigator.pop(context);
+        _updateThemeMode(keyName);
+      },
+    );
+  }
+
   void _showFontPicker() {
     const fonts = ['orbitron', 'bebas', 'audiowide', 'monoton', 'teko', 'poiret'];
     showModalBottomSheet(
@@ -305,6 +436,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   title: 'Driver profile name',
                   subtitle: '$_driverName · Tap to edit',
                   onTap: _showEditDriverNameDialog,
+                ),
+                const Divider(height: 1, indent: 56, color: AppColors.glassBorder),
+                _buildSettingTile(
+                  icon: _themeMode == 'day'
+                      ? Icons.light_mode_rounded
+                      : _themeMode == 'night'
+                          ? Icons.dark_mode_rounded
+                          : Icons.brightness_auto,
+                  title: 'Car display theme',
+                  subtitle: _themeMode == 'day'
+                      ? 'Day · Forced light theme'
+                      : _themeMode == 'night'
+                          ? 'Night · Forced dark theme'
+                          : 'Auto · Follows car headlights',
+                  onTap: _showThemePicker,
                 ),
                 const Divider(height: 1, indent: 56, color: AppColors.glassBorder),
                 _buildSettingTile(

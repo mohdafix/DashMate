@@ -1,4 +1,4 @@
-package com.dashmate.dashmate
+﻿package com.dashmate.dashmate
 
 import android.content.Context
 import android.content.Intent
@@ -48,6 +48,7 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        DashMateTheme.init(this)
         val messenger = flutterEngine.dartExecutor.binaryMessenger
 
         // 1. Legacy DashMate Channel for existing widgets & screens
@@ -200,7 +201,25 @@ class MainActivity : FlutterActivity() {
                     DashMateStateBridge.customPageMode = mode
                     getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE).edit().putString("customPage", mode).apply()
                     getSharedPreferences("DashMatePrefs", Context.MODE_PRIVATE).edit().putString("customPage", mode).apply()
-                    DashMateStateBridge.notifyStateChanged(this)
+                    DashMateStateBridge.setPage("custom:$mode")
+                    result.success(true)
+                }
+                "getThemeMode" -> {
+                    result.success(DashMateTheme.getThemeMode(this))
+                }
+                "requestCalendarPermission" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        requestPermissions(arrayOf(android.Manifest.permission.READ_CALENDAR), 101)
+                    }
+                    result.success(true)
+                }
+                "checkCalendar" -> {
+                    val granted = ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
+                    result.success(granted)
+                }
+                "setThemeMode" -> {
+                    val mode = call.argument<String>("mode") ?: DashMateTheme.MODE_AUTO
+                    DashMateTheme.setThemeMode(this, mode)
                     result.success(true)
                 }
                 else -> result.notImplemented()
@@ -323,7 +342,26 @@ class MainActivity : FlutterActivity() {
             when (call.method) {
                 "setTheme" -> {
                     val mode = call.argument<String>("mode") ?: "dark"
-                    sp.edit().putString("theme", mode).apply()
+                    val mapped = if (mode == "light") DashMateTheme.MODE_DAY else DashMateTheme.MODE_NIGHT
+                    DashMateTheme.setThemeMode(this, mapped)
+                    result.success(true)
+                }
+                "getThemeMode" -> {
+                    result.success(DashMateTheme.getThemeMode(this))
+                }
+                "requestCalendarPermission" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        requestPermissions(arrayOf(android.Manifest.permission.READ_CALENDAR), 101)
+                    }
+                    result.success(true)
+                }
+                "checkCalendar" -> {
+                    val granted = ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
+                    result.success(granted)
+                }
+                "setThemeMode" -> {
+                    val mode = call.argument<String>("mode") ?: DashMateTheme.MODE_AUTO
+                    DashMateTheme.setThemeMode(this, mode)
                     result.success(true)
                 }
                 "setCarTemplate" -> {
@@ -425,6 +463,18 @@ class MainActivity : FlutterActivity() {
                     DashMateStateBridge.notifyStateChanged(this)
                     result.success(true)
                 }
+                "setLayoutMode" -> {
+                    val mode = call.argument<String>("mode") ?: "auto"
+                    sp.edit().putString(DashMateStateBridge.LAYOUT_MODE_KEY, mode).apply()
+                    getSharedPreferences("DashMatePrefs", Context.MODE_PRIVATE)
+                        .edit().putString(DashMateStateBridge.LAYOUT_MODE_KEY, mode).apply()
+                    DashMateStateBridge.notifyStateChanged(this)
+                    DashMateStateBridge.executeScript("if (window.ddSetLayoutMode) window.ddSetLayoutMode('$mode');")
+                    result.success(true)
+                }
+                "getLayoutMode" -> {
+                    result.success(DashMateStateBridge.layoutMode(this))
+                }
                 else -> result.notImplemented()
             }
         }
@@ -504,6 +554,24 @@ class MainActivity : FlutterActivity() {
                     val speed = call.argument<Double>("speed") ?: 0.0
                     DashMateStateBridge.currentSpeed = speed.toFloat()
                     DashMateStateBridge.notifyStateChanged(this)
+                    result.success(true)
+                }
+                "getThemeMode" -> {
+                    result.success(DashMateTheme.getThemeMode(this))
+                }
+                "requestCalendarPermission" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        requestPermissions(arrayOf(android.Manifest.permission.READ_CALENDAR), 101)
+                    }
+                    result.success(true)
+                }
+                "checkCalendar" -> {
+                    val granted = ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
+                    result.success(granted)
+                }
+                "setThemeMode" -> {
+                    val mode = call.argument<String>("mode") ?: DashMateTheme.MODE_AUTO
+                    DashMateTheme.setThemeMode(this, mode)
                     result.success(true)
                 }
                 "setPrayerZone" -> {
@@ -632,21 +700,39 @@ class MainActivity : FlutterActivity() {
                 "getLanguage" -> {
                     result.success(LocalizationManager.getLanguage(this))
                 }
-                "setPage" -> {
+                "setPage", "setCarPage" -> {
                     val page = call.argument<String>("page") ?: "home"
                     DashMateStateBridge.setPage(page)
                     result.success(true)
                 }
-                "setCarPage", "setCustomPageMode" -> {
-                    val mode = call.argument<String>("page")
-                        ?: call.argument<String>("mode")
+                "setCustomPageMode" -> {
+                    val mode = call.argument<String>("mode")
+                        ?: call.argument<String>("page")
                         ?: "weather"
                     DashMateStateBridge.customPageMode = mode
                     getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
                         .edit().putString("customPage", mode).apply()
                     getSharedPreferences("DashMatePrefs", Context.MODE_PRIVATE)
                         .edit().putString("customPage", mode).apply()
-                    DashMateStateBridge.notifyStateChanged(this)
+                    DashMateStateBridge.setPage("custom:$mode")
+                    result.success(true)
+                }
+                "getThemeMode" -> {
+                    result.success(DashMateTheme.getThemeMode(this))
+                }
+                "requestCalendarPermission" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        requestPermissions(arrayOf(android.Manifest.permission.READ_CALENDAR), 101)
+                    }
+                    result.success(true)
+                }
+                "checkCalendar" -> {
+                    val granted = ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
+                    result.success(granted)
+                }
+                "setThemeMode" -> {
+                    val mode = call.argument<String>("mode") ?: DashMateTheme.MODE_AUTO
+                    DashMateTheme.setThemeMode(this, mode)
                     result.success(true)
                 }
                 "getCustomPageMode" -> {

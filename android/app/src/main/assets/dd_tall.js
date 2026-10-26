@@ -1,4 +1,4 @@
-/* DashMate car pages: the "Always tall" layout lock (phone app › Settings › Car layout).
+﻿/* DashMate car pages: the "Always tall" layout lock (phone app › Settings › Car layout).
  *
  * Included at the end of <head> on every car page, after its <style>, so it runs before the
  * first paint. When the mode is "tall" (the default) and the page is not in the small Android
@@ -17,15 +17,20 @@
   if (q) mode = q[1];
   try { if (!mode && (window.DashMate?.layoutMode || window.DriveDeck?.layoutMode)) mode = (window.DashMate || window.DriveDeck).layoutMode(); } catch (e) {}
   try { if (!mode) mode = localStorage.getItem('dd_layout_mode'); } catch (e) {}
-  window.ddLayoutMode = mode === 'auto' ? 'auto' : 'tall';
+  window.ddLayoutMode = mode === 'tall' ? 'tall' : 'auto';
 
   // Same test as the pages' small-panel media query / isSmallPanel(): the tall grid can't fit there.
   function smallPanel() {
     var w = window.innerWidth, h = window.innerHeight;
     return w > 0 && h > 0 && h <= w * 1.05 && w < 620 && w / h <= 1.35;
   }
+  function isPortrait() {
+    return window.innerHeight > window.innerWidth * 1.05;
+  }
   /** True when the page should use its tall placement / tall UI whatever the surface shape. */
-  window.ddTallLock = function () { return window.ddLayoutMode === 'tall' && !smallPanel(); };
+  window.ddTallLock = function () {
+    return (window.ddLayoutMode === 'tall' || (window.ddLayoutMode === 'auto' && isPortrait())) && !smallPanel();
+  };
 
   // ---- Copy portrait @media rules under :where(html.dd-tall) ----
   var REF_W = 720, REF_H = 1280;   // a tall car screen (Jaecoo J7 class), in CSS px

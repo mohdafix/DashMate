@@ -1495,7 +1495,15 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   function isTallScreen() { return isPortraitSurface() || (window.ddTallLock ? window.ddTallLock() : false); }
   var customLayout = null;
   function pickLayout() {
-    if (customLayout) return customLayout;
+    var isCustomPage = (customLayout != null) || document.body.classList.contains('pg-custom') || (document.body.dataset.page && document.body.dataset.page.indexOf('custom') === 0);
+    if (isCustomPage) {
+      if (customLayout) return customLayout;
+      return { v: 2, textScale: 1, clockFont: 'thin', widgets: [
+        { id: 'forecast', x: 1, y: 1, w: 6, h: 8 },
+        { id: 'air', x: 7, y: 1, w: 6, h: 4 },
+        { id: 'radar', x: 7, y: 5, w: 6, h: 4 }
+      ] };
+    }
     // Tall screens (Jaecoo J7) always use the tall layout; the wide one is only for wide screens.
     if (isTallScreen()) {
       return (layoutPort && layoutPort.widgets && layoutPort.widgets.length > 0) ? layoutPort : DEFAULT_PORTRAIT_LAYOUT;
@@ -2259,10 +2267,23 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
     if (p.speedOnly) return;
     if (p.labels) L = p.labels;
     if (p.lang) LANG = p.lang;
+    var prevPage = document.body.dataset.page;
+    document.body.dataset.page = p.page || 'home';
+    if (prevPage && prevPage !== p.page) {
+      layoutKey = null;
+    }
+    var isCustom = (p.page === 'custom' || (p.page && p.page.indexOf('custom') === 0));
+    document.body.classList.toggle('pg-custom', isCustom);
     // The Custom page (forecast / air / radar) sends its own fixed layout under p.layout.
-    customLayout = (p.page === 'custom' && p.layout && p.layout.widgets) ? p.layout : null;
-    if (!customLayout && p.layout && p.layout.widgets && p.layout.widgets.length > 0) {
-      layoutLand = p.layout;
+    if (isCustom) {
+      if (p.layout && p.layout.widgets && p.layout.widgets.length > 0) {
+        customLayout = p.layout;
+      }
+    } else {
+      customLayout = null;
+      if (p.layout && p.layout.widgets && p.layout.widgets.length > 0) {
+        layoutLand = p.layout;
+      }
     }
     if (p.layoutP) layoutPort = p.layoutP;
     applyLayout(pickLayout());
@@ -2276,7 +2297,6 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
     renderFuel(p.fuel);
     ['forecast', 'air', 'radar', 'sports', 'calendar', 'football', 'ev'].forEach(function (k) { extras[k] = p[k]; });
     rainNote = p.weather && p.weather.rain;
-    document.body.classList.toggle('pg-custom', p.page === 'custom');
     document.body.className = document.body.className.replace(/\bfn-\w+/g, '').trim() + (p.fn ? ' fn-' + p.fn : '');
     renderExtras();
     clock();

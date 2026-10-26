@@ -32,7 +32,8 @@ class DashMateSession : Session() {
             override fun onCreate(owner: LifecycleOwner) {
                 isSessionActive = true
                 DashMateTheme.carSessionActive = true
-                DashMateTheme.set(carContext.isDarkMode)
+                DashMateTheme.init(carContext)
+                DashMateTheme.onCarNightModeChanged(carContext.isDarkMode)
                 CarNav.attach(carContext)
                 val app = carContext.applicationContext
                 DashMateCarLife.watchConnection(app)
@@ -62,7 +63,7 @@ class DashMateSession : Session() {
     /** Android Auto flips day/night (headlights, sunset) without restarting the session. */
     override fun onCarConfigurationChanged(newConfiguration: Configuration) {
         super.onCarConfigurationChanged(newConfiguration)
-        DashMateTheme.set(carContext.isDarkMode)
+        DashMateTheme.onCarNightModeChanged(carContext.isDarkMode)
     }
 
     override fun onCreateScreen(intent: Intent): Screen {

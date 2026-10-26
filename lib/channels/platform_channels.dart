@@ -128,4 +128,28 @@ class PlatformChannels {
       await legacy.invokeMethod('setCustomPageMode', {'mode': mode});
     } catch (_) {}
   }
+
+  static Future<String> getThemeMode() async {
+    try {
+      final res = await browser.invokeMethod<String>('getThemeMode');
+      if (res != null && res.isNotEmpty) return res;
+    } catch (_) {}
+    try {
+      final res = await legacy.invokeMethod<String>('getThemeMode');
+      if (res != null && res.isNotEmpty) return res;
+    } catch (_) {}
+    return 'auto';
+  }
+
+  static Future<void> setThemeMode(String mode) async {
+    try {
+      await browser.invokeMethod('setThemeMode', {'mode': mode});
+    } catch (_) {}
+    try {
+      await legacy.invokeMethod('setThemeMode', {'mode': mode});
+    } catch (_) {}
+    try {
+      await carState.invokeMethod('setThemeMode', {'mode': mode});
+    } catch (_) {}
+  }
 }

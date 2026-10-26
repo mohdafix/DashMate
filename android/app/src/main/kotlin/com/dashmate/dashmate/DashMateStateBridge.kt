@@ -46,9 +46,11 @@ object DashMateStateBridge {
 
     fun layoutMode(context: Context?): String {
         val v = try {
-            context?.getSharedPreferences("dd_car_browser", Context.MODE_PRIVATE)?.getString(LAYOUT_MODE_KEY, null)
+            val sp = context?.getSharedPreferences("dd_car_browser", Context.MODE_PRIVATE)
+            val spPrefs = context?.getSharedPreferences("DashMatePrefs", Context.MODE_PRIVATE)
+            sp?.getString(LAYOUT_MODE_KEY, null) ?: spPrefs?.getString(LAYOUT_MODE_KEY, null)
         } catch (_: Exception) { null }
-        return if (v == "auto") "auto" else "tall"
+        return if (v == "tall") "tall" else "auto"
     }
 
     var isGps: Boolean = true
@@ -169,13 +171,25 @@ object DashMateStateBridge {
     private var lastMediaKey = ""
 
     fun setPage(page: String) {
-        if (currentPage == page && page != "custom") return
-        currentPage = page
+        val targetPage: String
+        if (page.startsWith("custom")) {
+            val parts = page.split(":")
+            if (parts.size > 1 && parts[1].isNotBlank()) {
+                customPageMode = parts[1]
+            }
+            targetPage = "custom"
+        } else {
+            targetPage = page
+        }
+
+        if (currentPage == targetPage && targetPage != "custom") return
+        currentPage = targetPage
         mainHandler.post {
             for (listener in listeners) {
-                listener.onSwitchPage(page)
+                listener.onSwitchPage(targetPage)
             }
         }
+        notifyStateChanged()
     }
 
     fun playWelcomeChime(context: Context) {
@@ -303,16 +317,23 @@ object DashMateStateBridge {
                     ?: spPrefs.getString("driver_name", null)
                     ?: spBrowser.getString("owner_name", null)
                     ?: "Mohamad Afix"
-                val savedCustom = spBrowser.getString("customPage", null)
+                val savedCustom = spBrowser.getString("custom_page_modes", null)
+                    ?: spBrowser.getString("customPage", null)
+                    ?: spPrefs.getString("custom_page_modes", null)
                     ?: spPrefs.getString("customPage", null)
+                val validCustomModes = setOf("weather", "calendar", "sports", "radar", "ev")
                 if (!savedCustom.isNullOrBlank()) {
-                    customPageMode = savedCustom
+                    val filtered = savedCustom.split(",").map { it.trim().lowercase() }.filter { it in validCustomModes }
+                    if (filtered.isNotEmpty()) {
+                        customPageMode = filtered.joinToString(",")
+                    }
                 }
             } catch (_: Exception) {}
         }
         root.put("driverName", driverName)
 
-        root.put("fn", if (currentPage == "custom") customPageMode else activeFont)
+        root.put("layoutMode", layoutMode(context))
+        root.put("fn", if (currentPage == "custom") (customPageMode.split(",").firstOrNull() ?: "weather") else activeFont)
         root.put("page", currentPage)
         root.put("carCard", carCardMode)
         root.put("customPage", customPageMode)
@@ -324,23 +345,46 @@ object DashMateStateBridge {
                 put("textScale", 1)
                 put("clockFont", "thin")
                 val widgets = JSONArray()
-                when (customPageMode) {
-                    "calendar" -> {
-                        widgets.put(JSONObject().apply { put("id", "calendar"); put("x", 1); put("y", 1); put("w", 12); put("h", 8) })
+                val validCustomModes = setOf("weather", "calendar", "sports", "radar", "ev")
+                val items = customPageMode.split(",").map { it.trim().lowercase() }.filter { it in validCustomModes }
+                val selectedItems = if (items.isEmpty()) listOf("weather") else items
+                when (selectedItems.size) {
+                    1 -> {
+                        when (selectedItems[0]) {
+                            "calendar" -> widgets.put(JSONObject().apply { put("id", "calendar"); put("x", 1); put("y", 1); put("w", 12); put("h", 8) })
+                            "sports" -> widgets.put(JSONObject().apply { put("id", "sports"); put("x", 1); put("y", 1); put("w", 12); put("h", 8) })
+                            "radar" -> widgets.put(JSONObject().apply { put("id", "radar"); put("x", 1); put("y", 1); put("w", 12); put("h", 8) })
+                            "ev" -> widgets.put(JSONObject().apply { put("id", "ev"); put("x", 1); put("y", 1); put("w", 12); put("h", 8) })
+                            else -> { // "weather"
+                                widgets.put(JSONObject().apply { put("id", "forecast"); put("x", 1); put("y", 1); put("w", 6); put("h", 8) })
+                                widgets.put(JSONObject().apply { put("id", "air"); put("x", 7); put("y", 1); put("w", 6); put("h", 4) })
+                                widgets.put(JSONObject().apply { put("id", "radar"); put("x", 7); put("y", 5); put("w", 6); put("h", 4) })
+                            }
+                        }
                     }
-                    "sports" -> {
-                        widgets.put(JSONObject().apply { put("id", "sports"); put("x", 1); put("y", 1); put("w", 12); put("h", 8) })
+                    2 -> {
+                        val leftId = if (selectedItems[0] == "weather") "forecast" else selectedItems[0]
+                        val rightId = if (selectedItems[1] == "weather") "forecast" else selectedItems[1]
+                        widgets.put(JSONObject().apply { put("id", leftId); put("x", 1); put("y", 1); put("w", 6); put("h", 8) })
+                        widgets.put(JSONObject().apply { put("id", rightId); put("x", 7); put("y", 1); put("w", 6); put("h", 8) })
                     }
-                    "radar" -> {
-                        widgets.put(JSONObject().apply { put("id", "radar"); put("x", 1); put("y", 1); put("w", 12); put("h", 8) })
+                    3 -> {
+                        val id1 = if (selectedItems[0] == "weather") "forecast" else selectedItems[0]
+                        val id2 = if (selectedItems[1] == "weather") "forecast" else selectedItems[1]
+                        val id3 = if (selectedItems[2] == "weather") "forecast" else selectedItems[2]
+                        widgets.put(JSONObject().apply { put("id", id1); put("x", 1); put("y", 1); put("w", 6); put("h", 8) })
+                        widgets.put(JSONObject().apply { put("id", id2); put("x", 7); put("y", 1); put("w", 6); put("h", 4) })
+                        widgets.put(JSONObject().apply { put("id", id3); put("x", 7); put("y", 5); put("w", 6); put("h", 4) })
                     }
-                    "ev" -> {
-                        widgets.put(JSONObject().apply { put("id", "ev"); put("x", 1); put("y", 1); put("w", 12); put("h", 8) })
-                    }
-                    else -> { // "weather"
-                        widgets.put(JSONObject().apply { put("id", "forecast"); put("x", 1); put("y", 1); put("w", 6); put("h", 8) })
-                        widgets.put(JSONObject().apply { put("id", "air"); put("x", 7); put("y", 1); put("w", 6); put("h", 4) })
-                        widgets.put(JSONObject().apply { put("id", "radar"); put("x", 7); put("y", 5); put("w", 6); put("h", 4) })
+                    else -> {
+                        val id1 = if (selectedItems[0] == "weather") "forecast" else selectedItems[0]
+                        val id2 = if (selectedItems[1] == "weather") "forecast" else selectedItems[1]
+                        val id3 = if (selectedItems[2] == "weather") "forecast" else selectedItems[2]
+                        val id4 = if (selectedItems[3] == "weather") "forecast" else selectedItems[3]
+                        widgets.put(JSONObject().apply { put("id", id1); put("x", 1); put("y", 1); put("w", 6); put("h", 4) })
+                        widgets.put(JSONObject().apply { put("id", id2); put("x", 7); put("y", 1); put("w", 6); put("h", 4) })
+                        widgets.put(JSONObject().apply { put("id", id3); put("x", 1); put("y", 5); put("w", 6); put("h", 4) })
+                        widgets.put(JSONObject().apply { put("id", id4); put("x", 7); put("y", 5); put("w", 6); put("h", 4) })
                     }
                 }
                 put("widgets", widgets)

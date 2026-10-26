@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -53,8 +53,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _useKmh = true;
   String _welcomeSound = "Chime";
   bool _autoStart = true;
-  String _layoutMode = "Tall Display (Portrait)";
+  String _layoutMode = "Wide Display (Landscape)";
   String _driverName = "Mohamad Afix";
+  String _themeMode = "auto";
 
   String _getDriverInitials(String name) {
     final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
@@ -193,7 +194,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
     try {
       final prefs = await SharedPreferences.getInstance();
-      final mode = prefs.getString('dashmate_layout_mode') ?? 'tall';
+      final mode = prefs.getString('dashmate_layout_mode') ?? 'auto';
       if (mounted) {
         setState(() => _layoutMode = mode == 'tall' ? 'Tall Display (Portrait)' : 'Wide Display (Landscape)');
       }
@@ -207,6 +208,129 @@ class _DashboardScreenState extends State<DashboardScreen> {
     try {
       await _channel.invokeMethod('setAutoStart', {'enabled': val});
     } catch (_) {}
+  }
+
+  
+  Future<void> _updateThemeMode(String mode) async {
+    setState(() => _themeMode = mode);
+    await PlatformChannels.setThemeMode(mode);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('theme_mode', mode);
+    } catch (_) {}
+    if (mounted) {
+      final label = mode == 'day' ? 'Day (Light)' : mode == 'night' ? 'Night (Dark)' : 'Auto (Headlights)';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Car display theme set to $label'),
+          backgroundColor: const Color(0xFF16253B),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    }
+  }
+
+  void _showThemePicker() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.palette_outlined, color: AppColors.accentTeal, size: 22),
+                    SizedBox(width: 10),
+                    Text(
+                      'Car Display Theme',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Choose whether the car display stays in day or night mode, or adapts automatically.',
+                  style: TextStyle(fontSize: 12, color: AppColors.textSub),
+                ),
+                const SizedBox(height: 16),
+                _buildThemeOptionTile(
+                  keyName: 'auto',
+                  title: 'Auto',
+                  subtitle: 'Adapts to car headlights & day / sunset signals',
+                  icon: Icons.brightness_auto,
+                  color: AppColors.accentTeal,
+                ),
+                const Divider(height: 1, color: Colors.white10),
+                _buildThemeOptionTile(
+                  keyName: 'day',
+                  title: 'Day',
+                  subtitle: 'Forced light theme · High daytime visibility',
+                  icon: Icons.light_mode_rounded,
+                  color: const Color(0xFFFFB86C),
+                ),
+                const Divider(height: 1, color: Colors.white10),
+                _buildThemeOptionTile(
+                  keyName: 'night',
+                  title: 'Night',
+                  subtitle: 'Forced dark theme · Soft charcoal, reduces glare',
+                  icon: Icons.dark_mode_rounded,
+                  color: const Color(0xFFBA68C8),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildThemeOptionTile({
+    required String keyName,
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+  }) {
+    final isSelected = _themeMode == keyName;
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      leading: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(icon, color: color, size: 20),
+      ),
+      title: Text(
+        title,
+        style: TextStyle(
+          fontSize: 15,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+          color: Colors.white,
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: const TextStyle(fontSize: 12, color: AppColors.textSub),
+      ),
+      trailing: isSelected
+          ? const Icon(Icons.check_circle, color: AppColors.accentTeal, size: 22)
+          : null,
+      onTap: () {
+        Navigator.pop(context);
+        _updateThemeMode(keyName);
+      },
+    );
   }
 
   void _showCarLayoutDialog() {
@@ -246,7 +370,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 leading: const Icon(Icons.auto_awesome, color: Color(0xFF5EBEFF)),
                 title: const Text('Wide Display (Landscape)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                 subtitle: const Text('Adapts dynamically to wide landscape screens reported by Android Auto', style: TextStyle(color: AppColors.textSub, fontSize: 12)),
-                trailing: _layoutMode.contains('Auto') ? const Icon(Icons.check, color: AppColors.accentTeal) : null,
+                trailing: !_layoutMode.contains('Tall') ? const Icon(Icons.check, color: AppColors.accentTeal) : null,
                 onTap: () async {
                   setState(() => _layoutMode = 'Wide Display (Landscape)');
                   _loadLayout();
@@ -474,6 +598,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } catch (_) {}
 
     try {
+      final themeMode = await PlatformChannels.getThemeMode();
+      if (mounted) setState(() => _themeMode = themeMode);
       final granted = await PlatformChannels.isNotificationAccessGranted();
       if (mounted) setState(() => _notifGranted = granted);
     } catch (_) {}
@@ -1525,6 +1651,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 title: 'Car On-Screen Keyboard',
                 subtitle: 'Active · Tap YouTube / search box on car to type',
                 onTap: _showKeyboardInfoDialog,
+              ),
+              const Divider(height: 1, color: Colors.white10),
+              _buildSettingTile(
+                icon: _themeMode == 'day'
+                    ? Icons.light_mode_rounded
+                    : _themeMode == 'night'
+                        ? Icons.dark_mode_rounded
+                        : Icons.brightness_auto,
+                iconColor: _themeMode == 'day'
+                    ? const Color(0xFFFFB86C)
+                    : _themeMode == 'night'
+                        ? const Color(0xFFBA68C8)
+                        : AppColors.accentTeal,
+                title: 'Car Display Theme',
+                subtitle: _themeMode == 'day'
+                    ? 'Day · Forced light'
+                    : _themeMode == 'night'
+                        ? 'Night · Forced dark'
+                        : 'Auto · Follows headlights',
+                onTap: _showThemePicker,
               ),
             ],
           ),
