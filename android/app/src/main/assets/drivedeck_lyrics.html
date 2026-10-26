@@ -87,6 +87,12 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
     font-size: 2.4vh; font-weight: 600; padding: .6vh 1.6vh; border-radius: 99px; color: var(--ink-2);
     background: var(--surface-2); border: 1px solid var(--border);
   }
+  /* Lyrics Earlier / Later: lines up the lyrics with the car's sound (saved for next time). */
+  #sync { display: flex; align-items: center; gap: 1vh; margin-top: 1.4vh; }
+  #sync button { font: inherit; font-size: 2.3vh; font-weight: 600; min-height: 44px; padding: .5vh 1.8vh; border-radius: 99px;
+                 border: 1px solid var(--border); background: var(--surface); color: var(--ink); cursor: pointer; }
+  #syncHint { font-size: 1.9vh; color: var(--ink-3); margin-top: .6vh; }
+  #syncVal { font-size: 2.2vh; color: var(--ink-2); min-width: 9vh; text-align: center; font-variant-numeric: tabular-nums; }
   .chip.live { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 700; }
   #progress { height: .9vh; min-height: 4px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; }
   /* Progress grows with transform (compositor only); JS sets scaleX each frame. */
@@ -205,6 +211,8 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
       <div id="title">DashMate</div>
       <div id="artist">Waiting for music…</div>
       <div id="chips"></div>
+      <div id="sync"><button type="button" data-delay="-250" aria-label="Show lyrics sooner">◀ Sooner</button><span id="syncVal"></span><button type="button" data-delay="250" aria-label="Show lyrics later">Later ▶</button></div>
+      <div id="syncHint">Lyrics ahead of the singer? Tap Later.</div>
     </div>
     <div id="progress"><div id="bar"></div></div>
     <div id="controls">
@@ -296,6 +304,16 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   }
 
   /** Re-anchors the clock to `target` ms: glide if close, jump otherwise. */
+  function showDelay(ms) {
+    var e = document.getElementById('syncVal');
+    if (e) e.textContent = (ms > 0 ? '+' : '') + (ms / 1000).toFixed(2) + ' s';
+  }
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-delay]');
+    if (!b || !window.AutoDeck || !AutoDeck.lyricsDelay) return;
+    // "Later" = lyrics wait longer for the car's sound; the new delay arrives with the next update.
+    showDelay(AutoDeck.lyricsDelay(+b.getAttribute('data-delay')));
+  });
   function syncClock(target, playing, hard) {
     var now = performance.now();
     var current = rawPosition(now);
@@ -407,7 +425,7 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
     if (p.app) chips += '<span class="chip">' + escapeHtml(p.app) + '</span>';
     if (p.playing) chips += '<span class="chip live">▶ ' + escapeHtml(tr('playing', 'Playing')) + '</span>';
     if (p.cached) chips += '<span class="chip">' + escapeHtml(tr('cached', 'Cached')) + '</span>';
-    if (p.unsynced) chips += '<span class="chip">' + escapeHtml(tr('syncNext', 'Lyrics sync from the next song')) + '</span>';
+    if (p.unsynced) chips += '<span class="chip">' + escapeHtml(tr('syncNext', 'Tuned in mid-song · lyrics follow along from the next song')) + '</span>';
     else if (p.approx) chips += '<span class="chip">' + escapeHtml(tr('approx', 'approx. sync')) + '</span>';
     $('chips').innerHTML = chips;
 
@@ -416,12 +434,15 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
       lastArt = p.art;
       var art = p.art ? 'url("' + p.art + '")' : '';
       $('cover').style.backgroundImage = art;
-      $('bg').style.backgroundImage = art;
+      // A station badge (no album cover found) is not used as the background: it stays plain.
+      $('bg').style.backgroundImage = (p.art && p.art.indexOf('data:image/svg') !== 0) ? art : '';
     }
 
     var key = (p.title || '') + '|' + (p.artist || '') + '|' + p.status + '|' + (p.lines ? p.lines.length : 0) + '|' + (p.unsynced ? 'u' : 's');
     var transit = p.sentAtMs ? Math.min(Math.max(0, Date.now() - p.sentAtMs), 1500) : 0;
-    var target = (p.positionMs || 0) + (p.playing ? transit : 0);
+    // delayMs: the car plays the sound a little after the phone's clock (Earlier / Later buttons).
+    var target = (p.positionMs || 0) - (p.delayMs || 0) + (p.playing ? transit : 0);
+    showDelay(p.delayMs || 0);
     syncClock(target, !!p.playing, key !== state.key);
     setPlayIcon(!!p.playing);
     state.duration = p.durationMs || 0;

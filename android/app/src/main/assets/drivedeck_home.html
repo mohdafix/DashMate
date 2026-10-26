@@ -105,9 +105,12 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   .w.sq { border-radius: calc(var(--u) * .2); }
   .in { width: 100%; height: 100%; display: flex; min-width: 0; min-height: 0;
         padding: clamp(10px, min(13cqh, 5.5cqw), 22px) clamp(14px, min(15cqh, 6.5cqw), 26px); }
-  /* Solid plate: surface colour, hairline edge, one soft shadow by day (none at night). No blur.
-     Over a photo / song cover the plate is ~94% (day) / ~90% (night) opaque. */
+  /* Solid plate: surface colour, hairline edge, soft shadow by day. No blur. */
   .tile { background: var(--tile-bg); border: 1px solid var(--border); box-shadow: var(--shadow); }
+  /* Owner, 26 Oct: rounder, softer cards (solid, no blur). */
+  .w.tile:not(.sq) { border-radius: max(22px, calc(var(--u) * 2.3)); }
+  .tile { box-shadow: 0 8px 28px -12px rgba(15,23,42,.16), 0 1px 3px rgba(15,23,42,.05); }
+  :root[data-theme="dark"] .tile { box-shadow: none; }
   .w[data-ta="center"] .in { text-align: center; }
   .w[data-ta="right"] .in { text-align: right; }
   /* Phone widget editor only (never on the car). */
@@ -357,6 +360,26 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
            background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 35%, transparent); }
   #rdInfo { position: absolute; left: .6em; top: .5em; font-size: max(var(--f14), calc(min(7cqh, 3.5cqw) * var(--k))); font-weight: 700;
             color: var(--ink); background: var(--photo-surface); padding: .15em .6em; border-radius: 99px; }
+  /* Radar card: Rain radar or Map (street map with the car's GPS, owner 26 Oct); the choice is remembered. */
+  /* Map mode: the car as a blue dot (an arrow when moving); the ◎ button is lit while following. */
+  #rdDot.car { width: 18px; height: 18px; margin: -9px; background: #2563EB; border: 3px solid #fff;
+               box-shadow: 0 0 0 6px rgba(37,99,235,.25), 0 2px 6px rgba(0,0,0,.3); }
+  #rdDot.car.heading::after { content: ""; position: absolute; left: 50%; top: -14px; margin-left: -7px; border: 7px solid transparent;
+               border-bottom: 10px solid #2563EB; transform-origin: 7px 21px; transform: rotate(var(--bearing, 0deg)); }
+  .w.mapmode.follow #rdCtl button[data-rdz="0"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  /* Zoom buttons + drag to move (owner, 26 Oct). */
+  #rdMap { touch-action: none; }
+  #rdCtl { position: absolute; right: .5em; bottom: 1.6em; z-index: 2; display: flex; flex-direction: column; gap: 6px; }
+  #rdCtl button { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface);
+                  color: var(--ink); font-family: inherit; font-weight: 700; font-size: 24px; line-height: 1; box-shadow: 0 2px 8px rgba(0,0,0,.15); cursor: pointer; }
+  #rdCtl button[data-rdz="0"] { font-size: 18px; }
+  @container tile (max-height: 200px) { #rdCtl { flex-direction: row; bottom: .4em; } #rdCtl button { width: 36px; height: 36px; font-size: 20px; } }
+  #rdSwitch { position: absolute; right: .5em; top: .5em; z-index: 2; display: flex; padding: 3px; gap: 2px; border-radius: 99px;
+              background: var(--surface);
+              border: 1px solid var(--border); box-shadow: 0 2px 10px rgba(0,0,0,.12); }
+  #rdSwitch button { border: 0; background: transparent; color: var(--ink-2); font-family: inherit; font-weight: 600; font-size: max(13px, calc(min(5cqh, 2.6cqw) * var(--k))); line-height: 1;
+                     padding: .55em .95em; border-radius: 99px; min-height: 36px; cursor: pointer; }
+  #rdSwitch button.on { background: var(--accent); color: var(--on-accent); }
   #rdAttr { position: absolute; right: .4em; bottom: .2em; font-size: 9px; color: var(--ink-2); background: var(--photo-surface); padding: 0 .3em; border-radius: 4px; }
 
   /* YouTube: search + quick pages; opens YouTube in the car browser (video plays only when parked). */
@@ -1121,7 +1144,7 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   @container tile (max-height: 80px) { #lyr { display: none; } }
   .w[data-w="music"] #progress { height: 4px; }
   .w.unsync #lyr > #line { font-weight: 500; color: var(--dim); font-size: max(var(--f13), calc(min(6cqw, 3cqh) * var(--k))); }
-  .w.unsync #lyr > #prevL { opacity: 1; color: var(--accent); font-weight: 600; }
+  .w.unsync #lyr > #prevL { opacity: 1; color: var(--accent); font-weight: 600; white-space: normal; text-overflow: clip; margin-bottom: .3em; }
   #lyr > .lx.xl { display: none; }
   /* Owner, 26 Oct: tall music card = art, song and artist on top · lyrics fill the middle ·
      buttons at the bottom, with clear space between the three groups. */
@@ -1179,7 +1202,9 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   <div class="w tile" data-w="air"><div class="in aq">
     <div class="tl" id="aqTitle">Air quality</div><div id="aqVal">–</div><div id="aqCat"></div><div id="aqMore"></div></div></div>
   <div class="w tile" data-w="radar"><div class="in"><div id="rdMap"></div><div id="rdDot"></div>
-    <div id="rdInfo"></div><div id="rdAttr">© OpenStreetMap · RainViewer</div></div></div>
+    <div id="rdInfo"></div><div id="rdAttr">© OpenStreetMap · RainViewer</div>
+    <div id="rdCtl"><button type="button" data-rdz="1" aria-label="Zoom in">+</button><button type="button" data-rdz="-1" aria-label="Zoom out">−</button><button type="button" data-rdz="0" aria-label="Back to my area">◎</button></div>
+    <div id="rdSwitch"><button type="button" data-rdmode="radar">Radar</button><button type="button" data-rdmode="map">Map</button></div></div></div>
   <div class="w tile" data-w="sports"><div class="in sp"><div class="sp-h"><div class="tl" id="spTitle">Sports</div><span class="sp-live" id="spLive"><i></i><span></span></span><div class="cv sp-tabs" id="spTabs"></div></div><div id="spChips"></div><div id="spList"></div></div></div>
   <div class="w tile" data-w="ev"><div class="in evw"><div class="tl" id="evTitle">EV charging nearby</div>
     <div class="ev-b"><div id="evList"></div><div id="evMap"></div></div><div id="evAttr">© Open Charge Map · OpenStreetMap</div></div></div>
@@ -1328,11 +1353,14 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
       var art = m.art ? 'url("' + m.art + '")' : '';
       $('cover').style.backgroundImage = art;
       $('cover').textContent = m.art ? '' : '♪';
-      $('bg').style.backgroundImage = art;
-      document.body.classList.toggle('art', !!m.art);
+      // A station badge (no album cover found) is shown on the card only; the background stays plain.
+      var realArt = m.art && m.art.indexOf('data:image/svg') !== 0;
+      $('bg').style.backgroundImage = realArt ? art : '';
+      document.body.classList.toggle('art', !!realArt);
     }
     var transit = m.sentAtMs ? Math.min(Math.max(0, Date.now() - m.sentAtMs), 1500) : 0;
-    state.basePos = (m.positionMs || 0) + (m.playing ? transit : 0);
+    // delayMs: the car plays the sound a little after the phone's clock (set on the Lyrics page).
+    state.basePos = (m.positionMs || 0) - (m.delayMs || 0) + (m.playing ? transit : 0);
     state.baseAt = performance.now();
     state.playing = !!m.playing;
     setPlayIcon(state.playing);
@@ -1350,7 +1378,7 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
       if (state.unsynced && state.lines.length) {
         // Tuned in mid-song: the lyrics can't be timed, so show them plainly (no moving highlight)
         // until the next song starts.
-        $('prevL').textContent = tr('syncNext', 'Lyrics sync from the next song');
+        $('prevL').textContent = tr('syncNext', 'Tuned in mid-song · lyrics follow along from the next song');
         var T = function (k) { var x = state.lines[k]; return x ? (x[1] || '').trim() || '♪' : ''; };
         $('line').textContent = T(0);
         $('next').textContent = T(1); $('n2').textContent = T(2); $('n3').textContent = T(3);
@@ -1647,33 +1675,165 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
 
   // Slippy-map tiles (z/x/y) around the place, base map + latest radar frame.
   var radarKey = null;
-  function renderRadar(r) {
-    if (!on('radar')) return;
-    var box = $('rdMap'), W = box.clientWidth, H = box.clientHeight;
-    var key = r ? r.path + '|' + W + 'x' + H : 'none';
-    if (key === radarKey) return;           // same frame, same size: keep the images
-    radarKey = key;
-    box.textContent = '';
-    if (!r || !W) { $('rdInfo').textContent = tr('noRadar', 'Radar unavailable'); return; }
-    var z = 7, n = Math.pow(2, z), lat = r.lat * Math.PI / 180;
-    var fx = (r.lon + 180) / 360 * n, fy = (1 - Math.log(Math.tan(lat) + 1 / Math.cos(lat)) / Math.PI) / 2 * n;
-    var cx = Math.floor(fx), cy = Math.floor(fy), ox = W / 2 - (fx - cx) * 256, oy = H / 2 - (fy - cy) * 256;
-    var rx = Math.ceil(W / 512) + 1, ry = Math.ceil(H / 512) + 1;
-    for (var dy = -ry; dy <= ry; dy++) for (var dx = -rx; dx <= rx; dx++) {
-      var x = ((cx + dx) % n + n) % n, y = cy + dy;
-      if (y < 0 || y >= n) continue;
-      [['base', 'https://tile.openstreetmap.org/' + z + '/' + x + '/' + y + '.png'],
-       ['rain', r.host + r.path + '/256/' + z + '/' + x + '/' + y + '/2/1_1.png']].forEach(function (t) {
-        var img = document.createElement('img');
-        img.className = t[0]; img.src = t[1]; img.loading = 'lazy';
-        img.style.left = (ox + dx * 256) + 'px'; img.style.top = (oy + dy * 256) + 'px';
-        img.onerror = function () { img.remove(); };
-        box.appendChild(img);
-      });
-    }
-    var d = new Date(r.time * 1000);
-    $('rdInfo').textContent = tr('rainRadar', 'Rain radar') + ' · ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  // ---- Radar card: Rain radar, or Map (street map following the car's GPS) ----
+  // Each mode keeps its own zoom and centre. Radar: 5–12 (RainViewer's free radar stops at 7, so
+  // above that its tiles are enlarged). Map: 5–20 (OpenStreetMap is sharp to 19, then enlarged once).
+  var rdMode = 'radar', lastRadar = null, rdLast = null, gps = null;
+  var VIEW = { radar: { z: 7, min: 5, max: 12, lat: null, lon: null },
+               map: { z: 17, min: 5, max: 20, lat: null, lon: null, follow: true } };
+  var rdPendX = 0, rdPendY = 0, rdTimer = null;
+  try { var sv = localStorage.getItem('dd_rd_mode'); rdMode = sv === 'map' ? 'map' : 'radar';
+        var mz = +localStorage.getItem('dd_map_zoom'); if (mz >= 5 && mz <= 20) VIEW.map.z = mz; } catch (_) {}
+  function tileXY(lat, lon, z) {
+    var n = Math.pow(2, z), r = lat * Math.PI / 180;
+    return [(lon + 180) / 360 * n, (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n];
   }
+  function tileLatLon(x, y, z) {
+    var n = Math.pow(2, z);
+    return [Math.atan(Math.sinh(Math.PI * (1 - 2 * y / n))) * 180 / Math.PI, x / n * 360 - 180];
+  }
+  function home() { return lastRadar ? [lastRadar.lat, lastRadar.lon] : [3.139, 101.6869]; }
+  // Where the view is centred now (the stored centre, the car when following, or the home area).
+  function centre() {
+    var v = VIEW[rdMode];
+    if (rdMode === 'map' && v.follow && gps) return [gps.lat, gps.lng];
+    if (v.lat != null) return [v.lat, v.lon];
+    if (rdMode === 'map' && gps) return [gps.lat, gps.lng];
+    return home();
+  }
+  function renderRadar(r) {
+    if (r) lastRadar = r;
+    rdLast = lastRadar;
+    if (!on('radar')) return;
+    var v = VIEW[rdMode], box = $('rdMap'), W = box.clientWidth, H = box.clientHeight;
+    var c = centre();
+    if (rdPendX || rdPendY) {     // a finished drag: move the centre by the dragged pixels
+      var t = tileXY(c[0], c[1], v.z);
+      c = tileLatLon(t[0] - rdPendX / 256, t[1] - rdPendY / 256, v.z);
+      v.lat = c[0]; v.lon = c[1]; rdPendX = rdPendY = 0;
+      if (rdMode === 'map') v.follow = false;
+    }
+    var radar = rdMode === 'radar' ? lastRadar : null;
+    var key = rdMode + '|' + v.z + '|' + c[0].toFixed(5) + ',' + c[1].toFixed(5) + '|' + W + 'x' + H + '|' + (radar ? radar.path : '') + '|' + document.documentElement.dataset.theme;
+    if (key !== radarKey) {
+      radarKey = key;
+      box.textContent = '';
+      box.style.transform = '';
+      if (!W) return;
+      var ct = tileXY(c[0], c[1], v.z);
+      var layer = function (cls, lz, url) {
+        var ts = 256 * Math.pow(2, v.z - lz), n = Math.pow(2, lz);
+        var fx = ct[0] / Math.pow(2, v.z - lz), fy = ct[1] / Math.pow(2, v.z - lz);
+        var cx = Math.floor(fx), cy = Math.floor(fy);
+        var ox = W / 2 - (fx - cx) * ts, oy = H / 2 - (fy - cy) * ts;
+        var x0 = Math.floor(-ox / ts) - 1, x1 = Math.ceil((W - ox) / ts), y0 = Math.floor(-oy / ts) - 1, y1 = Math.ceil((H - oy) / ts);
+        for (var dy = y0; dy <= y1; dy++) for (var dx = x0; dx <= x1; dx++) {
+          var x = ((cx + dx) % n + n) % n, y = cy + dy;
+          if (y < 0 || y >= n) continue;
+          var img = document.createElement('img');
+          img.className = cls; img.src = url(lz, x, y); img.loading = 'lazy';
+          img.style.left = (ox + dx * ts) + 'px'; img.style.top = (oy + dy * ts) + 'px';
+          img.style.width = img.style.height = ts + 'px';
+          img.onerror = function () { this.remove(); };
+          box.appendChild(img);
+        }
+      };
+      layer('base', Math.min(v.z, 19), function (z, x, y) { return 'https://tile.openstreetmap.org/' + z + '/' + x + '/' + y + '.png'; });
+      if (radar) layer('rain', Math.min(v.z, 7), function (z, x, y) { return radar.host + radar.path + '/256/' + z + '/' + x + '/' + y + '/2/1_1.png'; });
+    }
+    placeDot(c, v.z, W, H);
+    var tile = document.querySelector('.w[data-w="radar"]');
+    if (tile) { tile.classList.toggle('mapmode', rdMode === 'map'); tile.classList.toggle('follow', rdMode === 'map' && !!v.follow); }
+    if (rdMode === 'map') {
+      $('rdInfo').textContent = gps ? tr('yourLocation', 'Your location') : tr('waitingGps', 'Waiting for GPS…');
+      $('rdAttr').textContent = '© OpenStreetMap';
+    } else if (lastRadar) {
+      var d = new Date(lastRadar.time * 1000);
+      $('rdInfo').textContent = tr('rainRadar', 'Rain radar') + ' · ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+      $('rdAttr').textContent = '© OpenStreetMap · RainViewer';
+    } else $('rdInfo').textContent = tr('noRadar', 'Radar unavailable');
+  }
+  // The dot: the home area on the radar, the car (with its heading) on the map.
+  function placeDot(c, z, W, H) {
+    var dot = $('rdDot'), p = rdMode === 'map' ? (gps ? [gps.lat, gps.lng] : null) : home();
+    if (!p) { dot.style.display = 'none'; return; }
+    var a = tileXY(c[0], c[1], z), b = tileXY(p[0], p[1], z);
+    dot.style.display = '';
+    dot.dataset.x = (b[0] - a[0]) * 256; dot.dataset.y = (b[1] - a[1]) * 256;
+    dot.style.transform = 'translate(' + dot.dataset.x + 'px,' + dot.dataset.y + 'px)';
+    dot.classList.toggle('car', rdMode === 'map');
+    var arrow = rdMode === 'map' && gps && gps.bearing >= 0;
+    dot.classList.toggle('heading', !!arrow);
+    if (arrow) dot.style.setProperty('--bearing', gps.bearing + 'deg');
+  }
+  function rdRedraw() { radarKey = null; renderRadar(null); }
+  function setRdMode(mode) {
+    rdMode = mode === 'map' ? 'map' : 'radar';
+    try { localStorage.setItem('dd_rd_mode', rdMode); } catch (_) {}
+    Array.prototype.forEach.call(document.querySelectorAll('[data-rdmode]'), function (b) {
+      b.classList.toggle('on', b.getAttribute('data-rdmode') === rdMode);
+    });
+    rdRedraw();
+  }
+  document.addEventListener('click', function (e) {
+    var m = e.target.closest && e.target.closest('[data-rdmode]');
+    if (m) { e.stopPropagation(); setRdMode(m.getAttribute('data-rdmode')); return; }
+    var b = e.target.closest && e.target.closest('[data-rdz]');
+    if (!b) return;
+    e.stopPropagation();
+    var v = VIEW[rdMode], z = +b.getAttribute('data-rdz');
+    if (z === 0) { v.lat = v.lon = null; if (rdMode === 'map') v.follow = true; else v.z = 7; }
+    else v.z = Math.max(v.min, Math.min(v.max, v.z + z));
+    if (rdMode === 'map') { try { localStorage.setItem('dd_map_zoom', v.z); } catch (_) {} }
+    rdRedraw();
+  }, true);
+  // GPS for the map: asked every 2 s while the map is showing.
+  setInterval(function () {
+    if (rdMode !== 'map' || !on('radar') || !window.AutoDeck || !AutoDeck.location) return;
+    var j = ''; try { j = AutoDeck.location(); } catch (_) {}
+    var had = !!gps;
+    if (j) { try { gps = JSON.parse(j); } catch (_) {} }
+    if (!gps) return;
+    var v = VIEW.map;
+    if (!had) { rdRedraw(); return; }
+    // Following: move only the dot until the car nears the edge, then re-centre (no constant reload).
+    var box = $('rdMap'), W = box.clientWidth, H = box.clientHeight, c = centre();
+    if (v.follow && v.lat != null) c = [v.lat, v.lon];
+    var a = tileXY(c[0], c[1], v.z), b = tileXY(gps.lat, gps.lng, v.z);
+    var dx = (b[0] - a[0]) * 256, dy = (b[1] - a[1]) * 256;
+    if (v.follow && (Math.abs(dx) > W * .25 || Math.abs(dy) > H * .25)) { v.lat = gps.lat; v.lon = gps.lng; rdRedraw(); }
+    else { if (v.follow && v.lat == null) { v.lat = c[0]; v.lon = c[1]; } placeDot(v.follow ? [v.lat, v.lon] : c, v.z, W, H); $('rdInfo').textContent = tr('yourLocation', 'Your location'); }
+  }, 2000);
+  // Drag to move (both modes). A drag never counts as a tap (which would open the radar page).
+  (function () {
+    var map = $('rdMap'), dot = $('rdDot'), start = null, dragged = false;
+    function shift(dx, dy) {
+      map.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+      dot.style.transform = 'translate(' + ((+dot.dataset.x || 0) + dx) + 'px,' + ((+dot.dataset.y || 0) + dy) + 'px)';
+    }
+    map.addEventListener('pointerdown', function (e) { start = { x: e.clientX, y: e.clientY }; dragged = false; });
+    window.addEventListener('pointermove', function (e) {
+      if (!start) return;
+      var dx = e.clientX - start.x, dy = e.clientY - start.y;
+      // Car swipes arrive as many small steps, so a tiny threshold (a car tap has no movement at all).
+      if (!dragged && Math.abs(dx) + Math.abs(dy) < 2) return;
+      dragged = true;
+      shift(rdPendX + dx, rdPendY + dy);
+    });
+    window.addEventListener('pointerup', function (e) {
+      if (!start) return;
+      if (dragged) {
+        rdPendX += Math.round(e.clientX - start.x); rdPendY += Math.round(e.clientY - start.y);
+        shift(rdPendX, rdPendY);
+        if (rdMode === 'map') VIEW.map.follow = false;
+        clearTimeout(rdTimer); rdTimer = setTimeout(rdRedraw, 300);   // redraw once the swiping stops
+      }
+      start = null;
+    });
+    var tile = document.querySelector('.w[data-w="radar"]');
+    if (tile) tile.addEventListener('click', function (e) { if (dragged) { e.stopPropagation(); dragged = false; } }, true);
+  })();
+  setRdMode(rdMode);
 
   var spTab = 'games', spComp = null;
   try { spTab = localStorage.getItem('dd_sp_tab') || 'games'; spComp = localStorage.getItem('dd_sp_comp'); } catch (_) {}
@@ -2076,6 +2236,7 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
       air: 'custom:weather', radar: 'custom:radar', football: 'custom:sports', sports: 'custom:sports',
       calendar: 'custom:calendar', ev: 'custom:ev' };
     var target = CARD_PAGE[tile.getAttribute('data-w')];
+    if (tile.getAttribute('data-w') === 'radar' && tile.classList.contains('mapmode')) return;   // the map itself takes taps
     if (!target || !window.AutoDeck || !window.AutoDeck.page) return;
     // Already showing that page (e.g. a card on the Custom page itself): nothing to do.
     if (target.indexOf('custom:') === 0 && document.body.classList.contains('pg-custom')) return;

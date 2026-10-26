@@ -47,7 +47,9 @@ class RadioPlayer(private val context: Context, private val listener: Listener) 
         private const val TAG = "DashMateRadio"
         private val RETRY_DELAYS_MS = longArrayOf(2_000L, 5_000L, 10_000L)
         private const val USER_AGENT = "DashMate/1.0 (Android; Radio)"
-        private const val NAME_LAG_MS = 800L
+        private const val NAME_LAG_MS = 0L
+        /** Fallback for how far behind live our playback starts (the server's opening burst). */
+        private const val BURST_MS = 8_000L
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -66,13 +68,17 @@ class RadioPlayer(private val context: Context, private val listener: Listener) 
     var songStartKnown: Boolean = false
         private set
     private var tunedAtMs = 0L
+    private var tunedWallMs = 0L
+    /** The current song's start was estimated from the station's history (tuned in mid-song). */
+    var songStartEstimated: Boolean = false
+        private set
     /** Player position (ms) where the current song started, or -1 when unknown. */
     private var songStartPosMs = -1L
 
     /**
      * How far into the current song we are, from the player's own clock (stops while paused or
-     * buffering), or -1 when unknown. Measured on Hitz: the song name changes in the stream about
-     * 0.8 s after the new song begins, hence [NAME_LAG_MS].
+     * buffering), or -1 when unknown. Measured on Hitz: the song name changes in step with the new
+     * song (a 166.5 s gap between names for a 166 s song), so no correction ([NAME_LAG_MS] = 0).
      */
     fun songPositionMs(): Long {
         val p = player ?: return -1L
@@ -150,14 +156,46 @@ class RadioPlayer(private val context: Context, private val listener: Listener) 
             }
             val cleaned = text?.trim()?.trim('-')?.trim()
             if (!cleaned.isNullOrBlank() && cleaned != nowPlaying) {
-                // The first name after tuning describes a song already under way.
-                songStartKnown = nowPlaying != null && SystemClock.elapsedRealtime() - tunedAtMs > 8_000L
+                // The stream sends the current name with its very first audio, so a name that arrives in
+                // the first seconds of *played* audio describes a song already under way. Later, it is a
+                // real change, even if nothing was named before (an ad or talk sends no name). Played
+                // audio, not time since tuning: connecting can take 10 s on a slow network.
+                songStartKnown = (player?.currentPosition ?: 0L) > 5_000L
                 // onMetadata fires when playback reaches the name change, so this is the song's start.
                 songStartPosMs = if (songStartKnown) (player?.currentPosition ?: 0L) - NAME_LAG_MS else -1L
+                songStartEstimated = false
+                if (!songStartKnown) estimateStart(cleaned)
                 nowPlaying = cleaned
                 listener.onRadioStateChanged()
             }
         }
+    }
+
+    /**
+     * Tuned in mid-song: estimate where the song began from the station's recent history (Revma
+     * stations), so the lyrics can follow along straight away instead of waiting for the next song.
+     */
+    private fun estimateStart(streamText: String) {
+        val st = station ?: return
+        val np = RadioNowPlaying.from(streamText, st.name, st.subtitle)
+        if (!np.isSong) return
+        val tuned = tunedWallMs
+        Thread {
+            val startWall = RadioSongStart.estimate(st.url, np.title) ?: return@Thread
+            handler.post {
+                // Still the same song and still not timed by a real song change?
+                if (nowPlaying != streamText || songStartKnown || tunedWallMs != tuned) return@post
+                // Our playback runs behind live by the server's opening burst: what we have downloaded
+                // beyond the time since tuning (8–11 s measured on Hitz; varies, so measured here).
+                val p = player
+                val burst = if (p != null) (p.bufferedPosition - (System.currentTimeMillis() - tuned)).coerceIn(0L, 30_000L) else BURST_MS
+                songStartPosMs = startWall - (tuned - burst)
+                songStartKnown = true
+                songStartEstimated = true
+                Log.i(TAG, "Mid-song start estimated: ${songPositionMs() / 1000}s into \"${np.title}\"")
+                listener.onRadioStateChanged()
+            }
+        }.apply { isDaemon = true }.start()
     }
 
     private fun ensurePlayer(): ExoPlayer {
@@ -192,6 +230,8 @@ class RadioPlayer(private val context: Context, private val listener: Listener) 
         nowPlaying = null
         songStartKnown = false
         songStartPosMs = -1L
+        songStartEstimated = false
+        tunedWallMs = System.currentTimeMillis()
         tunedAtMs = SystemClock.elapsedRealtime()
         station = newStation
         val p = ensurePlayer()

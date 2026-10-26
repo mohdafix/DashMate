@@ -35,6 +35,15 @@ object CarNav {
 
     val carSessionActive: Boolean get() = carContextRef?.get() != null
 
+    /** The owner's choice on the Navigation page: "waze" (default) or "maps" (Google Maps). */
+    private const val NAV_APP_KEY = "nav_app"
+    fun navApp(context: Context): String =
+        context.getSharedPreferences("dd_car_browser", Context.MODE_PRIVATE).getString(NAV_APP_KEY, "waze") ?: "waze"
+    fun setNavApp(context: Context, app: String) {
+        context.getSharedPreferences("dd_car_browser", Context.MODE_PRIVATE).edit()
+            .putString(NAV_APP_KEY, if (app == "maps") "maps" else "waze").apply()
+    }
+
     fun toCoords(context: Context, lat: Double, lng: Double, label: String? = null) {
         launch(
             context,
@@ -74,11 +83,11 @@ object CarNav {
     private fun launch(context: Context, waze: String, maps: String, web: String) {
         main.post {
             val ctx = context.applicationContext
-            val attempts = buildList {
-                if (installed(ctx, WAZE)) add(Intent(Intent.ACTION_VIEW, Uri.parse(waze)).setPackage(WAZE))
-                add(Intent(Intent.ACTION_VIEW, Uri.parse(maps)).setPackage("com.google.android.apps.maps"))
-                add(Intent(Intent.ACTION_VIEW, Uri.parse(web)))
-            }
+            val wazeIntent = if (installed(ctx, WAZE)) Intent(Intent.ACTION_VIEW, Uri.parse(waze)).setPackage(WAZE) else null
+            val mapsIntent = Intent(Intent.ACTION_VIEW, Uri.parse(maps)).setPackage("com.google.android.apps.maps")
+            // The chosen app first, the other as a backup, a web link last.
+            val attempts = (if (navApp(ctx) == "maps") listOf(mapsIntent, wazeIntent) else listOf(wazeIntent, mapsIntent))
+                .filterNotNull() + Intent(Intent.ACTION_VIEW, Uri.parse(web))
             for (i in attempts) {
                 try {
                     ctx.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

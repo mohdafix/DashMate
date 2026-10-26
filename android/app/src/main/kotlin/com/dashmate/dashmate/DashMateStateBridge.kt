@@ -93,6 +93,25 @@ object DashMateStateBridge {
 
     @Volatile var lyricsSyncKnown: Boolean = true
 
+    /**
+     * Car audio delay for the lyrics on the car screen (ms): Android Auto plays the sound in the car a
+     * little after the phone's clock, so the lyrics wait this long. Set with Earlier / Later on the
+     * Lyrics page; the phone's own lyrics don't use it.
+     */
+    // v2 (26 Oct): new default from Android Auto's own log ("CAR.AUDIO.PERF ... AUDIO_STREAM_MEDIA"
+    // buffer 1.0–2.0 s); the new key also drops the old value, which had been tapped down to -3 s.
+    private const val LYRICS_DELAY_KEY = "lyrics_car_delay_v2"
+    private const val LYRICS_DELAY_DEFAULT = 1500
+    fun lyricsDelayMs(context: Context?): Int =
+        context?.getSharedPreferences("dd_car_browser", Context.MODE_PRIVATE)?.getInt(LYRICS_DELAY_KEY, LYRICS_DELAY_DEFAULT)
+            ?: LYRICS_DELAY_DEFAULT
+    fun changeLyricsDelayMs(context: Context, deltaMs: Int): Int {
+        val v = (lyricsDelayMs(context) + deltaMs).coerceIn(-3000, 6000)
+        context.getSharedPreferences("dd_car_browser", Context.MODE_PRIVATE).edit().putInt(LYRICS_DELAY_KEY, v).apply()
+        notifyStateChanged(context)
+        return v
+    }
+
     fun updatePlaybackProgress(positionMs: Long, durationMs: Long = 0L, speed: Float = 1.0f) {
         playbackPositionMs = positionMs
         playbackPositionTimestampMs = SystemClock.elapsedRealtime()
@@ -471,6 +490,7 @@ object DashMateStateBridge {
             put("approx", songApp == DashMateMediaCardService.RADIO_APP_NAME)
             // Tuned in mid-song: show the lyrics as plain text until the next song starts.
             put("unsynced", !lyricsSyncKnown)
+            put("delayMs", lyricsDelayMs(context))
         })
         state.put("positionMs", currentPos)
         state.put("durationMs", playbackDurationMs)

@@ -38,7 +38,6 @@ import org.json.JSONObject
 import java.net.URLEncoder
 
 /** The Navigation dock button opens this page in the browser panel. */
-private const val WAZE_LIVE_MAP_URL = "https://www.waze.com/live-map/"
 
 class DashMatePresentation(
     private val hostContext: Context,
@@ -365,7 +364,7 @@ class DashMatePresentation(
         // A link sent from the phone ("Show on car" in Browse) opens even if the browser is already up.
         val pendingUrl = if (page == "web" || page == "browse") DashMateStateBridge.takePendingWebUrl() else null
         if (currentPage == page && pendingUrl == null) {
-            val isWebPage = page == "web" || page == "browse" || page == "nav"
+            val isWebPage = page == "web" || page == "browse"
             if (if (isWebPage) isBrowsingWeb else !isBrowsingWeb) return
         }
         currentPage = page
@@ -375,11 +374,8 @@ class DashMatePresentation(
             return
         }
 
-        // Navigation: Waze Live Map in the browser panel (desktop user agent, so the full map loads).
-        if (page == "nav") {
-            loadWebUrl(WAZE_LIVE_MAP_URL, highlight = "nav")
-            return
-        }
+        // Navigation: DashMate's own page (place search + Waze live traffic map; a result starts
+        // Waze navigation). Waze's website search is refused inside apps (reCAPTCHA, HTTP 403).
 
         exitBrowserToHome(false)
         // exitBrowserToHome marks the page as "home"; record the page really shown, or the Home
@@ -391,6 +387,7 @@ class DashMatePresentation(
             "lyrics" -> "file:///android_asset/drivedeck_lyrics.html"
             "prayer" -> "file:///android_asset/drivedeck_prayer.html"
             "radio" -> "file:///android_asset/dashmate_radio.html"
+            "nav" -> "file:///android_asset/drivedeck_nav.html"
             else -> "file:///android_asset/drivedeck_home.html"
         }
         deckWebView?.loadUrl(assetUrl)
@@ -614,6 +611,7 @@ class DashMatePresentation(
                 // The address bar types into nothing on the page: let go of any web field first.
                 blurKeyboardField()
             }
+            kbdShowSeq++
             carKeyboard?.show(initialText, hint, isAddressBar)
         }
     }
@@ -634,9 +632,13 @@ class DashMatePresentation(
             if (carKeyboard?.isShowing() == true && (kbdTarget !== wv || kbdFieldId != fieldId)) blurKeyboardField()
             kbdTarget = wv
             kbdFieldId = fieldId
+            kbdShowSeq++
             carKeyboard?.show(value, hint, false, type)
         }
     }
+
+    /** Bumped each time the keyboard is shown, so a delayed close can tell a field was just opened. */
+    private var kbdShowSeq = 0
 
     /** Runs __ddKbd.[op](id, text) in the WebView that owns the field. */
     private fun writeKeyboardField(op: String, text: String) {
@@ -740,6 +742,7 @@ class DashMatePresentation(
     }
 
     override fun dismiss() {
+        com.dashmate.dashmate.deck.CarLocation.stop(hostContext)
         DashMateStateBridge.removeListener(this)
         DashMateTheme.removeListener(themeListener)
         releaseBrowser()
@@ -771,11 +774,21 @@ class DashMatePresentation(
         if (!::rootLayout.isInitialized) return
 
         // RECONSTRUCTED: jadx failed on this lambda; rebuilt from the bytecode dump.
-        // A tap above an open keyboard dismisses it instead of reaching the page.
+        // A tap above an open keyboard reaches the page first (e.g. picking a destination from Waze's
+        // suggestion list), then the keyboard closes. Closing first blurred the field, which hid the
+        // list before the tap landed, so suggestions could never be picked.
         rootLayout.post {
             if (carKeyboard?.isShowing() == true && y < (carKeyboard?.top ?: 0).toFloat()) {
-                carKeyboard?.hide()
-                blurKeyboardField()
+                val seq = kbdShowSeq
+                rootLayout.dispatchTouchEvent(down)
+                rootLayout.dispatchTouchEvent(up)
+                rootLayout.postDelayed({
+                    // Unless the tap opened a field (keyboard shown again): then it stays.
+                    if (carKeyboard?.isShowing() == true && kbdShowSeq == seq) {
+                        carKeyboard?.hide()
+                        blurKeyboardField()
+                    }
+                }, 250L)
             } else {
                 rootLayout.dispatchTouchEvent(down)
                 rootLayout.dispatchTouchEvent(up)
@@ -916,6 +929,21 @@ class DashMatePresentation(
         /** "dark" or "light": read by each page's theme hook before first paint (no white flash). */
         @JavascriptInterface
         fun theme(): String = DashMateTheme.mode()
+
+        /** Navigation app for routes: "waze" or "maps"; an empty [choice] only reads it. */
+        @JavascriptInterface
+        fun navApp(choice: String): String {
+            if (choice.isNotBlank()) CarNav.setNavApp(hostContext, choice)
+            return CarNav.navApp(hostContext)
+        }
+
+        /** Lyrics Earlier / Later on the car: changes the car audio delay; returns the new value (ms). */
+        @JavascriptInterface
+        fun lyricsDelay(deltaMs: Int): Int = DashMateStateBridge.changeLyricsDelayMs(hostContext, deltaMs)
+
+        /** The car's position for the Home map card (JSON), or "" before the first fix. */
+        @JavascriptInterface
+        fun location(): String = com.dashmate.dashmate.deck.CarLocation.json(hostContext)
 
         /** "tall" or "auto": the phone's Car layout setting, read by dd_tall.js before first paint. */
         @JavascriptInterface
