@@ -799,10 +799,15 @@ class DashMatePresentation(
 
     override fun onStateUpdated(stateJson: String) {
         if (isBrowsingWeb) return
-        val quotedJson = JSONObject.quote(stateJson)
-        val script = "if (window.ddUpdate) { window.ddUpdate($quotedJson); }"
+        // Pass raw JSON directly — ddUpdate expects an object, not a quoted string.
+        // The JS side has a typeof-string fallback but parsing raw is faster and avoids
+        // the double-parse overhead on every 350ms tick during music playback.
+        val script = "if (window.ddUpdate) { window.ddUpdate($stateJson); }"
         deckWebView?.post { deckWebView?.evaluateJavascript(script, null) }
-        dockBar?.post { dockBar?.rebuildMenuItems() }
+        dockBar?.post {
+            dockBar?.updateCurrentPage(DashMateStateBridge.currentPage)
+            dockBar?.rebuildMenuItems()
+        }
     }
 
     /** A real finger touch from the phone's car-screen preview, already in this display's pixels. */

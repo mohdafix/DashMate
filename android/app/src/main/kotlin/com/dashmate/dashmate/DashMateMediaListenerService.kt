@@ -178,6 +178,19 @@ class DashMateMediaListenerService : NotificationListenerService() {
     private fun handleControllers(controllers: List<MediaController>?) {
         if (controllers == null) return
 
+        // Prune stale callbacks for sessions that ended
+        val currentSet = controllers.toSet()
+        val iter = activeCallbacks.iterator()
+        while (iter.hasNext()) {
+            val entry = iter.next()
+            if (!currentSet.contains(entry.key)) {
+                try {
+                    entry.key.unregisterCallback(entry.value)
+                } catch (_: Exception) {}
+                iter.remove()
+            }
+        }
+
         var playingController: MediaController? = null
         var pausedController: MediaController? = null
         for (controller in controllers) {
@@ -383,9 +396,28 @@ class DashMateMediaListenerService : NotificationListenerService() {
         )
     }
 
+    private fun cleanupCallbacks() {
+        pollHandler.removeCallbacks(progressPoller)
+        val iter = activeCallbacks.iterator()
+        while (iter.hasNext()) {
+            val entry = iter.next()
+            try {
+                entry.key.unregisterCallback(entry.value)
+            } catch (_: Exception) {}
+            iter.remove()
+        }
+    }
+
     override fun onListenerDisconnected() {
+        cleanupCallbacks()
         if (instance === this) instance = null
         super.onListenerDisconnected()
+    }
+
+    override fun onDestroy() {
+        cleanupCallbacks()
+        if (instance === this) instance = null
+        super.onDestroy()
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {

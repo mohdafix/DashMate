@@ -97,6 +97,8 @@ object DashMateStateBridge {
         playbackPositionTimestampMs = SystemClock.elapsedRealtime()
         if (durationMs > 0L) playbackDurationMs = durationMs
         playbackSpeed = if (speed > 0f) speed else 1.0f
+        // Progress-only updates skip full cache invalidation so heavy providers
+        // (calendar, prayer, shared prefs) are not queried every second.
         if (listeners.isNotEmpty()) {
             notifyStateChanged()
         }
@@ -184,6 +186,7 @@ object DashMateStateBridge {
 
         if (currentPage == targetPage && targetPage != "custom") return
         currentPage = targetPage
+        invalidateStateCache()
         mainHandler.post {
             for (listener in listeners) {
                 listener.onSwitchPage(targetPage)
@@ -252,6 +255,7 @@ object DashMateStateBridge {
             }
         }
         playbackSpeed = if (speed > 0f) speed else 1.0f
+        invalidateStateCache()
 
         if (titleChanged && title.isNotBlank() && title != "Not Playing") {
             isFetchingLyrics = true
@@ -294,7 +298,9 @@ object DashMateStateBridge {
                com.dashmate.dashmate.deck.ParkingAutoSaver.isConnected()
     }
 
-    fun buildStateJson(context: Context?): String {
+    fun buildStateJson(context: Context?): String = buildStateJsonObject(context).toString()
+
+    fun buildStateJsonObject(context: Context?): JSONObject {
         val root = JSONObject()
         val connected = isCarConnected(context)
         root.put("carConnected", connected)
@@ -726,7 +732,7 @@ object DashMateStateBridge {
         root.put("cached", true)
         root.put("sentAtMs", System.currentTimeMillis())
 
-        return root.toString()
+        return root
     }
 
     fun defaultForecast(weatherObj: JSONObject?): JSONObject {
@@ -933,9 +939,51 @@ object DashMateStateBridge {
         put("isyak", "20:10")
     }
 
+    // ---- State JSON caching & throttle ----
+    // buildStateJson() is expensive (~50 JSONObject allocations, SharedPreferences reads,
+    // CalendarManager / PrayerTimesManager lookups). During music playback the progress
+    // poller calls notifyStateChanged() every 1s and lyrics every 350ms, which used to
+    // rebuild the entire tree each time. We now:
+    //   1. Cache the last-built JSON and a version counter.
+    //   2. Mark the cache dirty whenever real state changes.
+    //   3. Coalesce rapid notifications via a short debounce (250ms).
+    @Volatile private var stateVersion: Long = 0L          // bumped on every mutation
+    @Volatile private var lastBuiltVersion: Long = -1L     // version of the cached JSON
+    private var cachedRoot: JSONObject? = null
+    private var pendingNotify: Runnable? = null
+    private const val NOTIFY_DEBOUNCE_MS = 250L            // coalesce rapid-fire calls
+
+    /** Call whenever any state field is mutated so the next notify rebuilds JSON. */
+    fun invalidateStateCache() { stateVersion++ }
+
     fun notifyStateChanged(context: Context? = null) {
-        val json = buildStateJson(context)
-        mainHandler.post {
+        // Remove any pending debounced post so only the latest one fires.
+        pendingNotify?.let { mainHandler.removeCallbacks(it) }
+        val runnable = Runnable {
+            val ver = stateVersion
+            val root = if (ver == lastBuiltVersion && cachedRoot != null) {
+                // Lightweight dynamic patch: only update realtime progress, speed & timestamp
+                val curPos = getCurrentPositionMs()
+                cachedRoot!!.apply {
+                    put("page", currentPage)
+                    put("speed", currentSpeed.toInt())
+                    put("gps", isGps)
+                    put("positionMs", curPos)
+                    optJSONObject("music")?.apply {
+                        put("positionMs", curPos)
+                        put("pos", curPos / 1000)
+                        put("playing", isPlaying)
+                        put("isPlaying", isPlaying)
+                        put("sentAtMs", System.currentTimeMillis())
+                    }
+                }
+            } else {
+                val built = buildStateJsonObject(context)
+                cachedRoot = built
+                lastBuiltVersion = ver
+                built
+            }
+            val json = root.toString()
             for (listener in listeners) {
                 listener.onStateUpdated(json)
             }
@@ -943,6 +991,8 @@ object DashMateStateBridge {
                 DashMateMediaCardService.triggerUpdate()
             } catch (_: Throwable) {}
         }
+        pendingNotify = runnable
+        mainHandler.postDelayed(runnable, NOTIFY_DEBOUNCE_MS)
     }
 
     fun highlightWidget(id: String) {

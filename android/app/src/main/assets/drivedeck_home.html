@@ -1495,7 +1495,7 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   function isTallScreen() { return isPortraitSurface() || (window.ddTallLock ? window.ddTallLock() : false); }
   var customLayout = null;
   function pickLayout() {
-    var isCustomPage = (customLayout != null) || document.body.classList.contains('pg-custom') || (document.body.dataset.page && document.body.dataset.page.indexOf('custom') === 0);
+    var isCustomPage = document.body.classList.contains('pg-custom') || (document.body.dataset.page && document.body.dataset.page.indexOf('custom') === 0);
     if (isCustomPage) {
       if (customLayout) return customLayout;
       return { v: 2, textScale: 1, clockFont: 'thin', widgets: [
@@ -2269,12 +2269,13 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
       if (p.labels) L = p.labels;
       if (p.lang) LANG = p.lang;
       var prevPage = document.body.dataset.page;
-      document.body.dataset.page = p.page || 'home';
-      if (prevPage && prevPage !== p.page) {
+      var newPage = p.page || 'home';
+      document.body.dataset.page = newPage;
+      var isCustom = (newPage === 'custom' || newPage.indexOf('custom') === 0);
+      document.body.classList.toggle('pg-custom', isCustom);
+      if (prevPage !== newPage) {
         layoutKey = null;
       }
-      var isCustom = (p.page === 'custom' || (p.page && p.page.indexOf('custom') === 0));
-      document.body.classList.toggle('pg-custom', isCustom);
       // The Custom page (forecast / air / radar) sends its own fixed layout under p.layout.
       if (isCustom) {
         if (p.layout && p.layout.widgets && p.layout.widgets.length > 0) {
