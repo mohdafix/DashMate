@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -16,7 +17,9 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
   static const MethodChannel _browserChannel = MethodChannel('drivedeck/car_browser');
 
   static const int _gridCols = 12;
-  static const int _gridRows = 8;
+  bool _isTall = true;
+  int get _gridRows => _isTall ? 18 : 8;
+  double get _canvasAspectRatio => _isTall ? (1080 / 1850) : (1190 / 480);
 
   // Selected widget and inspector tab
   String _selectedId = 'clock';
@@ -227,9 +230,39 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
     } catch (_) {}
   }
 
+  List<Map<String, dynamic>> _defaultPortraitWidgets() => [
+    {'id': 'clock', 'x': 1, 'y': 1, 'w': 12, 'h': 3, 'text': 1.0, 'ta': 'left'},
+    {'id': 'music', 'x': 1, 'y': 4, 'w': 12, 'h': 4, 'text': 1.0, 'ta': 'left'},
+    {'id': 'prayer', 'x': 1, 'y': 8, 'w': 6, 'h': 3, 'text': 1.0, 'ta': 'left'},
+    {'id': 'weather', 'x': 7, 'y': 8, 'w': 6, 'h': 3, 'text': 1.0, 'ta': 'left'},
+    {'id': 'sports', 'x': 1, 'y': 11, 'w': 12, 'h': 2, 'text': 1.0, 'ta': 'left'},
+    {'id': 'fuel', 'x': 1, 'y': 13, 'w': 12, 'h': 3, 'text': 1.0, 'ta': 'left'},
+    {'id': 'speed', 'x': 1, 'y': 16, 'w': 5, 'h': 3, 'text': 1.0, 'ta': 'center'},
+    {'id': 'shortcuts', 'x': 6, 'y': 16, 'w': 7, 'h': 3, 'text': 1.0, 'ta': 'center'},
+  ];
+
+  List<Map<String, dynamic>> _defaultLandscapeWidgets() => [
+    {'id': 'clock', 'x': 1, 'y': 1, 'w': 6, 'h': 4, 'text': 1.0, 'ta': 'left'},
+    {'id': 'prayer', 'x': 7, 'y': 1, 'w': 3, 'h': 2, 'text': 1.0, 'ta': 'left'},
+    {'id': 'weather', 'x': 10, 'y': 1, 'w': 3, 'h': 2, 'text': 1.0, 'ta': 'left'},
+    {'id': 'sports', 'x': 7, 'y': 3, 'w': 6, 'h': 2, 'text': 1.0, 'ta': 'left'},
+    {'id': 'music', 'x': 1, 'y': 5, 'w': 8, 'h': 2, 'text': 1.0, 'ta': 'left'},
+    {'id': 'speed', 'x': 9, 'y': 5, 'w': 2, 'h': 2, 'text': 1.0, 'ta': 'center'},
+    {'id': 'shortcuts', 'x': 11, 'y': 5, 'w': 2, 'h': 2, 'text': 1.0, 'ta': 'center'},
+    {'id': 'fuel', 'x': 1, 'y': 7, 'w': 6, 'h': 2, 'text': 1.0, 'ta': 'left'},
+  ];
+
   void _loadLayout() async {
     try {
-      final res = await _channel.invokeMethod('getLayoutSettings');
+      final prefs = await SharedPreferences.getInstance();
+      final mode = prefs.getString('dashmate_layout_mode') ?? 'tall';
+      if (mounted) {
+        setState(() => _isTall = mode == 'tall');
+      }
+    } catch (_) {}
+
+    try {
+      final res = await _channel.invokeMethod('getLayoutSettings', {'tall': _isTall});
       if (res != null && mounted) {
         final parsed = jsonDecode(res as String);
         if (parsed['widgets'] != null && (parsed['widgets'] as List).isNotEmpty) {
@@ -238,9 +271,16 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
               (parsed['widgets'] as List).map((e) => Map<String, dynamic>.from(e)),
             );
           });
+          return;
         }
       }
     } catch (_) {}
+
+    if (mounted) {
+      setState(() {
+        _widgets = _isTall ? _defaultPortraitWidgets() : _defaultLandscapeWidgets();
+      });
+    }
   }
 
   void _saveLayout() async {
@@ -252,30 +292,38 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
     };
 
     try {
-      await _channel.invokeMethod('saveLayoutSettings', {'layout': jsonEncode(layoutObj)});
+      await _channel.invokeMethod('saveLayoutSettings', {
+        'layout': jsonEncode(layoutObj),
+        'tall': _isTall,
+      });
     } catch (_) {}
+  }
+
+  void _switchLayoutMode(bool tall) async {
+    if (_isTall == tall) return;
+    _saveLayout();
+    setState(() {
+      _isTall = tall;
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('dashmate_layout_mode', tall ? 'tall' : 'auto');
+    try {
+      await _browserChannel.invokeMethod('setLayoutMode', {'mode': tall ? 'tall' : 'auto'});
+    } catch (_) {}
+    _loadLayout();
   }
 
   void _resetToDefaults() {
     setState(() {
-      _widgets = [
-        {'id': 'clock', 'x': 1, 'y': 1, 'w': 6, 'h': 4, 'text': 1.0, 'ta': 'left'},
-        {'id': 'prayer', 'x': 7, 'y': 1, 'w': 3, 'h': 2, 'text': 1.0, 'ta': 'left'},
-        {'id': 'weather', 'x': 10, 'y': 1, 'w': 3, 'h': 2, 'text': 1.0, 'ta': 'left'},
-        {'id': 'sports', 'x': 7, 'y': 3, 'w': 6, 'h': 2, 'text': 1.0, 'ta': 'left'},
-        {'id': 'music', 'x': 1, 'y': 5, 'w': 8, 'h': 2, 'text': 1.0, 'ta': 'left'},
-        {'id': 'speed', 'x': 9, 'y': 5, 'w': 2, 'h': 2, 'text': 1.0, 'ta': 'center'},
-        {'id': 'shortcuts', 'x': 11, 'y': 5, 'w': 2, 'h': 2, 'text': 1.0, 'ta': 'center'},
-        {'id': 'fuel', 'x': 1, 'y': 7, 'w': 6, 'h': 2, 'text': 1.0, 'ta': 'left'},
-      ];
+      _widgets = _isTall ? _defaultPortraitWidgets() : _defaultLandscapeWidgets();
       _selectedId = 'clock';
     });
     _saveLayout();
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
+      SnackBar(
         backgroundColor: AppColors.surface,
-        content: Text('Put every widget back to the default layout', style: TextStyle(color: AppColors.tealAccent)),
-        duration: Duration(seconds: 1),
+        content: Text('Reset to default ${_isTall ? "Tall Display (Portrait)" : "Wide Display (Landscape)"} layout', style: const TextStyle(color: AppColors.tealAccent)),
+        duration: const Duration(seconds: 1),
       ),
     );
   }
@@ -544,16 +592,43 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
         ),
         title: const Text(
           'Edit widgets',
-          style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold, letterSpacing: -0.3),
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: -0.3),
         ),
         actions: [
+          // Compact mode toggle button in AppBar
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 4),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: () => _switchLayoutMode(!_isTall),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF133E38),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: AppColors.accentTeal, width: 1.2),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(_isTall ? Icons.stay_current_portrait_rounded : Icons.desktop_windows_rounded, size: 14, color: AppColors.accentTeal),
+                    const SizedBox(width: 4),
+                    Text(
+                      _isTall ? 'Tall' : 'Wide',
+                      style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
           IconButton(
-            icon: const Icon(Icons.bookmark_border_outlined, color: Colors.white, size: 24),
+            icon: const Icon(Icons.bookmark_border_outlined, color: Colors.white, size: 22),
             tooltip: 'Saved car layouts',
             onPressed: _showSavedCarLayoutsSheet,
           ),
           IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.white, size: 24),
+            icon: const Icon(Icons.refresh, color: Colors.white, size: 22),
             tooltip: 'Reset layout',
             onPressed: _resetToDefaults,
           ),
@@ -563,21 +638,114 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Top Preview Frame
+            // Screen Layout Switcher Banner
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              child: AspectRatio(
-                aspectRatio: 1190 / 480, // Match exact car aspect ratio
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF060911),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFF1E2838), width: 1.5),
-                  ),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final double wUnit = constraints.maxWidth / _gridCols;
-                      final double hUnit = constraints.maxHeight / _gridRows;
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F1726),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFF233247), width: 1.2),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => _switchLayoutMode(true),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                          decoration: BoxDecoration(
+                            color: _isTall ? const Color(0xFF1BE3B0) : Colors.transparent,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: _isTall
+                                ? [BoxShadow(color: const Color(0xFF1BE3B0).withValues(alpha: 0.3), blurRadius: 8)]
+                                : null,
+                          ),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.stay_current_portrait_rounded, size: 16, color: _isTall ? const Color(0xFF090E17) : Colors.white70),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Tall Display (1080×1920)',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: _isTall ? const Color(0xFF090E17) : Colors.white70,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => _switchLayoutMode(false),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                          decoration: BoxDecoration(
+                            color: !_isTall ? const Color(0xFF1BE3B0) : Colors.transparent,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: !_isTall
+                                ? [BoxShadow(color: const Color(0xFF1BE3B0).withValues(alpha: 0.3), blurRadius: 8)]
+                                : null,
+                          ),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.desktop_windows_rounded, size: 16, color: !_isTall ? const Color(0xFF090E17) : Colors.white70),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Wide Display (1190×480)',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: !_isTall ? const Color(0xFF090E17) : Colors.white70,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Top Preview Frame (Dynamically sized to J7 Portrait or Landscape)
+            Center(
+              child: Container(
+                constraints: BoxConstraints(
+                  maxHeight: _isTall ? 380 : 180,
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: AspectRatio(
+                  aspectRatio: _canvasAspectRatio,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF060911),
+                      borderRadius: BorderRadius.circular(_isTall ? 24 : 16),
+                      border: Border.all(color: const Color(0xFF1E2838), width: 1.5),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final double wUnit = constraints.maxWidth / _gridCols;
+                        final double hUnit = constraints.maxHeight / _gridRows;
 
                       return Stack(
                         clipBehavior: Clip.none,
@@ -673,7 +841,15 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
                                             : null,
                                       ),
                                       clipBehavior: Clip.antiAlias,
-                                      child: _buildWidgetPreview(w['id']),
+                                      child: ClipRect(
+                                        child: Center(
+                                          child: FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            alignment: Alignment.center,
+                                            child: _buildWidgetPreview(w),
+                                          ),
+                                        ),
+                                      ),
                                     ),
 
                                     // Center Dimension badge during drag, resize, or collision (Matches Screenshot 3)
@@ -788,6 +964,7 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
                 ),
               ),
             ),
+          ),
 
             // Instruction Subtitle
             const Padding(
@@ -1283,141 +1460,510 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
     return const Icon(Icons.music_note, color: Colors.white54, size: 20);
   }
 
-  Widget _buildWidgetPreview(String id) {
+  Widget _buildWidgetPreview(Map<String, dynamic> w) {
+    final String id = w['id'] as String;
+    final int width = (w['w'] as int?) ?? 3;
+    final int height = (w['h'] as int?) ?? 2;
+
     switch (id) {
       case 'clock':
-        return const Center(
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
+        final timeStr = DateFormat('HH:mm').format(DateTime.now());
+        final dateStr = DateFormat('EEEE, d MMM').format(DateTime.now());
+        if (width >= 5 && height >= 3) {
+          return SizedBox(
+            width: 180,
+            height: 90,
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(timeStr, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white, height: 1.0, letterSpacing: -1.0)),
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)),
+                    child: Text(dateStr, style: const TextStyle(fontSize: 9, color: Colors.white70, fontWeight: FontWeight.w500)),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        return SizedBox(
+          width: 120,
+          height: 60,
+          child: Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('08:29', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white, height: 1.1)),
-                Text('Saturday, 24 Oct', style: TextStyle(fontSize: 8, color: Colors.white70)),
+                Text(timeStr, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white, height: 1.1)),
+                Text(dateStr, style: const TextStyle(fontSize: 8, color: Colors.white70)),
               ],
             ),
           ),
         );
+
       case 'music':
         final hasMusic = _currentSongTitle.isNotEmpty && _currentSongTitle != "Not Playing";
-        final title = hasMusic ? _currentSongTitle : 'Waiting for music...';
-        final artist = hasMusic ? _currentSongArtist : (_currentSongApp.isNotEmpty ? 'Play something in $_currentSongApp' : 'Play something in YouTube Music or Spotify');
-        return Padding(
-          padding: const EdgeInsets.all(4),
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
+        final title = hasMusic ? _currentSongTitle : (_currentSongApp.isNotEmpty ? _currentSongApp : 'Tapi Bukan Aku');
+        final artist = hasMusic ? _currentSongArtist : 'Kerispatih';
+
+        // 1. Tall / Card Style (e.g. 3x6, 4x6, 3x4)
+        if (height >= 4 && width <= 5) {
+          return SizedBox(
+            width: 140,
+            height: 180,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(6, 6, 6, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    flex: 6,
+                    child: Container(
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: Colors.white10,
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 6, offset: Offset(0, 2))],
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: _buildThumbnail(),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(title, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
+                  Text(artist, style: const TextStyle(fontSize: 8.5, color: Colors.white70), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
+                  const SizedBox(height: 3),
+                  const Text('Jangan lagi kau sesali...', style: TextStyle(fontSize: 7.5, color: Colors.white60), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
+                  const SizedBox(height: 5),
+                  Container(
+                    height: 2.5,
+                    width: double.infinity,
+                    decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(2)),
+                    child: FractionallySizedBox(
+                      alignment: Alignment.centerLeft,
+                      widthFactor: 0.45,
+                      child: Container(decoration: BoxDecoration(color: const Color(0xFF1BE3B0), borderRadius: BorderRadius.circular(2))),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      const Icon(Icons.skip_previous, size: 15, color: Colors.white70),
+                      Container(width: 24, height: 24, decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white), child: const Icon(Icons.play_arrow, size: 15, color: Color(0xFF090E17))),
+                      const Icon(Icons.skip_next, size: 15, color: Colors.white70),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        // 2. Wide / Strip Style (e.g. 8x2, 12x2, 6x2)
+        if (width >= 6 && height <= 3) {
+          return SizedBox(
+            width: 240,
+            height: 40,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              child: Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(6)),
+                    clipBehavior: Clip.antiAlias,
+                    child: _buildThumbnail(),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(child: Text(title, style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Colors.white), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                            const SizedBox(width: 4),
+                            Flexible(child: Text('· $artist', style: const TextStyle(fontSize: 8, color: Colors.white70), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Container(
+                          height: 2,
+                          width: double.infinity,
+                          decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(2)),
+                          child: FractionallySizedBox(
+                            alignment: Alignment.centerLeft,
+                            widthFactor: 0.45,
+                            child: Container(decoration: BoxDecoration(color: const Color(0xFF1BE3B0), borderRadius: BorderRadius.circular(2))),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.skip_previous, size: 14, color: Colors.white70),
+                      const SizedBox(width: 6),
+                      Container(width: 20, height: 20, decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white), child: const Icon(Icons.play_arrow, size: 13, color: Color(0xFF090E17))),
+                      const SizedBox(width: 6),
+                      const Icon(Icons.skip_next, size: 14, color: Colors.white70),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        // 3. Large / Hero Style (e.g. 12x4, 6x4, 8x4)
+        if (width >= 5 && height >= 4) {
+          return SizedBox(
+            width: 280,
+            height: 90,
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: Row(
+                children: [
+                  AspectRatio(
+                    aspectRatio: 1.0,
+                    child: Container(
+                      decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(10)),
+                      clipBehavior: Clip.antiAlias,
+                      child: _buildThumbnail(),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        Text(title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white), maxLines: 1, overflow: TextOverflow.ellipsis),
+                        Text(artist, style: const TextStyle(fontSize: 9, color: Colors.white70), maxLines: 1, overflow: TextOverflow.ellipsis),
+                        const Text('Jangan lagi kau sesali...', style: TextStyle(fontSize: 8, color: Colors.white60), maxLines: 1, overflow: TextOverflow.ellipsis),
+                        Container(
+                          height: 2.5,
+                          decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(2)),
+                          child: FractionallySizedBox(
+                            alignment: Alignment.centerLeft,
+                            widthFactor: 0.45,
+                            child: Container(decoration: BoxDecoration(color: const Color(0xFF1BE3B0), borderRadius: BorderRadius.circular(2))),
+                          ),
+                        ),
+                        Row(
+                          children: [
+                            const Icon(Icons.skip_previous, size: 15, color: Colors.white70),
+                            const SizedBox(width: 10),
+                            Container(width: 22, height: 22, decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white), child: const Icon(Icons.play_arrow, size: 14, color: Color(0xFF090E17))),
+                            const SizedBox(width: 10),
+                            const Icon(Icons.skip_next, size: 15, color: Colors.white70),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        // 4. Compact / Square Style (2x2, 3x3)
+        return SizedBox(
+          width: 100,
+          height: 40,
+          child: Padding(
+            padding: const EdgeInsets.all(4),
             child: Row(
               children: [
                 Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(8)),
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(6)),
                   clipBehavior: Clip.antiAlias,
                   child: _buildThumbnail(),
                 ),
-                const SizedBox(width: 8),
-                Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white), maxLines: 1),
-                    Text(artist, style: const TextStyle(fontSize: 8, color: Colors.white70), maxLines: 1),
-                    const SizedBox(height: 3),
-                    Row(
-                      children: const [
-                        Icon(Icons.skip_previous, size: 12, color: Colors.white70),
-                        SizedBox(width: 4),
-                        Icon(Icons.play_circle_fill, size: 16, color: Colors.white),
-                        SizedBox(width: 4),
-                        Icon(Icons.skip_next, size: 12, color: Colors.white70),
-                      ],
-                    ),
-                  ],
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      Text(artist, style: const TextStyle(fontSize: 7, color: Colors.white70), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
         );
+
+      case 'prayer':
+        if (height >= 4) {
+          return SizedBox(
+            width: 160,
+            height: 140,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.mosque_outlined, size: 12, color: Color(0xFF1BE3B0)),
+                      SizedBox(width: 4),
+                      Text('WAKTU SOLAT · WLY01', style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: Color(0xFF1BE3B0))),
+                    ],
+                  ),
+                  const Divider(height: 3, color: Colors.white10),
+                  _buildPrayerLine('Subuh', '05:48', false),
+                  _buildPrayerLine('Syuruk', '06:55', false),
+                  _buildPrayerLine('Zohor', '13:02', false),
+                  _buildPrayerLine('Asar', '16:18', true),
+                  _buildPrayerLine('Maghrib', '19:00', false),
+                  _buildPrayerLine('Isyak', '20:12', false),
+                ],
+              ),
+            ),
+          );
+        }
+        return SizedBox(
+          width: 130,
+          height: 40,
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            child: Row(
+              children: [
+                Icon(Icons.mosque_outlined, size: 16, color: Color(0xFF1BE3B0)),
+                SizedBox(width: 6),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Asar 16:18', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Colors.white), maxLines: 1),
+                      Text('1:56:02', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF5EF2D6)), maxLines: 1),
+                    ],
+                  ),
+                ),
+                Icon(Icons.fullscreen, size: 12, color: Colors.white38),
+              ],
+            ),
+          ),
+        );
+
       case 'weather':
-        return const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
+        if (width >= 5) {
+          return SizedBox(
+            width: 220,
+            height: 45,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              child: Row(
+                children: [
+                  const Icon(Icons.cloud_outlined, size: 22, color: Color(0xFF5EBEFF)),
+                  const SizedBox(width: 6),
+                  const Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('29°C', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white, height: 1.0)),
+                      Text('Rain in ~45 min', style: TextStyle(fontSize: 7.5, color: Colors.white70)),
+                    ],
+                  ),
+                  const Spacer(),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildForecastPill('14:00', '⛅', '30°'),
+                      const SizedBox(width: 3),
+                      _buildForecastPill('15:00', '🌧️', '28°'),
+                      const SizedBox(width: 3),
+                      _buildForecastPill('16:00', '⛈️', '27°'),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        return SizedBox(
+          width: 120,
+          height: 38,
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             child: Row(
               children: [
                 Icon(Icons.beach_access, size: 16, color: Color(0xFF5EBEFF)),
-                SizedBox(width: 4),
-                Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('25°', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white)),
-                    Text('Rain in ~45 min', style: TextStyle(fontSize: 7, color: Colors.white70)),
-                  ],
+                SizedBox(width: 6),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('29°C', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white), maxLines: 1),
+                      Text('Rain in ~45m', style: TextStyle(fontSize: 7.5, color: Colors.white70), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
         );
-      case 'prayer':
-        return const Center(
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text('Zohar 13:00', style: TextStyle(fontSize: 8, color: Colors.white70)),
-                Text('4:30:56', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF5EF2D6))),
-              ],
-            ),
-          ),
-        );
+
       case 'sports':
-        return const Center(
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text('1 - 0\nFT Ku...', textAlign: TextAlign.center, style: TextStyle(fontSize: 8, color: Colors.white70)),
-          ),
-        );
-      case 'speed':
-        return const Center(
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
+        if (height >= 4) {
+          return Padding(
+            padding: const EdgeInsets.all(8),
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text('4', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white)),
-                Text('km/h', style: TextStyle(fontSize: 7, color: Colors.white54)),
-              ],
-            ),
-          ),
-        );
-      case 'shortcuts':
-        return Center(
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                Container(width: 14, height: 14, decoration: const BoxDecoration(color: Color(0xFFFF0033), shape: BoxShape.circle), child: const Icon(Icons.play_arrow, size: 9, color: Colors.white)),
-                const SizedBox(width: 4),
-                Container(width: 14, height: 14, decoration: const BoxDecoration(color: Color(0xFF0072CE), shape: BoxShape.circle), child: const Icon(Icons.live_tv, size: 9, color: Colors.white)),
+                const Text('Sports', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white70)),
+                const Text('Formula 1', style: TextStyle(fontSize: 8, color: AppColors.textSub)),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('MSC Cruises US GP', style: TextStyle(fontSize: 8.5, color: Colors.white, fontWeight: FontWeight.bold)),
+                    Container(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1), decoration: BoxDecoration(color: const Color(0xFF14E0C1).withValues(alpha: 0.2), borderRadius: BorderRadius.circular(4)), child: const Text('01:30', style: TextStyle(fontSize: 7, color: Color(0xFF14E0C1), fontWeight: FontWeight.bold))),
+                  ],
+                ),
+                const Divider(height: 4, color: Colors.white10),
+                const Text('Malaysia Super League', style: TextStyle(fontSize: 8, color: AppColors.textSub)),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Kuching vs KL', style: TextStyle(fontSize: 8.5, color: Colors.white)),
+                    Container(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1), decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(4)), child: const Text('1 - 0 FT', style: TextStyle(fontSize: 7, color: Colors.white, fontWeight: FontWeight.bold))),
+                  ],
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Selangor vs PDRM', style: TextStyle(fontSize: 8.5, color: Colors.white)),
+                    Container(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1), decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(4)), child: const Text('6 - 0 FT', style: TextStyle(fontSize: 7, color: Colors.white, fontWeight: FontWeight.bold))),
+                  ],
+                ),
               ],
             ),
-          ),
-        );
-      case 'fuel':
+          );
+        }
         return const Center(
           child: FittedBox(
             fit: BoxFit.scaleDown,
-            child: Text('⛽ RON95 2.05 · RON97 3.19 · Diesel 2.95', style: TextStyle(fontSize: 7, color: Colors.white70)),
+            child: Text('⚽ Kuching 1 - 0 KL (FT)\nSelangor 6 - 0 PDRM (FT)', textAlign: TextAlign.center, style: TextStyle(fontSize: 8, color: Colors.white70)),
           ),
         );
+
+      case 'ev':
+        if (height >= 3) {
+          return Padding(
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                const Text('EV charging nearby', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white70)),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.04), borderRadius: BorderRadius.circular(6)),
+                  child: Row(
+                    children: [
+                      Container(width: 14, height: 14, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF1BE3B0)), child: const Center(child: Text('1', style: TextStyle(fontSize: 8, color: Colors.black, fontWeight: FontWeight.bold)))),
+                      const SizedBox(width: 6),
+                      const Expanded(child: Text('Lebuhraya Damansara-Puchong', style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
+                      const Text('715 m', style: TextStyle(fontSize: 7.5, color: Colors.white70)),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.04), borderRadius: BorderRadius.circular(6)),
+                  child: Row(
+                    children: [
+                      Container(width: 14, height: 14, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF1BE3B0)), child: const Center(child: Text('2', style: TextStyle(fontSize: 8, color: Colors.black, fontWeight: FontWeight.bold)))),
+                      const SizedBox(width: 6),
+                      const Expanded(child: Text('Kelana D\'PUTERA Condom...', style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
+                      const Text('1.2 km', style: TextStyle(fontSize: 7.5, color: Colors.white70)),
+                    ],
+                  ),
+                ),
+                const Text('© Open Charge Map · OpenStreetMap', style: TextStyle(fontSize: 6.5, color: Colors.white30)),
+              ],
+            ),
+          );
+        }
+        return const Center(
+          child: Text('⚡ Gentari 715m · Available', style: TextStyle(fontSize: 8, color: Color(0xFF4ADE80))),
+        );
+
+      case 'speed':
+        return const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text('0', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1BE3B0), height: 1.0)),
+              Text('km/h', style: TextStyle(fontSize: 7.5, color: Colors.white54)),
+            ],
+          ),
+        );
+
+      case 'fuel':
+        return const Center(
+          child: Text('⛽ RON95 RM2.05 · RON97 RM3.19', style: TextStyle(fontSize: 8, color: Colors.white70), textAlign: TextAlign.center),
+        );
+
+      case 'shortcuts':
+        return Center(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              Container(width: 16, height: 16, decoration: const BoxDecoration(color: Color(0xFFFF0033), shape: BoxShape.circle), child: const Icon(Icons.play_arrow, size: 10, color: Colors.white)),
+              Container(width: 16, height: 16, decoration: const BoxDecoration(color: Color(0xFF0072CE), shape: BoxShape.circle), child: const Icon(Icons.live_tv, size: 10, color: Colors.white)),
+            ],
+          ),
+        );
+
       default:
         return Center(child: Text(id.toUpperCase(), style: const TextStyle(fontSize: 8, color: Colors.white70)));
     }
+  }
+
+  Widget _buildPrayerLine(String name, String time, bool active) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+      decoration: active ? BoxDecoration(color: const Color(0x1F1BE3B0), borderRadius: BorderRadius.circular(4)) : null,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(name, style: TextStyle(fontSize: 7.5, color: active ? const Color(0xFF1BE3B0) : Colors.white70, fontWeight: active ? FontWeight.bold : FontWeight.normal)),
+          Text(time, style: TextStyle(fontSize: 7.5, color: active ? const Color(0xFF1BE3B0) : Colors.white70, fontWeight: active ? FontWeight.bold : FontWeight.normal)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildForecastPill(String time, String icon, String temp) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(4)),
+      child: Column(
+        children: [
+          Text(time, style: const TextStyle(fontSize: 6.5, color: Colors.white70)),
+          Text(icon, style: const TextStyle(fontSize: 8)),
+          Text(temp, style: const TextStyle(fontSize: 7, color: Colors.white, fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
   }
 }

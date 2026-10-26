@@ -42,6 +42,15 @@ object DashMateStateBridge {
     var cachedLayoutJson: String? = null
     var currentSpeed: Float = 0f
     var speedUnit: String = "km/h"
+    const val LAYOUT_MODE_KEY = "dashmate_layout_mode"
+
+    fun layoutMode(context: Context?): String {
+        val v = try {
+            context?.getSharedPreferences("dd_car_browser", Context.MODE_PRIVATE)?.getString(LAYOUT_MODE_KEY, null)
+        } catch (_: Exception) { null }
+        return if (v == "auto") "auto" else "tall"
+    }
+
     var isGps: Boolean = true
     var songTitle: String = "Not Playing"
     var songArtist: String = "DashMate Audio"
@@ -97,6 +106,20 @@ object DashMateStateBridge {
     var currentPage: String = "home" // home, lyrics, prayer, browse, custom
     var customPageMode: String = "weather" // weather, calendar, sports, radar, ev
     var currentYoutubeId: String = ""
+
+    /** Address the phone sent to the car browser (Browse screen); the car screen takes it once. */
+    @Volatile var pendingWebUrl: String? = null
+        set(v) { field = v; pendingWebUrlAt = if (v != null) System.currentTimeMillis() else 0L }
+    @Volatile private var pendingWebUrlAt: Long = 0L
+
+    /** The phone's link, once, and only if it was sent in the last minute (never a days-old link). */
+    fun takePendingWebUrl(): String? {
+        val url = pendingWebUrl
+        val fresh = url != null && System.currentTimeMillis() - pendingWebUrlAt < 60_000L
+        pendingWebUrl = null
+        return if (fresh) url else null
+    }
+
     var appLanguage: String = "en"
     var carCardMode: String = "music" // music, prayer, weather, sports
 

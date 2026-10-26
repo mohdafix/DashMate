@@ -713,14 +713,18 @@ class MainActivity : FlutterActivity() {
                     val layoutStr = call.argument<String>("layout")
                         ?: call.argument<String>("layoutJson")
                         ?: ""
+                    val tall = call.argument<Boolean>("tall") ?: (DashMateStateBridge.layoutMode(this) == "tall")
+                    val key = if (tall) "dashmate_layout_portrait" else "dashmate_layout"
                     if (layoutStr.isNotBlank()) {
                         getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
                             .edit()
+                            .putString(key, layoutStr)
                             .putString("dashmate_layout", layoutStr)
                             .putString("car_layouts_current", layoutStr)
                             .apply()
                         getSharedPreferences("DashMatePrefs", Context.MODE_PRIVATE)
                             .edit()
+                            .putString(key, layoutStr)
                             .putString("dashmate_layout", layoutStr)
                             .putString("car_layouts_current", layoutStr)
                             .apply()
@@ -731,11 +735,18 @@ class MainActivity : FlutterActivity() {
                     result.success(true)
                 }
                 "getLayoutSettings" -> {
+                    val tall = call.argument<Boolean>("tall") ?: (DashMateStateBridge.layoutMode(this) == "tall")
+                    val key = if (tall) "dashmate_layout_portrait" else "dashmate_layout"
                     val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
-                    val layoutStr = sp.getString("dashmate_layout", null)
-                        ?: sp.getString("car_layouts_current", null)
-                        ?: getSharedPreferences("DashMatePrefs", Context.MODE_PRIVATE).getString("dashmate_layout", null)
-                        ?: DashMateStateBridge.cachedLayoutJson
+                    val prefKey = getSharedPreferences("DashMatePrefs", Context.MODE_PRIVATE)
+                    val layoutStr = sp.getString(key, null)
+                        ?: prefKey.getString(key, null)
+                        ?: if (!tall) {
+                            sp.getString("dashmate_layout", null)
+                                ?: sp.getString("car_layouts_current", null)
+                                ?: prefKey.getString("dashmate_layout", null)
+                                ?: DashMateStateBridge.cachedLayoutJson
+                        } else null
                     result.success(layoutStr)
                 }
                 "highlightWidget" -> {
@@ -904,6 +915,17 @@ class MainActivity : FlutterActivity() {
                         .putString("football_api_key", key)
                         .apply()
                     result.success(true)
+                }
+                "setAutoStart" -> {
+                    val enabled = call.argument<Boolean>("enabled") ?: true
+                    getSharedPreferences("dashmate_prefs", Context.MODE_PRIVATE)
+                        .edit().putBoolean("pref_auto_start", enabled).apply()
+                    result.success(true)
+                }
+                "getAutoStart" -> {
+                    val enabled = getSharedPreferences("dashmate_prefs", Context.MODE_PRIVATE)
+                        .getBoolean("pref_auto_start", true)
+                    result.success(enabled)
                 }
                 else -> {
                     result.notImplemented()

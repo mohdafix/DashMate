@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../channels/platform_channels.dart';
 import '../models/media_state.dart';
 import '../theme/app_colors.dart';
@@ -51,6 +52,126 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _is24Hour = true;
   bool _useKmh = true;
   String _welcomeSound = "Chime";
+  bool _autoStart = true;
+  String _layoutMode = "Tall Display (Portrait)";
+
+  Future<void> _loadAutoStart() async {
+    try {
+      final res = await _channel.invokeMethod<bool>('getAutoStart');
+      if (res != null && mounted) setState(() => _autoStart = res);
+    } catch (_) {
+      final prefs = await SharedPreferences.getInstance();
+      if (mounted) setState(() => _autoStart = prefs.getBool('pref_auto_start') ?? true);
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final mode = prefs.getString('dashmate_layout_mode') ?? 'tall';
+      if (mounted) {
+        setState(() => _layoutMode = mode == 'tall' ? 'Tall Display (Portrait)' : 'Wide Display (Landscape)');
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _toggleAutoStart(bool val) async {
+    setState(() => _autoStart = val);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('pref_auto_start', val);
+    try {
+      await _channel.invokeMethod('setAutoStart', {'enabled': val});
+    } catch (_) {}
+  }
+
+  void _showCarLayoutDialog() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Car Screen Layout Mode', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+              const SizedBox(height: 6),
+              const Text('Optimized for tall portrait screens (1080×1920) or wide landscape head units.', style: TextStyle(fontSize: 13, color: AppColors.textSub)),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.stay_current_portrait, color: AppColors.accentTeal),
+                title: const Text('Tall Display (Portrait 1080×1920)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                subtitle: const Text('Top dock bar, optimized music & widget sizing for portrait display', style: TextStyle(color: AppColors.textSub, fontSize: 12)),
+                trailing: _layoutMode.contains('Tall') ? const Icon(Icons.check, color: AppColors.accentTeal) : null,
+                onTap: () async {
+                  setState(() => _layoutMode = 'Tall Display (Portrait)');
+                  _loadLayout();
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setString('dashmate_layout_mode', 'tall');
+                  try {
+                    await _browserChannel.invokeMethod('setLayoutMode', {'mode': 'tall'});
+                  } catch (_) {}
+                  if (ctx.mounted) Navigator.pop(ctx);
+                },
+              ),
+              const Divider(height: 1, color: Colors.white10),
+              ListTile(
+                leading: const Icon(Icons.auto_awesome, color: Color(0xFF5EBEFF)),
+                title: const Text('Wide Display (Landscape)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                subtitle: const Text('Adapts dynamically to wide landscape screens reported by Android Auto', style: TextStyle(color: AppColors.textSub, fontSize: 12)),
+                trailing: _layoutMode.contains('Auto') ? const Icon(Icons.check, color: AppColors.accentTeal) : null,
+                onTap: () async {
+                  setState(() => _layoutMode = 'Wide Display (Landscape)');
+                  _loadLayout();
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setString('dashmate_layout_mode', 'auto');
+                  try {
+                    await _browserChannel.invokeMethod('setLayoutMode', {'mode': 'auto'});
+                  } catch (_) {}
+                  if (ctx.mounted) Navigator.pop(ctx);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showKeyboardInfoDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF131A26),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: const BorderSide(color: AppColors.border)),
+        title: const Row(
+          children: [
+            Icon(Icons.keyboard_rounded, color: Color(0xFFBA68C8)),
+            SizedBox(width: 10),
+            Text('Car On-Screen Keyboard', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Your car display now has a built-in keyboard!\n\n'
+              '• Tapping any text box (such as YouTube search, Google, Waze address, or sign-in) automatically brings up the keyboard on your car display.\n'
+              '• Real-time typing syncs straight into the browser without needing to type on your phone.\n'
+              '• Tap "Go" to search, or tap outside the keyboard to dismiss it.',
+              style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.45),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Got it', style: TextStyle(color: AppColors.accentTeal, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
 
   // Media
   MediaState _mediaState = MediaState();
@@ -75,6 +196,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _loadState();
       _loadLayout();
       _refreshMedia();
+      _loadAutoStart();
     });
 
     _statusPoller = Timer.periodic(const Duration(seconds: 3), (_) {
@@ -97,9 +219,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } catch (_) {}
   }
 
+  List<Map<String, dynamic>> _defaultPortraitWidgets() => [
+    {'id': 'clock', 'x': 1, 'y': 1, 'w': 12, 'h': 3},
+    {'id': 'music', 'x': 1, 'y': 4, 'w': 12, 'h': 4},
+    {'id': 'prayer', 'x': 1, 'y': 8, 'w': 6, 'h': 3},
+    {'id': 'weather', 'x': 7, 'y': 8, 'w': 6, 'h': 3},
+    {'id': 'sports', 'x': 1, 'y': 11, 'w': 12, 'h': 2},
+    {'id': 'fuel', 'x': 1, 'y': 13, 'w': 12, 'h': 3},
+    {'id': 'speed', 'x': 1, 'y': 16, 'w': 5, 'h': 3},
+    {'id': 'shortcuts', 'x': 6, 'y': 16, 'w': 7, 'h': 3},
+  ];
+
+  List<Map<String, dynamic>> _defaultLandscapeWidgets() => [
+    {'id': 'clock', 'x': 1, 'y': 1, 'w': 6, 'h': 4},
+    {'id': 'prayer', 'x': 7, 'y': 1, 'w': 3, 'h': 2},
+    {'id': 'weather', 'x': 10, 'y': 1, 'w': 3, 'h': 2},
+    {'id': 'sports', 'x': 7, 'y': 3, 'w': 6, 'h': 2},
+    {'id': 'music', 'x': 1, 'y': 5, 'w': 8, 'h': 2},
+    {'id': 'speed', 'x': 9, 'y': 5, 'w': 2, 'h': 2},
+    {'id': 'shortcuts', 'x': 11, 'y': 5, 'w': 2, 'h': 2},
+    {'id': 'fuel', 'x': 1, 'y': 7, 'w': 6, 'h': 2},
+  ];
+
   void _loadLayout() async {
+    final bool isTall = _layoutMode.contains('Tall');
     try {
-      final res = await _channel.invokeMethod('getLayoutSettings');
+      final res = await _channel.invokeMethod('getLayoutSettings', {'tall': isTall});
       if (res != null && mounted) {
         final parsed = jsonDecode(res as String);
         if (parsed['widgets'] != null && (parsed['widgets'] as List).isNotEmpty) {
@@ -108,9 +253,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
               (parsed['widgets'] as List).map((e) => Map<String, dynamic>.from(e)),
             );
           });
+          return;
         }
       }
     } catch (_) {}
+
+    if (mounted) {
+      setState(() {
+        _widgets = isTall ? _defaultPortraitWidgets() : _defaultLandscapeWidgets();
+      });
+    }
   }
 
   void _loadState() async {
@@ -498,70 +650,86 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
               const SizedBox(height: 12),
 
-              // Live Display Canvas
+              // Live Display Canvas (Dynamically adapts to Tall Portrait vs Wide Landscape)
               GestureDetector(
                 onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WidgetsScreen())).then((_) {
                   _loadLayout();
                   _loadState();
                 }),
-                child: AspectRatio(
-                  aspectRatio: 1190 / 480,
+                child: Center(
                   child: Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF060911),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: const Color(0xFF1E2838), width: 1.5),
+                    constraints: BoxConstraints(
+                      maxHeight: _layoutMode.contains('Tall') ? 340 : 180,
                     ),
-                    clipBehavior: Clip.antiAlias,
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final double wUnit = constraints.maxWidth / 12;
-                        final double hUnit = constraints.maxHeight / 8;
+                    child: AspectRatio(
+                      aspectRatio: _layoutMode.contains('Tall') ? (1080 / 1850) : (1190 / 480),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF060911),
+                          borderRadius: BorderRadius.circular(_layoutMode.contains('Tall') ? 22 : 14),
+                          border: Border.all(color: const Color(0xFF1E2838), width: 1.5),
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final int rows = _layoutMode.contains('Tall') ? 18 : 8;
+                            final double wUnit = constraints.maxWidth / 12;
+                            final double hUnit = constraints.maxHeight / rows;
 
-                        return Stack(
-                          children: [
-                            // 1. Subtle Background Grid Cells
-                            for (int r = 0; r < 8; r++)
-                              for (int c = 0; c < 12; c++)
-                                Positioned(
-                                  left: c * wUnit + 1,
-                                  top: r * hUnit + 1,
-                                  width: wUnit - 2,
-                                  height: hUnit - 2,
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF0F1522).withOpacity(0.55),
-                                      borderRadius: BorderRadius.circular(3),
+                            return Stack(
+                              children: [
+                                // 1. Subtle Background Grid Cells
+                                for (int r = 0; r < rows; r++)
+                                  for (int c = 0; c < 12; c++)
+                                    Positioned(
+                                      left: c * wUnit + 1,
+                                      top: r * hUnit + 1,
+                                      width: wUnit - 2,
+                                      height: hUnit - 2,
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF0F1522).withValues(alpha: 0.55),
+                                          borderRadius: BorderRadius.circular(3),
+                                        ),
+                                      ),
                                     ),
-                                  ),
-                                ),
 
-                            // 2. Placed Live Widgets from Editor
-                            ..._widgets.map((w) {
-                              final double left = ((w['x'] as int) - 1) * wUnit + 1.5;
-                              final double top = ((w['y'] as int) - 1) * hUnit + 1.5;
-                              final double width = (w['w'] as int) * wUnit - 3;
-                              final double height = (w['h'] as int) * hUnit - 3;
+                                // 2. Placed Live Widgets from Editor
+                                ..._widgets.map((w) {
+                                  final double left = ((w['x'] as int) - 1) * wUnit + 1.5;
+                                  final double top = ((w['y'] as int) - 1) * hUnit + 1.5;
+                                  final double width = (w['w'] as int) * wUnit - 3;
+                                  final double height = (w['h'] as int) * hUnit - 3;
 
-                              return Positioned(
-                                left: left,
-                                top: top,
-                                width: width,
-                                height: height,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF121824).withOpacity(0.92),
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: const Color(0xFF222C3C)),
-                                  ),
-                                  clipBehavior: Clip.antiAlias,
-                                  child: _buildMiniWidget(w['id'] as String),
-                                ),
-                              );
-                            }),
-                          ],
-                        );
-                      },
+                                  return Positioned(
+                                    left: left,
+                                    top: top,
+                                    width: width,
+                                    height: height,
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF121824).withValues(alpha: 0.95),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: const Color(0xFF222C3C)),
+                                      ),
+                                      clipBehavior: Clip.antiAlias,
+                                      child: ClipRect(
+                                        child: Center(
+                                          child: FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            alignment: Alignment.center,
+                                            child: _buildMiniWidget(w['id'] as String),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                }),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -641,6 +809,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 title: 'Car Wallpaper',
                 subtitle: _bgMode,
                 onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const BackgroundScreen())).then((_) => _loadState()),
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 10),
+
+        Row(
+          children: [
+            Expanded(
+              child: _buildGlanceCard(
+                icon: Icons.play_circle_filled_rounded,
+                iconColor: _autoStart ? AppColors.accentTeal : Colors.white38,
+                title: 'Auto-Start AA',
+                subtitle: _autoStart ? 'Enabled (Auto)' : 'Manual (Tap)',
+                onTap: () => _toggleAutoStart(!_autoStart),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _buildGlanceCard(
+                icon: Icons.stay_current_portrait_rounded,
+                iconColor: const Color(0xFF5EBEFF),
+                title: 'Car Layout',
+                subtitle: _layoutMode,
+                onTap: _showCarLayoutDialog,
               ),
             ),
           ],
@@ -1142,6 +1336,56 @@ class _DashboardScreenState extends State<DashboardScreen> {
           style: TextStyle(fontSize: 13, color: AppColors.textSub),
         ),
         const SizedBox(height: 18),
+
+        // Android Auto & Car Connection (Top Highlight)
+        const Text('ANDROID AUTO & CAR DISPLAY', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textDim, letterSpacing: 1.1)),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Column(
+            children: [
+              SwitchListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                secondary: Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F352E),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.play_circle_filled_rounded, color: AppColors.accentTeal, size: 22),
+                ),
+                title: const Text('Auto-start on Connect', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white)),
+                subtitle: Text(_autoStart ? 'Opens DashMate automatically when car connects' : 'Quiet mode · Stays on car home until tapped', style: const TextStyle(fontSize: 12, color: AppColors.textSub)),
+                value: _autoStart,
+                activeThumbColor: AppColors.accentTeal,
+                onChanged: (val) => _toggleAutoStart(val),
+              ),
+              const Divider(height: 1, color: Colors.white10),
+              _buildSettingTile(
+                icon: Icons.stay_current_portrait_rounded,
+                iconColor: const Color(0xFF5EBEFF),
+                title: 'Car Screen Layout',
+                subtitle: _layoutMode,
+                onTap: _showCarLayoutDialog,
+              ),
+              const Divider(height: 1, color: Colors.white10),
+              _buildSettingTile(
+                icon: Icons.keyboard_rounded,
+                iconColor: const Color(0xFFBA68C8),
+                title: 'Car On-Screen Keyboard',
+                subtitle: 'Active · Tap YouTube / search box on car to type',
+                onTap: _showKeyboardInfoDialog,
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 20),
 
         // Audio & Chimes
         const Text('AUDIO & CHIMES', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textDim, letterSpacing: 1.1)),

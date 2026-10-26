@@ -1,7 +1,7 @@
 name: dashmate
 description: "DashMate Next-Gen In-Car Digital Deck"
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.7+8
 
 environment:
   sdk: ^3.12.2

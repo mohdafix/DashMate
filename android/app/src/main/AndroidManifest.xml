@@ -71,11 +71,23 @@
             </intent-filter>
         </service>
 
+        <activity
+            android:name=".CarPreviewActivity"
+            android:exported="false"
+            android:label="Car Preview"
+            android:theme="@android:style/Theme.NoTitleBar.Fullscreen" />
+
         <!-- Android Auto Dynamic Car Art Provider (Serves images to car screen & cards next to map) -->
         <provider
             android:name=".CarArtProvider"
             android:authorities="com.dashmate.dashmate.carart"
             android:exported="true"/>
+
+        <provider
+            android:name=".DashMateCarLifeInit"
+            android:authorities="${applicationId}.carlifeinit"
+            android:exported="false"
+            android:initOrder="99" />
 
         <!-- Android Auto Media Card Service (Displays music player & live synced lyrics next to Waze) -->
         <service

@@ -1,6 +1,11 @@
 <!doctype html>
 <html>
 <head>
+<script>(function(){var q=/[?&]theme=(dark|light)/.exec(location.search),m=q&&q[1];
+try{if(!m&&(window.DashMate?.theme||window.DriveDeck?.theme))m=(window.DashMate||window.DriveDeck).theme();}catch(e){}
+if(!m)m=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.dataset.theme=m;
+window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'dark':'light');};})();</script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <style>
@@ -98,6 +103,7 @@
     #app { grid-template-columns: 1fr; padding: calc(2.2rem + var(--dd-extra, 0px)) 1.5rem 1rem; }
   }
 </style>
+<script src="dd_tall.js"></script>
 </head>
 <body>
 <div id="scene">

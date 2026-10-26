@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_colors.dart';
 import '../theme/localization.dart';
 import 'background_screen.dart';
@@ -26,9 +27,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _activeFont = 'Orbitron';
   final String _sound = 'Chime';
   double _buttonSize = 100.0;
+  bool _autoStart = true;
   bool _is24Hour = true;
   bool _useKmh = true;
   bool _mediaButtonsOverride = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAutoStart();
+  }
+
+  Future<void> _loadAutoStart() async {
+    try {
+      final res = await _channel.invokeMethod<bool>('getAutoStart');
+      if (res != null && mounted) setState(() => _autoStart = res);
+    } catch (_) {
+      final prefs = await SharedPreferences.getInstance();
+      if (mounted) setState(() => _autoStart = prefs.getBool('pref_auto_start') ?? true);
+    }
+  }
+
+  Future<void> _toggleAutoStart(bool val) async {
+    setState(() => _autoStart = val);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('pref_auto_start', val);
+    try {
+      await _channel.invokeMethod('setAutoStart', {'enabled': val});
+    } catch (_) {}
+  }
 
   void _showFontPicker() {
     const fonts = ['orbitron', 'bebas', 'audiowide', 'monoton', 'teko', 'poiret'];
@@ -183,6 +210,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   title: 'Car button size',
                   subtitle: '${_buttonSize.toInt()}% · Bigger car buttons, easier to tap while driving',
                   onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ButtonSizeScreen())),
+                ),
+                const Divider(height: 1, indent: 56, color: AppColors.glassBorder),
+                SwitchListTile(
+                  secondary: const Icon(Icons.play_circle_outline, color: AppColors.textDim, size: 20),
+                  title: const Text('Auto-start on connect', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Colors.white)),
+                  subtitle: Text(_autoStart ? 'Opens DashMate automatically when car connects' : 'Wait until tapped on car display', style: const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                  value: _autoStart,
+                  activeColor: AppColors.tealAccent,
+                  onChanged: (val) => _toggleAutoStart(val),
                 ),
                 const Divider(height: 1, indent: 56, color: AppColors.glassBorder),
                 SwitchListTile(

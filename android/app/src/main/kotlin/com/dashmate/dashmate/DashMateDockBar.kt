@@ -22,47 +22,26 @@ import kotlin.math.min
 
 class DashMateDockBar(
     context: Context,
-    private val onPageSelected: (String) -> Unit
+    private val onPageSelected: (String) -> Unit,
+    /** Closes DashMate and returns to the Android Auto screen (the red button at the end). */
+    private val onExit: () -> Unit = {},
 ) : FrameLayout(context) {
 
     private val prefs: SharedPreferences = context.getSharedPreferences("dd_car_browser", Context.MODE_PRIVATE)
-    private val density = context.resources.displayMetrics.density
+    private val density: Float = context.resources.displayMetrics.density
 
-    private fun dp(value: Int): Int = (value * density + 0.5f).toInt()
-
-    private val colorPalette = listOf(
-        Color.parseColor("#14E0C1"), // 0: Teal
-        Color.parseColor("#009688"), // 1: Emerald Green
-        Color.parseColor("#E55368"), // 2: Coral / Pink Red
-        Color.parseColor("#3B82F6"), // 3: Blue
-        Color.parseColor("#D9822B"), // 4: Amber / Gold
-        Color.parseColor("#8B5CF6")  // 5: Purple
-    )
-    private val darkPaletteColor = Color.parseColor("#161B26")
-
-    private val tealColor = Color.parseColor("#14E0C1")
-    private val darkNavyColor = Color.parseColor("#0B0F1A")
-    private val glassBgColor = Color.argb(0xDC, 0x0E, 0x12, 0x1E)
-    private val glassStrokeColor = Color.argb(0x3C, 0xFF, 0xFF, 0xFF)
-    private val inactiveItemBg = Color.argb(0x19, 0xFF, 0xFF, 0xFF)
+    // Day / night colours; set by applyTheme (called with DashMateTheme.isDark once built).
+    private var activeItemBg = Color.parseColor("#2DD4BF")
+    private var activeIconTint = Color.parseColor("#042F2E")
+    private var dockBgColor = Color.parseColor("#181B21")
+    private var dockStrokeColor = Color.parseColor("#2A2F37")
+    private var inactiveItemBg = Color.parseColor("#20242B")
+    private var inactiveIconTint = Color.parseColor("#F1F5F9")
 
     private val expandInterpolator = OvershootInterpolator(1.3f)
-    private val collapseInterpolator = PathInterpolator(0.4f, 0f, 0.2f, 1f)
+    private val collapseInterpolator = PathInterpolator(0.4f, 0.0f, 0.2f, 1.0f)
 
-    private val launcherBtn: ImageView
-    private val dockPill: LinearLayout
-    private val itemViews = mutableMapOf<String, ImageView>()
-    private var currentItemIds: List<String> = emptyList()
-
-    private val allItemDefs = mapOf(
-        "home" to Triple(R.drawable.dd_ic_home, "Home", "home"),
-        "lyrics" to Triple(R.drawable.dd_ic_lyrics, "Lyrics", "lyrics"),
-        "prayer" to Triple(R.drawable.dd_ic_prayer, "Prayer Times", "prayer"),
-        "radio" to Triple(R.drawable.dd_ic_radio, "Radio FM", "radio"),
-        "custom" to Triple(R.drawable.dd_ic_grid, "Custom Dashboard", "custom"),
-        "web" to Triple(R.drawable.dd_ic_web, "Browser", "web"),
-        "browse" to Triple(R.drawable.dd_ic_web, "Browser", "web")
-    )
+    private val itemViews: MutableMap<String, ImageView> = LinkedHashMap()
 
     var isExpanded: Boolean = true
         private set
@@ -70,7 +49,6 @@ class DashMateDockBar(
     var currentPage: String = "home"
         private set
 
-    // Touch dragging with onInterceptTouchEvent
     private var downX = 0f
     private var downY = 0f
     private var initialMarginX = 0
@@ -78,218 +56,138 @@ class DashMateDockBar(
     private var isDragging = false
     private val dragThreshold = dp(10)
 
+    private val launcherBtn: ImageView
+    private val dockPill: LinearLayout
+    private val appsIcon: ImageView
+    private val exitBtn: ImageView
+
     init {
         clipChildren = false
         clipToPadding = false
 
-        // 1. Launcher button (9-circles icon) shown when collapsed
         launcherBtn = ImageView(context).apply {
             setImageResource(R.drawable.dd_ic_grid_circles)
-            imageTintList = ColorStateList.valueOf(Color.WHITE)
+            imageTintList = ColorStateList.valueOf(inactiveIconTint)
             scaleType = ImageView.ScaleType.FIT_CENTER
             setPadding(dp(10), dp(10), dp(10), dp(10))
-
-            val bg = GradientDrawable().apply {
+            background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(glassBgColor)
-                setStroke(dp(1), glassStrokeColor)
+                setColor(dockBgColor)
+                setStroke(dp(1), dockStrokeColor)
             }
-            background = bg
             elevation = dp(4).toFloat()
-
-            setOnClickListener {
-                toggleExpand()
-            }
-            setOnLongClickListener {
-                isDragging = true
-                true
-            }
+            setOnClickListener { toggleExpand() }
         }
 
-        // 2. Main horizontal pill container
         dockPill = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(6), dp(4), dp(6), dp(4))
-
-            val bg = GradientDrawable().apply {
+            background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = dp(24).toFloat()
-                setColor(glassBgColor)
-                setStroke(dp(1), glassStrokeColor)
+                setColor(dockBgColor)
+                setStroke(dp(1), dockStrokeColor)
             }
-            background = bg
             elevation = dp(4).toFloat()
         }
 
-        val pillParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT)
-        addView(dockPill, pillParams)
-
-        val launcherParams = LayoutParams(dp(44), dp(44)).apply {
-            gravity = Gravity.START or Gravity.TOP
-        }
-        addView(launcherBtn, launcherParams)
-
-        rebuildMenuButtons()
-
-        // Default: expanded
-        setExpandedState(expanded = true, animate = false)
-    }
-
-    fun rebuildMenuButtons() {
-        val jsonStr = prefs.getString("menu_items", "[\"home\",\"lyrics\",\"prayer\",\"radio\",\"custom\",\"web\"]")
-        val activeIds = mutableListOf<String>()
-        try {
-            val arr = org.json.JSONArray(jsonStr)
-            for (i in 0 until arr.length()) {
-                activeIds.add(arr.getString(i))
-            }
-        } catch (_: Exception) {
-            activeIds.addAll(listOf("home", "lyrics", "prayer", "radio", "custom", "web"))
-        }
-
-        if (activeIds.isEmpty()) {
-            activeIds.addAll(listOf("home", "lyrics", "prayer", "radio", "custom", "web"))
-        }
-
-        if (activeIds == currentItemIds && dockPill.childCount > 0) {
-            updatePageHighlight(currentPage)
-            return
-        }
-
-        currentItemIds = ArrayList(activeIds)
-        dockPill.removeAllViews()
-        itemViews.clear()
-
-        // Add 9-dots button at front of pill to quickly collapse/expand
-        val appsIcon = createIconButton("apps", R.drawable.dd_ic_grid_circles, "Apps Launcher") {
+        appsIcon = createIconButton("apps", R.drawable.dd_ic_grid_circles, "Apps Launcher") {
             toggleExpand()
-        }.apply {
-            setOnLongClickListener {
-                isDragging = true
-                true
-            }
         }
         dockPill.addView(appsIcon)
 
-        for (id in activeIds) {
-            val def = allItemDefs[id] ?: continue
-            val btn = createIconButton(id, def.first, def.second) {
-                selectPage(id)
-            }
+        val items = listOf(
+            Triple("home", R.drawable.dd_ic_home, "Home"),
+            Triple("lyrics", R.drawable.dd_ic_lyrics, "Lyrics"),
+            Triple("prayer", R.drawable.dd_ic_prayer, "Prayer Times"),
+            Triple("radio", R.drawable.dd_ic_radio, "Radio"),
+            Triple("custom", R.drawable.dd_ic_grid, "Custom Dashboard"),
+            Triple("web", R.drawable.dd_ic_web, "Browser"),
+            Triple("nav", R.drawable.dd_ic_nav, "Navigation (Waze Live Map)"),
+        )
+        for ((id, drawableRes, desc) in items) {
+            val btn = createIconButton(id, drawableRes, desc) { selectPage(id) }
             itemViews[id] = btn
             dockPill.addView(btn)
         }
 
+        // Exit: not a page, so it is never highlighted; red so it is easy to find.
+        exitBtn = createIconButton("exit", R.drawable.dd_ic_exit, "Exit DashMate") { onExit() }.apply {
+            (layoutParams as LinearLayout.LayoutParams).marginStart = dp(8)
+        }
+        dockPill.addView(exitBtn)
+
+        addView(dockPill, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
+        addView(
+            launcherBtn,
+            LayoutParams(dp(44), dp(44)).apply { gravity = Gravity.TOP or Gravity.START },
+        )
+
+        applyTheme(DashMateTheme.isDark)
+        setExpandedState(expanded = true, animate = false)
+    }
+
+    /** Recolours the dock for day (white) or night (dark). Colours only; nothing else changes. */
+    fun applyTheme(dark: Boolean) {
+        if (dark) {
+            dockBgColor = Color.parseColor("#181B21")
+            dockStrokeColor = Color.parseColor("#2A2F37")
+            inactiveItemBg = Color.parseColor("#20242B")
+            inactiveIconTint = Color.parseColor("#F1F5F9")
+            activeItemBg = Color.parseColor("#2DD4BF")
+            activeIconTint = Color.parseColor("#042F2E")
+        } else {
+            dockBgColor = Color.argb(245, 255, 255, 255) // #FFFFFF at ~96%
+            dockStrokeColor = Color.parseColor("#E2E8F0")
+            inactiveItemBg = Color.parseColor("#F1F5F9")
+            inactiveIconTint = Color.parseColor("#0F172A")
+            activeItemBg = Color.parseColor("#0F766E")
+            activeIconTint = Color.WHITE
+        }
+        (dockPill.background as? GradientDrawable)?.apply {
+            setColor(dockBgColor)
+            setStroke(dp(1), dockStrokeColor)
+        }
+        (launcherBtn.background as? GradientDrawable)?.apply {
+            setColor(dockBgColor)
+            setStroke(dp(1), dockStrokeColor)
+        }
+        launcherBtn.imageTintList = ColorStateList.valueOf(inactiveIconTint)
+        appsIcon.imageTintList = ColorStateList.valueOf(inactiveIconTint)
+        // Exit stays red so it is easy to find.
+        exitBtn.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.parseColor(if (dark) "#F87171" else "#DC2626"))
+        }
+        exitBtn.imageTintList = ColorStateList.valueOf(if (dark) Color.parseColor("#1F0A0A") else Color.WHITE)
         updatePageHighlight(currentPage)
-        applyStylePrefs()
     }
 
-    fun applyStylePrefs() {
-        post {
-            val scale = prefs.getFloat("nav_scale", 1.0f).coerceIn(0.7f, 1.4f)
-            val opacity = prefs.getFloat("nav_opacity", 0.92f).coerceIn(0.2f, 1.0f)
-            val colorIdx = prefs.getInt("nav_color_idx", 0)
-            val position = prefs.getString("dock_position", "top_left") ?: "top_left"
-            val autoCollapse = prefs.getBoolean("dock_auto_collapse", true)
+    private fun dp(value: Int): Int = (value * density + 0.5f).toInt()
 
-            scaleX = scale
-            scaleY = scale
-            pivotX = 0f
-            pivotY = 0f
-
-            dockPill.alpha = opacity
-            launcherBtn.alpha = opacity
-
-            val activeColor = if (colorIdx == -1) darkPaletteColor else colorPalette.getOrElse(colorIdx) { colorPalette[0] }
-            updatePageHighlight(currentPage, activeColor)
-
-            // Update gravity & margins according to position from companion app!
-            (layoutParams as? FrameLayout.LayoutParams)?.let { lp ->
-                val margin = dp(16)
-                when (position) {
-                    "top_right" -> {
-                        lp.gravity = Gravity.TOP or Gravity.END
-                        lp.setMargins(0, margin, margin, 0)
-                    }
-                    "bottom_left" -> {
-                        lp.gravity = Gravity.BOTTOM or Gravity.START
-                        lp.setMargins(margin, 0, 0, margin)
-                    }
-                    "bottom_right" -> {
-                        lp.gravity = Gravity.BOTTOM or Gravity.END
-                        lp.setMargins(0, 0, margin, margin)
-                    }
-                    else -> { // "top_left"
-                        lp.gravity = Gravity.TOP or Gravity.START
-                        lp.setMargins(margin, margin, 0, 0)
-                    }
-                }
-                layoutParams = lp
-            }
-
-            if (autoCollapse) {
-                scheduleAutoCollapse()
-            } else {
-                cancelAutoCollapse()
-            }
-        }
-    }
-
-    private var autoCollapseJob: Runnable? = null
-    private val collapseHandler = android.os.Handler(android.os.Looper.getMainLooper())
-
-    fun scheduleAutoCollapse() {
-        cancelAutoCollapse()
-        val autoCollapseEnabled = prefs.getBoolean("dock_auto_collapse", true)
-        if (!autoCollapseEnabled || !isExpanded) return
-
-        val r = Runnable {
-            if (isExpanded) {
-                setExpandedState(expanded = false, animate = true)
-            }
-        }
-        autoCollapseJob = r
-        collapseHandler.postDelayed(r, 6000L) // 6 seconds
-    }
-
-    fun cancelAutoCollapse() {
-        autoCollapseJob?.let { collapseHandler.removeCallbacks(it) }
-        autoCollapseJob = null
-    }
-
-    private fun createIconButton(
-        id: String,
-        drawableRes: Int,
-        desc: String,
-        onClick: () -> Unit
-    ): ImageView {
+    private fun createIconButton(id: String, drawableRes: Int, desc: String, onClick: () -> Unit): ImageView {
         val size = dp(38)
-        val btn = ImageView(context).apply {
+        return ImageView(context).apply {
             tag = id
             setImageResource(drawableRes)
             scaleType = ImageView.ScaleType.FIT_CENTER
             setPadding(dp(7), dp(7), dp(7), dp(7))
             contentDescription = desc
-
             layoutParams = LinearLayout.LayoutParams(size, size).apply {
                 marginStart = dp(3)
                 marginEnd = dp(3)
             }
-
-            setOnClickListener {
-                onClick()
-            }
+            setOnClickListener { onClick() }
         }
-        return btn
     }
 
     fun selectPage(page: String) {
-        scheduleAutoCollapse()
-        if (currentPage == page && page != "custom") return
-        currentPage = page
-        updatePageHighlight(page)
-        onPageSelected(page)
+        if (currentPage != page || page == "custom") {
+            currentPage = page
+            updatePageHighlight(page)
+            onPageSelected(page)
+        }
     }
 
     fun updateCurrentPage(page: String) {
@@ -299,43 +197,23 @@ class DashMateDockBar(
         }
     }
 
-    private fun updatePageHighlight(activePage: String, activeColorOverride: Int? = null) {
-        val colorIdx = prefs.getInt("nav_color_idx", 0)
-        val tintColor = activeColorOverride ?: if (colorIdx == -1) darkPaletteColor else colorPalette.getOrElse(colorIdx) { colorPalette[0] }
-
+    private fun updatePageHighlight(activePage: String) {
         for ((id, btn) in itemViews) {
-            val isActive = (id == activePage)
-            val bg = GradientDrawable().apply {
+            val isActive = id == activePage
+            btn.background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                if (isActive) {
-                    setColor(tintColor)
-                } else {
-                    setColor(inactiveItemBg)
-                }
+                setColor(if (isActive) activeItemBg else inactiveItemBg)
             }
-            btn.background = bg
-
-            if (isActive) {
-                btn.imageTintList = ColorStateList.valueOf(if (colorIdx == -1) Color.WHITE else darkNavyColor)
-            } else {
-                btn.imageTintList = ColorStateList.valueOf(Color.WHITE)
-            }
+            btn.imageTintList = ColorStateList.valueOf(if (isActive) activeIconTint else inactiveIconTint)
         }
     }
 
     fun toggleExpand() {
-        val next = !isExpanded
-        setExpandedState(next, animate = true)
-        if (next) {
-            scheduleAutoCollapse()
-        } else {
-            cancelAutoCollapse()
-        }
+        setExpandedState(!isExpanded, animate = true)
     }
 
     private fun setExpandedState(expanded: Boolean, animate: Boolean) {
         isExpanded = expanded
-
         if (!animate) {
             if (expanded) {
                 dockPill.visibility = View.VISIBLE
@@ -357,24 +235,22 @@ class DashMateDockBar(
             dockPill.scaleX = 0.7f
             dockPill.scaleY = 0.7f
             dockPill.pivotX = 0f
-            dockPill.pivotY = dockPill.height / 2f
-
+            dockPill.pivotY = dockPill.height / 2.0f
             launcherBtn.animate()
                 .alpha(0f)
-                .setDuration(120)
+                .setDuration(120L)
                 .setListener(object : AnimatorListenerAdapter() {
                     override fun onAnimationEnd(animation: Animator) {
                         launcherBtn.visibility = View.GONE
                     }
                 })
                 .start()
-
             dockPill.animate()
                 .alpha(1f)
                 .scaleX(1f)
                 .scaleY(1f)
                 .setInterpolator(expandInterpolator)
-                .setDuration(220)
+                .setDuration(220L)
                 .setListener(null)
                 .start()
         } else {
@@ -382,16 +258,15 @@ class DashMateDockBar(
             launcherBtn.alpha = 0f
             launcherBtn.animate()
                 .alpha(1f)
-                .setDuration(150)
+                .setDuration(150L)
                 .setListener(null)
                 .start()
-
             dockPill.animate()
                 .alpha(0f)
                 .scaleX(0.7f)
                 .scaleY(0.7f)
                 .setInterpolator(collapseInterpolator)
-                .setDuration(150)
+                .setDuration(150L)
                 .setListener(object : AnimatorListenerAdapter() {
                     override fun onAnimationEnd(animation: Animator) {
                         dockPill.visibility = View.GONE
@@ -409,6 +284,7 @@ class DashMateDockBar(
                 initialMarginX = (layoutParams as? LayoutParams)?.leftMargin ?: 0
                 initialMarginY = (layoutParams as? LayoutParams)?.topMargin ?: 0
                 isDragging = false
+                return false
             }
             MotionEvent.ACTION_MOVE -> {
                 val dx = ev.rawX - downX
@@ -417,9 +293,10 @@ class DashMateDockBar(
                     isDragging = true
                     return true
                 }
+                return false
             }
+            else -> return false
         }
-        return false
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -433,7 +310,6 @@ class DashMateDockBar(
                     val dy = event.rawY - downY
                     val maxMarginX = max(0, parentView.width - width)
                     val maxMarginY = max(0, parentView.height - height)
-
                     lp.leftMargin = min(maxMarginX, max(0, (initialMarginX + dx).toInt()))
                     lp.topMargin = min(maxMarginY, max(0, (initialMarginY + dy).toInt()))
                     layoutParams = lp
@@ -452,29 +328,22 @@ class DashMateDockBar(
     }
 
     private fun savePosition(x: Int, y: Int) {
-        prefs.edit()
-            .putInt("dock_x", x)
-            .putInt("dock_y", y)
-            .apply()
+        prefs.edit().putInt("dock_x", x).putInt("dock_y", y).apply()
     }
 
     fun restorePosition(parentWidth: Int, parentHeight: Int) {
         val defaultX = dp(16)
         val defaultY = dp(12)
-
         val savedX = prefs.getInt("dock_x", defaultX)
         val savedY = prefs.getInt("dock_y", defaultY)
-
         val maxMarginX = max(0, parentWidth - dp(240))
         val maxMarginY = max(0, parentHeight - dp(56))
-
         val clampedX = min(maxMarginX, max(0, savedX))
         val clampedY = min(maxMarginY, max(0, savedY))
-
-        (layoutParams as? LayoutParams)?.let { lp ->
-            lp.leftMargin = clampedX
-            lp.topMargin = clampedY
-            layoutParams = lp
+        (layoutParams as? LayoutParams)?.let {
+            it.leftMargin = clampedX
+            it.topMargin = clampedY
+            layoutParams = it
         }
     }
 }

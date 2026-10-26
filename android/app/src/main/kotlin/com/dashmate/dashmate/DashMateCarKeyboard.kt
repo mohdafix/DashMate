@@ -2,124 +2,136 @@ package com.dashmate.dashmate
 
 import android.content.Context
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.RippleDrawable
-import android.content.res.ColorStateList
 import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
-import android.view.ViewGroup
-import android.widget.FrameLayout
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import java.util.Locale
 
 class DashMateCarKeyboard(
     context: Context,
-    private val onSubmit: (text: String, isAddressBar: Boolean) -> Unit,
-    private val onDismiss: () -> Unit
+    private val onSubmit: (String, Boolean) -> Unit,
+    private val onDismiss: () -> Unit,
+    /** Every key press, with the whole text so far (not called for the address bar). */
+    private val onChange: (String) -> Unit = {},
 ) : LinearLayout(context) {
 
-    private val density = context.resources.displayMetrics.density
-    private var isShifted = false
-    private var isSymbols = false
-    private var isAddressBar = false
+    private val density: Float = context.resources.displayMetrics.density
     private var currentText = StringBuilder()
     private var currentHint = "Search or type..."
-
-    private lateinit var previewText: TextView
+    private var isAddressBar = false
+    private var isShifted = false
+    private var isSymbols = false
+    private var isPassword = false
+    private var dark = DashMateTheme.isDark
     private lateinit var keysContainer: LinearLayout
+    private lateinit var previewText: TextView
+    private val headerButtons = mutableListOf<TextView>()
+
+    // Day / night palette (DashMate design tokens).
+    private fun panelBg() = Color.parseColor(if (dark) "#181B21" else "#F1F5F9")
+    private fun keyBg() = Color.parseColor(if (dark) "#20242B" else "#FFFFFF")
+    private fun specialBg() = Color.parseColor(if (dark) "#2A2F37" else "#E2E8F0")
+    private fun border() = DashMateTheme.border(dark)
+    private fun ink() = DashMateTheme.ink(dark)
+    private fun muted() = Color.parseColor(if (dark) "#94A3B8" else "#64748B")
+    private fun accent() = DashMateTheme.accent(dark)
+    private fun onAccent() = Color.parseColor(if (dark) "#0F1115" else "#FFFFFF")
 
     init {
         orientation = VERTICAL
-        val bg = GradientDrawable().apply {
-            setColor(Color.parseColor("#F5101524"))
-            val r = 18f * density
-            cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
-            setStroke((1 * density).toInt(), Color.parseColor("#33FFFFFF"))
-        }
-        background = bg
+        // Docked full-width at the bottom of the car screen (not a full-screen overlay).
+        layoutParams = android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+            Gravity.BOTTOM,
+        )
+        isClickable = true // taps between keys must not fall through to the page
         val pad = (8 * density).toInt()
         setPadding(pad, (10 * density).toInt(), pad, pad)
-
         buildHeader()
         buildKeys()
-
-        visibility = GONE
+        applyTheme(dark)
+        visibility = View.GONE
     }
 
-    private fun dp(v: Float): Int = (v * density + 0.5f).toInt()
+    /** Recolours for day / night; safe to call any time. */
+    fun applyTheme(dark: Boolean) {
+        this.dark = dark
+        background = GradientDrawable().apply {
+            setColor(panelBg())
+            val r = density * 18f
+            cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
+            setStroke((1 * density).toInt(), border())
+        }
+        previewText.background = GradientDrawable().apply {
+            setColor(keyBg())
+            cornerRadius = density * 10f
+            setStroke((1 * density).toInt(), border())
+        }
+        for (b in headerButtons) {
+            b.setTextColor(ink())
+            b.background = GradientDrawable().apply {
+                setColor(specialBg())
+                cornerRadius = density * 10f
+            }
+        }
+        updatePreview()
+        buildKeys()
+    }
+
+    private fun dp(v: Float): Int = (density * v + 0.5f).toInt()
 
     private fun buildHeader() {
         val header = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            val lp = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
+            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
                 bottomMargin = dp(8f)
             }
-            layoutParams = lp
         }
 
         previewText = TextView(context).apply {
-            setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.START
-            val pLp = LayoutParams(0, dp(40f), 1f).apply {
-                marginEnd = dp(6f)
-            }
-            layoutParams = pLp
-            gravity = Gravity.CENTER_VERTICAL or Gravity.START
+            layoutParams = LayoutParams(0, dp(48f), 1f).apply { marginEnd = dp(6f) }
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
             setPadding(dp(12f), 0, dp(12f), 0)
-            val pBg = GradientDrawable().apply {
-                setColor(Color.parseColor("#1F2840"))
-                cornerRadius = 10f * density
-                setStroke((1 * density).toInt(), Color.parseColor("#25FFFFFF"))
-            }
-            background = pBg
         }
         header.addView(previewText)
 
-        // Clear button
         val clearBtn = TextView(context).apply {
             text = "✕"
-            setTextColor(Color.parseColor("#8B95AD"))
+            contentDescription = "Clear"
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             gravity = Gravity.CENTER
-            layoutParams = LayoutParams(dp(40f), dp(40f)).apply {
-                marginEnd = dp(6f)
-            }
-            val cBg = GradientDrawable().apply {
-                setColor(Color.parseColor("#1F2840"))
-                cornerRadius = 10f * density
-            }
-            background = cBg
+            layoutParams = LayoutParams(dp(56f), dp(48f)).apply { marginEnd = dp(6f) }
             setOnClickListener {
                 currentText.clear()
-                updatePreview()
+                changed()
             }
         }
+        headerButtons.add(clearBtn)
         header.addView(clearBtn)
 
-        // Close / Hide button
-        val closeBtn = TextView(context).apply {
+        val dismissBtn = TextView(context).apply {
             text = "▼"
-            setTextColor(Color.parseColor("#8B95AD"))
+            contentDescription = "Close keyboard"
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             gravity = Gravity.CENTER
-            layoutParams = LayoutParams(dp(40f), dp(40f))
-            val clBg = GradientDrawable().apply {
-                setColor(Color.parseColor("#1F2840"))
-                cornerRadius = 10f * density
-            }
-            background = clBg
+            layoutParams = LayoutParams(dp(56f), dp(48f))
             setOnClickListener {
                 hide()
                 onDismiss()
             }
         }
-        header.addView(closeBtn)
+        headerButtons.add(dismissBtn)
+        header.addView(dismissBtn)
 
         addView(header)
     }
@@ -132,14 +144,42 @@ class DashMateCarKeyboard(
             orientation = VERTICAL
             layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
         }
-
         if (isSymbols) {
             buildSymbolsRows(keysContainer)
         } else {
             buildLettersRows(keysContainer)
         }
-
         addView(keysContainer)
+    }
+
+    private fun newBottomRow(): LinearLayout = LinearLayout(context).apply {
+        orientation = HORIZONTAL
+        layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(4f)
+        }
+    }
+
+    private fun changed() {
+        updatePreview()
+        if (!isAddressBar) onChange(currentText.toString())
+    }
+
+    private fun append(s: String) {
+        currentText.append(s)
+        changed()
+    }
+
+    private fun backspace() {
+        if (currentText.isNotEmpty()) {
+            currentText.deleteCharAt(currentText.length - 1)
+            changed()
+        }
+    }
+
+    private fun submit() {
+        val text = currentText.toString()
+        hide()
+        onSubmit(text, isAddressBar)
     }
 
     private fun buildLettersRows(container: LinearLayout) {
@@ -147,73 +187,34 @@ class DashMateCarKeyboard(
         val row2 = listOf("a", "s", "d", "f", "g", "h", "j", "k", "l")
         val row3 = listOf("z", "x", "c", "v", "b", "n", "m")
 
-        container.addView(createRow(row1.map { if (isShifted) it.uppercase() else it }))
-        container.addView(createRow(row2.map { if (isShifted) it.uppercase() else it }, paddingSide = dp(16f)))
+        container.addView(createRow(row1.map { if (isShifted) it.uppercase(Locale.ROOT) else it }))
+        container.addView(createRow(row2.map { if (isShifted) it.uppercase(Locale.ROOT) else it }, dp(16f)))
 
-        // Row 3 with Shift & Backspace
-        val r3 = LinearLayout(context).apply {
-            orientation = HORIZONTAL
-            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(4f)
+        val row3Layout = newBottomRow()
+        row3Layout.addView(
+            createKey(if (isShifted) "⇪" else "⇧", 1.4f, isSpecial = true) {
+                isShifted = !isShifted
+                buildKeys()
             }
-        }
-        // Shift key
-        val shiftKey = createKey(if (isShifted) "⇪" else "⇧", weight = 1.4f, isSpecial = true) {
-            isShifted = !isShifted
-            buildKeys()
-        }
-        r3.addView(shiftKey)
-
+        )
         for (letter in row3) {
-            val keyVal = if (isShifted) letter.uppercase() else letter
-            r3.addView(createKey(keyVal, weight = 1.0f) {
-                currentText.append(keyVal)
-                updatePreview()
-            })
+            val keyVal = if (isShifted) letter.uppercase(Locale.ROOT) else letter
+            row3Layout.addView(createKey(keyVal, 1.0f) { append(keyVal) })
         }
+        row3Layout.addView(createKey("⌫", 1.4f, isSpecial = true) { backspace() })
+        container.addView(row3Layout)
 
-        // Backspace key
-        val backspaceKey = createKey("⌫", weight = 1.4f, isSpecial = true) {
-            if (currentText.isNotEmpty()) {
-                currentText.deleteCharAt(currentText.length - 1)
-                updatePreview()
+        val bottomRow = newBottomRow()
+        bottomRow.addView(
+            createKey("?123", 1.5f, isSpecial = true) {
+                isSymbols = true
+                buildKeys()
             }
-        }
-        r3.addView(backspaceKey)
-        container.addView(r3)
-
-        // Row 4: ?123, .com, Space, Go
-        val r4 = LinearLayout(context).apply {
-            orientation = HORIZONTAL
-            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(4f)
-            }
-        }
-        val symKey = createKey("?123", weight = 1.5f, isSpecial = true) {
-            isSymbols = true
-            buildKeys()
-        }
-        r4.addView(symKey)
-
-        val comKey = createKey(".com", weight = 1.3f, isSpecial = true) {
-            currentText.append(".com")
-            updatePreview()
-        }
-        r4.addView(comKey)
-
-        val spaceKey = createKey("Space", weight = 4.2f) {
-            currentText.append(" ")
-            updatePreview()
-        }
-        r4.addView(spaceKey)
-
-        val submitKey = createKey("Go ↵", weight = 2.0f, isAction = true) {
-            val text = currentText.toString()
-            hide()
-            onSubmit(text, isAddressBar)
-        }
-        r4.addView(submitKey)
-        container.addView(r4)
+        )
+        bottomRow.addView(createKey(".com", 1.3f, isSpecial = true) { append(".com") })
+        bottomRow.addView(createKey("Space", 4.2f) { append(" ") })
+        bottomRow.addView(createKey("Go ↵", 2.0f, isAction = true) { submit() })
+        container.addView(bottomRow)
     }
 
     private fun buildSymbolsRows(container: LinearLayout) {
@@ -224,90 +225,40 @@ class DashMateCarKeyboard(
         container.addView(createRow(row1))
         container.addView(createRow(row2))
 
-        val r3 = LinearLayout(context).apply {
-            orientation = HORIZONTAL
-            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(4f)
+        val row3Layout = newBottomRow()
+        row3Layout.addView(
+            createKey("ABC", 1.4f, isSpecial = true) {
+                isSymbols = false
+                buildKeys()
             }
-        }
-        val abcKey = createKey("ABC", weight = 1.4f, isSpecial = true) {
-            isSymbols = false
-            buildKeys()
-        }
-        r3.addView(abcKey)
-
+        )
         for (sym in row3) {
-            r3.addView(createKey(sym, weight = 1.0f) {
-                currentText.append(sym)
-                updatePreview()
-            })
+            row3Layout.addView(createKey(sym, 1.0f) { append(sym) })
         }
+        row3Layout.addView(createKey("⌫", 1.4f, isSpecial = true) { backspace() })
+        container.addView(row3Layout)
 
-        val backspaceKey = createKey("⌫", weight = 1.4f, isSpecial = true) {
-            if (currentText.isNotEmpty()) {
-                currentText.deleteCharAt(currentText.length - 1)
-                updatePreview()
-            }
-        }
-        r3.addView(backspaceKey)
-        container.addView(r3)
-
-        // Row 4: .com, /, ., Space, Go
-        val r4 = LinearLayout(context).apply {
-            orientation = HORIZONTAL
-            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(4f)
-            }
-        }
-        val comKey = createKey(".com", weight = 1.5f, isSpecial = true) {
-            currentText.append(".com")
-            updatePreview()
-        }
-        r4.addView(comKey)
-
-        val slashKey = createKey("/", weight = 1.0f, isSpecial = true) {
-            currentText.append("/")
-            updatePreview()
-        }
-        r4.addView(slashKey)
-
-        val dotKey = createKey(".", weight = 1.0f, isSpecial = true) {
-            currentText.append(".")
-            updatePreview()
-        }
-        r4.addView(dotKey)
-
-        val spaceKey = createKey("Space", weight = 3.5f) {
-            currentText.append(" ")
-            updatePreview()
-        }
-        r4.addView(spaceKey)
-
-        val submitKey = createKey("Go ↵", weight = 2.0f, isAction = true) {
-            val text = currentText.toString()
-            hide()
-            onSubmit(text, isAddressBar)
-        }
-        r4.addView(submitKey)
-        container.addView(r4)
+        val bottomRow = newBottomRow()
+        bottomRow.addView(createKey(".com", 1.5f, isSpecial = true) { append(".com") })
+        bottomRow.addView(createKey("/", 1.0f, isSpecial = true) { append("/") })
+        bottomRow.addView(createKey(".", 1.0f, isSpecial = true) { append(".") })
+        bottomRow.addView(createKey("Space", 3.5f) { append(" ") })
+        bottomRow.addView(createKey("Go ↵", 2.0f, isAction = true) { submit() })
+        container.addView(bottomRow)
     }
 
     private fun createRow(keys: List<String>, paddingSide: Int = 0): LinearLayout {
         val row = LinearLayout(context).apply {
             orientation = HORIZONTAL
-            val lp = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
+            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dp(4f)
             }
-            layoutParams = lp
-            if (paddingSide > 0) {
-                setPadding(paddingSide, 0, paddingSide, 0)
-            }
+        }
+        if (paddingSide > 0) {
+            row.setPadding(paddingSide, 0, paddingSide, 0)
         }
         for (k in keys) {
-            row.addView(createKey(k, weight = 1f) {
-                currentText.append(k)
-                updatePreview()
-            })
+            row.addView(createKey(k, 1.0f) { append(k) })
         }
         return row
     }
@@ -317,71 +268,70 @@ class DashMateCarKeyboard(
         weight: Float,
         isSpecial: Boolean = false,
         isAction: Boolean = false,
-        onClick: () -> Unit
+        onClick: () -> Unit,
     ): View {
-        val tv = TextView(context).apply {
+        return TextView(context).apply {
             text = label
             gravity = Gravity.CENTER
             setTextSize(TypedValue.COMPLEX_UNIT_SP, if (label.length > 2) 13f else 17f)
-            val lp = LayoutParams(0, dp(42f), weight).apply {
+            layoutParams = LayoutParams(0, dp(48f), weight).apply {
                 setMargins(dp(2f), 0, dp(2f), 0)
             }
-            layoutParams = lp
-
-            val normalColor = when {
-                isAction -> Color.parseColor("#14E0C1")
-                isSpecial -> Color.parseColor("#26324D")
-                else -> Color.parseColor("#1F2840")
+            val bgColor = when {
+                isAction -> accent()
+                isSpecial -> specialBg()
+                else -> keyBg()
             }
-            val textColor = when {
-                isAction -> Color.parseColor("#0B0F1A")
-                isSpecial -> Color.parseColor("#5EF2D6")
-                else -> Color.WHITE
+            val fgColor = when {
+                isAction -> onAccent()
+                isSpecial -> accent()
+                else -> ink()
             }
-            setTextColor(textColor)
-            setTypeface(null, if (isAction || isSpecial) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
-
-            val shape = GradientDrawable().apply {
-                setColor(normalColor)
-                cornerRadius = 8f * density
-                setStroke((1 * density).toInt(), Color.parseColor("#1AFFFFFF"))
+            setTextColor(fgColor)
+            setTypeface(null, if (isAction || isSpecial) Typeface.BOLD else Typeface.NORMAL)
+            background = GradientDrawable().apply {
+                setColor(bgColor)
+                cornerRadius = density * 8f
+                if (!isAction) setStroke((1 * density).toInt(), border())
             }
-            background = shape
-
             isClickable = true
             isFocusable = true
-            setOnClickListener {
-                onClick()
-            }
+            setOnClickListener { onClick() }
         }
-        return tv
     }
 
     private fun updatePreview() {
+        if (!::previewText.isInitialized) return
         if (currentText.isEmpty()) {
             previewText.text = currentHint
-            previewText.setTextColor(Color.parseColor("#607090"))
+            previewText.setTextColor(muted())
         } else {
-            previewText.text = currentText.toString()
-            previewText.setTextColor(Color.WHITE)
+            previewText.text = if (isPassword) "•".repeat(currentText.length) else currentText.toString()
+            previewText.setTextColor(ink())
         }
     }
 
-    fun show(initialText: String, hint: String, isAddressBar: Boolean) {
-        this.currentText = StringBuilder(initialText)
-        this.currentHint = if (hint.isNotBlank()) hint else "Search or type..."
+    /**
+     * Opens the keyboard. [inputType] is the web field's type ("text", "password", "number",
+     * "tel", "textarea"…): passwords show dots, number / tel fields start on the digits page.
+     */
+    fun show(initialText: String, hint: String, isAddressBar: Boolean, inputType: String = "text") {
+        currentText = StringBuilder(initialText)
+        currentHint = if (hint.isNotBlank()) hint else "Search or type..."
         this.isAddressBar = isAddressBar
-        this.isShifted = false
-        this.isSymbols = false
+        isPassword = inputType.equals("password", ignoreCase = true)
+        isShifted = false
+        isSymbols = inputType.equals("number", ignoreCase = true) || inputType.equals("tel", ignoreCase = true)
+        if (dark != DashMateTheme.isDark) applyTheme(DashMateTheme.isDark)
         updatePreview()
         buildKeys()
-        visibility = VISIBLE
+        visibility = View.VISIBLE
         bringToFront()
     }
 
     fun hide() {
-        visibility = GONE
+        visibility = View.GONE
     }
 
-    fun isShowing(): Boolean = visibility == VISIBLE
+    fun isShowing(): Boolean = visibility == View.VISIBLE
 }
