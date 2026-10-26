@@ -107,6 +107,18 @@ object DashMateStateBridge {
     var customPageMode: String = "weather" // weather, calendar, sports, radar, ev
     var currentYoutubeId: String = ""
 
+    private const val LYRICS_DELAY_KEY = "lyrics_car_delay_v2"
+    private const val LYRICS_DELAY_DEFAULT = 1500
+    fun lyricsDelayMs(context: Context?): Int =
+        context?.getSharedPreferences("dd_car_browser", Context.MODE_PRIVATE)?.getInt(LYRICS_DELAY_KEY, LYRICS_DELAY_DEFAULT)
+            ?: LYRICS_DELAY_DEFAULT
+    fun changeLyricsDelayMs(context: Context, deltaMs: Int): Int {
+        val v = (lyricsDelayMs(context) + deltaMs).coerceIn(-3000, 6000)
+        context.getSharedPreferences("dd_car_browser", Context.MODE_PRIVATE).edit().putInt(LYRICS_DELAY_KEY, v).apply()
+        notifyStateChanged()
+        return v
+    }
+
     /** Address the phone sent to the car browser (Browse screen); the car screen takes it once. */
     @Volatile var pendingWebUrl: String? = null
         set(v) { field = v; pendingWebUrlAt = if (v != null) System.currentTimeMillis() else 0L }
@@ -418,6 +430,7 @@ object DashMateStateBridge {
             put("sentAtMs", System.currentTimeMillis())
             put("app", songApp)
             put("lyrics", lyricsArr)
+            put("delayMs", lyricsDelayMs(context))
         }
         root.put("music", musicObj)
         root.put("positionMs", currentPos)

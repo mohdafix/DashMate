@@ -383,18 +383,13 @@ class DashMatePresentation(
             return
         }
 
-        // Navigation: Waze Live Map in the browser panel (desktop user agent, so the full map loads).
-        if (page == "nav") {
-            loadWebUrl(WAZE_LIVE_MAP_URL, highlight = "nav")
-            return
-        }
-
         exitBrowserToHome(false)
         if (kbdTarget === deckWebView) dropKeyboardTarget() // the field goes away with the page
         val assetUrl = when (page) {
             "lyrics" -> "file:///android_asset/drivedeck_lyrics.html"
             "prayer" -> "file:///android_asset/drivedeck_prayer.html"
             "radio" -> "file:///android_asset/dashmate_radio.html"
+            "nav" -> "file:///android_asset/drivedeck_nav.html"
             else -> "file:///android_asset/drivedeck_home.html"
         }
         deckWebView?.loadUrl(assetUrl)
@@ -741,6 +736,7 @@ class DashMatePresentation(
         isPresentationActive = false
         DashMateStateBridge.removeListener(this)
         DashMateTheme.removeListener(themeListener)
+        com.dashmate.dashmate.deck.CarLocation.stop(hostContext)
         super.onStop()
     }
 
@@ -748,6 +744,7 @@ class DashMatePresentation(
         isPresentationActive = false
         DashMateStateBridge.removeListener(this)
         DashMateTheme.removeListener(themeListener)
+        com.dashmate.dashmate.deck.CarLocation.stop(hostContext)
         releaseBrowser()
         try {
             deckWebView?.let { rootLayout.removeView(it); it.destroy() }
@@ -916,5 +913,19 @@ class DashMatePresentation(
         /** "tall" or "auto": the phone's Car layout setting, read by dd_tall.js before first paint. */
         @JavascriptInterface
         fun layoutMode(): String = DashMateStateBridge.layoutMode(context)
+
+        @JavascriptInterface
+        fun navApp(choice: String): String {
+            if (choice.isNotBlank()) CarNav.setNavApp(hostContext, choice)
+            return CarNav.navApp(hostContext)
+        }
+
+
+
+        @JavascriptInterface
+        fun location(): String = com.dashmate.dashmate.deck.CarLocation.json(hostContext)
+
+        @JavascriptInterface
+        fun lyricsDelay(deltaMs: Int): Int = DashMateStateBridge.changeLyricsDelayMs(hostContext, deltaMs)
     }
 }

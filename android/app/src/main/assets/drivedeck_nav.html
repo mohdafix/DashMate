@@ -1,0 +1,203 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>DashMate Navigation</title>
+<script>(function(){var q=/[?&]theme=(dark|light)/.exec(location.search),m=q&&q[1];
+try{if(!m&&window.DashMate&&DashMate.theme)m=DashMate.theme();}catch(e){}
+if(!m)m=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+document.documentElement.dataset.theme=m;
+window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'dark':'light');};})();</script>
+<style>
+  /* Navigation: DashMate's own place search (Waze's website search is blocked inside apps by
+     reCAPTCHA), quick places, and Waze's live traffic map. A result starts Waze navigation. */
+  html { font-size: clamp(11px, min(2.7vh, 1.75vw), 28px); }
+  :root {
+    --bg: #F8FAFC; --surface: #FFFFFF; --surface-2: #F1F5F9; --border: #E2E8F0;
+    --ink: #0F172A; --ink-2: #475569; --ink-3: #64748B;
+    --accent: #0F766E; --on-accent: #FFFFFF; --danger: #DC2626; --ok: #15803D;
+    --shadow: 0 1px 2px rgba(15,23,42,.06), 0 4px 12px rgba(15,23,42,.06);
+    --sans: "Google Sans", Roboto, system-ui, sans-serif;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0F1115; --surface: #181B21; --surface-2: #20242B; --border: #2A2F37;
+    --ink: #F1F5F9; --ink-2: #A3ACB9; --ink-3: #7C8594;
+    --accent: #2DD4BF; --on-accent: #042F2E; --danger: #F87171; --ok: #4ADE80;
+    --shadow: none;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { width: 100%; height: 100%; overflow: hidden; color: var(--ink); font-family: var(--sans);
+    background: var(--bg); -webkit-font-smoothing: antialiased; }
+
+  #app { height: 100%; display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 1.4rem;
+         padding: calc(3.8rem + var(--dd-extra, 0px)) 1.6rem 1.6rem; }
+  #side { display: flex; flex-direction: column; gap: 1rem; min-height: 0; }
+  #searchRow { display: flex; gap: .6rem; }
+  #q { flex: 1; min-width: 0; height: 3.6rem; border-radius: 1.8rem; border: 1px solid var(--border); background: var(--surface);
+       color: var(--ink); font: 500 1.35rem var(--sans); padding: 0 1.4rem 0 3.2rem; box-shadow: var(--shadow); outline: none;
+       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2364748B'%3E%3Cpath d='M15.5 14h-.8l-.3-.3A6.5 6.5 0 1 0 9.5 16a6.5 6.5 0 0 0 4.2-1.6l.3.3v.8l5 5 1.5-1.5-5-5zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z'/%3E%3C/svg%3E");
+       background-repeat: no-repeat; background-size: 1.6rem; background-position: 1rem 50%; }
+  #q:focus { border-color: var(--accent); }
+  #clear { flex: none; width: 3.6rem; height: 3.6rem; border-radius: 50%; border: 1px solid var(--border); background: var(--surface);
+           color: var(--ink-2); font-size: 1.6rem; display: none; }
+  body.typed #clear { display: block; }
+  #navWith { display: flex; align-items: center; gap: .5rem; color: var(--ink-2); font-size: 1rem; }
+  #navWith button { height: 2.8rem; padding: 0 1.1rem; border-radius: 1.4rem; border: 1px solid var(--border); background: var(--surface);
+                    color: var(--ink); font: 600 1.05rem var(--sans); }
+  #navWith button.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  #quick { display: flex; flex-wrap: wrap; gap: .6rem; }
+  .chip { display: inline-flex; align-items: center; gap: .5rem; height: 3.2rem; padding: 0 1.2rem; border-radius: 1.6rem;
+          border: 1px solid var(--border); background: var(--surface); color: var(--ink); font: 600 1.1rem var(--sans); box-shadow: var(--shadow); }
+  .chip span { font-size: 1.3rem; }
+  #status { color: var(--ink-3); font-size: 1rem; min-height: 1.2rem; }
+  #results { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: .5rem; }
+  .res { display: flex; align-items: center; gap: 1rem; padding: .9rem 1.1rem; border-radius: 1.2rem; background: var(--surface);
+         border: 1px solid var(--border); text-align: left; color: var(--ink); font-family: var(--sans); width: 100%; min-height: 4rem; }
+  .res .pin { flex: none; width: 2.4rem; height: 2.4rem; border-radius: 50%; background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+              color: var(--accent); display: grid; place-items: center; font-size: 1.2rem; }
+  .res .t { flex: 1; min-width: 0; }
+  .res b { display: block; font-size: 1.2rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .res small { display: block; color: var(--ink-2); font-size: .95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .res .go { flex: none; padding: .5rem 1rem; border-radius: 1rem; background: var(--accent); color: var(--on-accent); font-weight: 700; font-size: 1rem; }
+  .res:active { transform: scale(.98); }
+  #map { position: relative; min-height: 0; border-radius: 1.6rem; overflow: hidden; border: 1px solid var(--border); background: var(--surface-2); }
+  #map iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  #toast { position: fixed; left: 50%; bottom: 2rem; transform: translateX(-50%); max-width: 90vw; text-align: center; background: var(--ink); color: var(--bg);
+           padding: .8rem 1.4rem; border-radius: 1.4rem; font-weight: 600; font-size: 1.1rem; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  #toast.on { opacity: 1; }
+  /* Tall screens (Jaecoo J7): search and results on top, live map below. */
+  @media (max-aspect-ratio: 1/1) {
+    #app { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); gap: 1rem;
+           padding: calc(4.6rem + var(--dd-extra, 0px)) 1.4rem 1.4rem; }
+    #results { max-height: 46vh; flex: none; }
+    body:not(.typed) #results { display: none; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="side">
+    <div id="searchRow">
+      <input id="q" type="search" enterkeyhint="search" autocomplete="off" placeholder="Where to?">
+      <button id="clear" type="button" aria-label="Clear">✕</button>
+    </div>
+    <div id="navWith"><span>Navigate with</span><button type="button" data-app="waze">Waze</button><button type="button" data-app="maps">Google Maps</button></div>
+    <div id="quick">
+      <button class="chip" type="button" data-near="masjid"><span>🕌</span>Nearest masjid</button>
+      <button class="chip" type="button" data-near="petrol"><span>⛽</span>Nearest petrol</button>
+    </div>
+    <div id="status"></div>
+    <div id="results"></div>
+  </div>
+  <div id="map"></div>
+</div>
+<div id="toast"></div>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var here = { lat: 3.139, lon: 101.6869 }, mapAt = null, timer = null, seq = 0, lastQ = '';
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function toast(t) { var e = $('toast'); e.textContent = t; e.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(function () { e.classList.remove('on'); }, 5000); }
+
+  // Waze's live traffic map (its embeddable version: the full site refuses to load in a frame).
+  function showMap(lat, lon, zoom) {
+    var key = lat.toFixed(4) + ',' + lon.toFixed(4) + ',' + zoom;
+    if (key === mapAt) return;
+    mapAt = key;
+    $('map').innerHTML = '<iframe title="Waze live map" allow="geolocation" src="https://embed.waze.com/iframe?zoom=' + zoom +
+      '&lat=' + lat.toFixed(5) + '&lon=' + lon.toFixed(5) + '&pin=1"></iframe>';
+  }
+
+  function where(p) {
+    var parts = [p.street, p.district || p.locality, p.city, p.state].filter(Boolean);
+    return parts.filter(function (x, i) { return parts.indexOf(x) === i; }).join(', ');
+  }
+
+  function search(text) {
+    text = text.trim();
+    document.body.classList.toggle('typed', !!text);
+    if (!text) { $('results').innerHTML = ''; $('status').textContent = ''; lastQ = ''; return; }
+    if (text === lastQ) return;
+    lastQ = text;
+    var my = ++seq;
+    $('status').textContent = 'Searching…';
+    var url = 'https://photon.komoot.io/api/?limit=7&lang=en&q=' + encodeURIComponent(text) +
+      '&lat=' + here.lat + '&lon=' + here.lon;
+    fetch(url).then(function (r) { return r.json(); }).then(function (d) {
+      if (my !== seq) return;
+      // Same place listed several times (entrances, buildings): keep one per name + street.
+      var seen = {};
+      var list = (d.features || []).filter(function (f) {
+        if (!f.properties || !f.properties.name) return false;
+        var k = (f.properties.name + '|' + (f.properties.street || '')).toLowerCase();
+        if (seen[k]) return false;
+        seen[k] = 1; return true;
+      });
+      $('status').textContent = list.length ? '' : 'No places found. Tap Go to search in Waze.';
+      $('results').innerHTML = list.map(function (f) {
+        var c = f.geometry.coordinates;
+        return '<button class="res" type="button" data-lat="' + c[1] + '" data-lon="' + c[0] + '" data-name="' + esc(f.properties.name) + '">' +
+          '<span class="pin">📍</span><span class="t"><b>' + esc(f.properties.name) + '</b><small>' + esc(where(f.properties)) + '</small></span>' +
+          '<span class="go">Go</span></button>';
+      }).join('');
+    }).catch(function () {
+      if (my === seq) $('status').textContent = 'Offline? Tap Go on the keyboard to search in Waze.';
+    });
+  }
+
+  var navApp = 'waze';
+  function showNavApp(a) {
+    navApp = a === 'maps' ? 'maps' : 'waze';
+    Array.prototype.forEach.call(document.querySelectorAll('[data-app]'), function (b) { b.classList.toggle('on', b.getAttribute('data-app') === navApp); });
+  }
+  try { showNavApp(window.DashMate && DashMate.navApp ? DashMate.navApp('') : 'waze'); } catch (e) { showNavApp('waze'); }
+  function appName() { return navApp === 'maps' ? 'Google Maps' : 'Waze'; }
+  function navigateTo(lat, lon, name) {
+    showMap(lat, lon, 15);
+    toast('Route to ' + name + ' sent to ' + appName() + ' · tap the ' + appName() + ' icon below to see it');
+    if (window.DashMate && DashMate.navigate) DashMate.navigate(lat, lon);
+  }
+
+  var q = $('q');
+  q.addEventListener('input', function () {
+    clearTimeout(timer);
+    var t = q.value;
+    timer = setTimeout(function () { search(t); }, 350);
+  });
+  q.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    var first = document.querySelector('.res');
+    // Go: the first result, or let Waze search the words when nothing matched.
+    if (first) navigateTo(+first.getAttribute('data-lat'), +first.getAttribute('data-lon'), first.getAttribute('data-name'));
+    else if (q.value.trim() && window.DashMate && DashMate.site) { toast('Searching in ' + appName() + '…'); DashMate.site('geo:0,0?q=' + encodeURIComponent(q.value.trim())); }
+  });
+  $('clear').addEventListener('click', function () { q.value = ''; search(''); });
+  document.addEventListener('click', function (e) {
+    var r = e.target.closest('.res');
+    if (r) { navigateTo(+r.getAttribute('data-lat'), +r.getAttribute('data-lon'), r.getAttribute('data-name')); return; }
+    var ap = e.target.closest('[data-app]');
+    if (ap) { var a = ap.getAttribute('data-app'); try { if (window.DashMate && DashMate.navApp) a = DashMate.navApp(a); } catch (x) {} showNavApp(a); return; }
+    var n = e.target.closest('[data-near]');
+    if (n && window.DashMate && DashMate.site) {
+      toast(n.getAttribute('data-near') === 'masjid' ? 'Finding the nearest masjid…' : 'Finding the nearest petrol station…');
+      DashMate.site('dashmate://' + n.getAttribute('data-near'));
+    }
+  });
+
+  // State from the app: centre the search and map on the car's area (prayer zone / radar centre).
+  window.ddUpdate = function (p) {
+    if (typeof p === 'string') { try { p = JSON.parse(p); } catch (e) { return; } }
+    var r = p && p.radar;
+    if (r && typeof r.lat === 'number' && typeof r.lon === 'number') here = { lat: r.lat, lon: r.lon };
+    if (!mapAt) showMap(here.lat, here.lon, 13);
+  };
+  window.ddRelayout = function () {};
+  setTimeout(function () { if (!mapAt) showMap(here.lat, here.lon, 13); }, 1500);
+  if (window.DriveDeck && window.DriveDeck.ready) window.DriveDeck.ready();
+})();
+</script>
+</body>
+</html>

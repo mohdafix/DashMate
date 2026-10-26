@@ -2,7 +2,7 @@
 <html>
 <head>
 <script>(function(){var q=/[?&]theme=(dark|light)/.exec(location.search),m=q&&q[1];
-try{if(!m&&(window.DashMate?.theme||window.DriveDeck?.theme))m=(window.DashMate||window.DriveDeck).theme();}catch(e){}
+try{if(!m&&window.DashMate&&DashMate.theme)m=DashMate.theme();}catch(e){}
 if(!m)m=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.dataset.theme=m;
 window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'dark':'light');};})();</script>
@@ -22,37 +22,73 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
     --f14: max(12px, calc(14px * var(--k))); --f15: max(12px, calc(15px * var(--k)));
     --f16: max(12px, calc(16px * var(--k))); --f17: max(12px, calc(17px * var(--k)));
   }
+  /* Theme tokens (design/tokens.json). Day = white; night = soft charcoal (html[data-theme="dark"]). */
   :root {
-    --accent: #5EF2D6; --violet: #2BB9A3; /* deep teal: one accent hue */ --red: #FF7A85; --green: #6EE7A0;
-    --ink: #FFFFFF; --dim: rgba(255,255,255,.74);
-    --glass: rgba(255,255,255,.12); --edge: rgba(255,255,255,.16);
+    --bg: #F8FAFC; --surface: #FFFFFF; --surface-2: #F1F5F9; --border: #E2E8F0;
+    --ink: #0F172A; --ink-2: #475569; --ink-3: #64748B;
+    --accent: #0F766E; --on-accent: #FFFFFF; --danger: #DC2626; --ok: #15803D;
+    --shadow: 0 1px 2px rgba(15,23,42,.06), 0 4px 12px rgba(15,23,42,.06);
+    --photo-surface: rgba(255,255,255,.94); /* tile plate over a photo / song cover */
+    --amber: #B45309; --rain: #0369A1;
+  }
+  :root[data-theme="dark"] {
+    --bg: #0F1115; --surface: #181B21; --surface-2: #20242B; --border: #2A2F37;
+    --ink: #F1F5F9; --ink-2: #A3ACB9; --ink-3: #7C8594;
+    --accent: #2DD4BF; --on-accent: #042F2E; --danger: #F87171; --ok: #4ADE80;
+    --shadow: none;
+    --photo-surface: rgba(24,27,33,.90);
+    --amber: #FBBF24; --rain: #7DD3FC;
+  }
+  :root {
+    /* Old names, kept for the rules below. */
+    --dim: var(--ink-2); --glass: var(--surface-2); --edge: var(--border);
+    --red: var(--danger); --green: var(--ok); --violet: var(--accent);
+    /* Tinted text that stays readable on its own tint, both themes. */
+    --accent-ink: color-mix(in srgb, var(--accent) 82%, var(--ink));
+    --danger-ink: color-mix(in srgb, var(--danger) 82%, var(--ink));
+    --tile-bg: var(--surface);
+    /* Floating clock: ink on the plain background, white + soft shadow on a picture. */
+    --clock: var(--ink); --clock-shadow: none;
+  }
+  body.mode-photo:not(.pg-custom), body.mode-upload:not(.pg-custom), body.mode-cover.art:not(.pg-custom) {
+    --tile-bg: var(--photo-surface); --clock: #FFFFFF; --clock-shadow: 0 2px 12px rgba(0,0,0,.55);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { width: 100%; height: 100%; overflow: hidden; color: var(--ink); background: #0B0F1A;
+  html, body { width: 100%; height: 100%; overflow: hidden; color: var(--ink); background: var(--bg);
     font-family: "Google Sans", Roboto, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
 
   /* ---------- Background: photo / song cover / plain ---------- */
   body:not(.ready) #grid { visibility: hidden; }
-  #plain { position: fixed; inset: 0; background:
-      radial-gradient(circle at 15% 15%, #133A44 0%, transparent 45%),
-      radial-gradient(circle at 85% 85%, #13243A 0%, transparent 50%), #0B0F1A; } /* teal + navy, no purple */
-  #photo, #bg { position: fixed; inset: 0; background: center/cover no-repeat; opacity: 0; transition: opacity 1.2s ease; }
+  #plain { position: fixed; inset: 0; background: var(--bg); }
+  #photo, #bg { position: fixed; inset: 0; background: center/cover no-repeat; opacity: 0; transition: opacity .25s ease; }
   #bg { filter: brightness(.6); }
   body.mode-photo #photo, body.mode-upload #photo { opacity: 1; }
   body.mode-cover.art #bg { opacity: 1; }
-  #dim { position: fixed; inset: 0; background: #000; opacity: .35; transition: opacity .6s; }
+  #dim { position: fixed; inset: 0; background: #000; opacity: .35; transition: opacity .2s; }
+  /* Dim + edge shade only over a picture; the plain background stays clean. */
+  #dim, #shade { display: none; }
+  body.mode-photo #dim, body.mode-upload #dim, body.mode-cover.art #dim,
+  body.mode-photo #shade, body.mode-upload #shade, body.mode-cover.art #shade { display: block; }
   /* Darken only the edges where text sits; the middle stays clear. */
   #shade { position: fixed; inset: 0; background:
       linear-gradient(180deg, rgba(0,0,0,.45) 0%, transparent 32%, transparent 62%, rgba(0,0,0,.5) 100%); }
-  #credit { position: fixed; right: 1.4rem; bottom: .3rem; font-size: .66rem; color: rgba(255,255,255,.5); }
+  #credit { position: fixed; right: 1.4rem; bottom: .3rem; font-size: .66rem; color: var(--clock); opacity: .7; text-shadow: var(--clock-shadow); }
 
   /* No backdrop blur (too costly on head units): a darker tint keeps text readable. */
   .dim { color: var(--dim); }
   .ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .shadow { text-shadow: 0 .1rem 1.2rem rgba(0,0,0,.45); }
+  .shadow { text-shadow: var(--clock-shadow); }
 
-  /* Even margin all round: the floating DashMate button can be moved anywhere. */
+  /* Even margin all round: the DashMate button floats and can be moved anywhere. */
   #app { position: relative; height: 100%; padding: calc(var(--u) * 1.2) calc(var(--u) * 1.4); }
+  /* Small Android Auto panel (split screen, e.g. 460×370): the floating dock bar (16 dp + 46 dp tall)
+     would sit on the top row of tiles, so keep a strip free for it. Same test as isSmallPanel(). */
+  @media (max-width: 619px) and (max-aspect-ratio: 27/20) and (min-aspect-ratio: 20/21) {
+    #app { padding-top: calc(var(--u) * .6 + 66px); }
+    /* Fuel: three prices need the whole tile width, so drop the pump icon. */
+    .w[data-w="fuel"] .info > .ic { display: none; }
+    #fuelText { gap: .9em; }
+  }
 
   /* ---------- Tablet-style widget grid (12 × 8 cells): always fits one screen. 8 rows by default;
      more widgets add rows and every row shares the height (no scrolling, nothing cut off). ---------- */
@@ -69,10 +105,12 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   .w.sq { border-radius: calc(var(--u) * .2); }
   .in { width: 100%; height: 100%; display: flex; min-width: 0; min-height: 0;
         padding: clamp(10px, min(13cqh, 5.5cqw), 22px) clamp(14px, min(15cqh, 6.5cqw), 26px); }
-  /* Glass plate: hairline edge, subtle gradient surface, top highlight, navy-tinted soft shadow. */
-  .tile { background: linear-gradient(145deg, rgba(22,28,44,.74) 0%, rgba(13,17,28,.82) 100%);
-          border: 1px solid var(--edge); box-shadow: inset 0 1px 0 rgba(255,255,255,.16), 0 8px 24px rgba(4,10,24,.35);
-          backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+  /* Solid plate: surface colour, hairline edge, soft shadow by day. No blur. */
+  .tile { background: var(--tile-bg); border: 1px solid var(--border); box-shadow: var(--shadow); }
+  /* Owner, 26 Oct: rounder, softer cards (solid, no blur). */
+  .w.tile:not(.sq) { border-radius: max(22px, calc(var(--u) * 2.3)); }
+  .tile { box-shadow: 0 8px 28px -12px rgba(15,23,42,.16), 0 1px 3px rgba(15,23,42,.05); }
+  :root[data-theme="dark"] .tile { box-shadow: none; }
   .w[data-ta="center"] .in { text-align: center; }
   .w[data-ta="right"] .in { text-align: right; }
   /* Phone widget editor only (never on the car). */
@@ -83,9 +121,9 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   .w[data-w="clock"][data-ta="center"] .in { align-items: center; }
   .w[data-w="clock"][data-ta="right"] .in { align-items: flex-end; }
   #time { font-size: calc(min(58cqh, 27cqw) * var(--k)); line-height: .95; letter-spacing: -.03em;
-          font-variant-numeric: tabular-nums; white-space: nowrap; text-shadow: 0 2px 16px rgba(0,0,0,.6); }
+          font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--clock); text-shadow: var(--clock-shadow); }
   #time .ap { font-size: .32em; font-weight: 500; margin-left: .25em; letter-spacing: .02em; }
-  #date { font-size: max(var(--f14), calc(min(11cqh, 5.5cqw) * var(--k))); margin-top: .35em; opacity: .88; white-space: nowrap; font-weight: 500; text-shadow: 0 2px 10px rgba(0,0,0,.6); }
+  #date { font-size: max(var(--f14), calc(min(11cqh, 5.5cqw) * var(--k))); margin-top: .35em; opacity: .88; white-space: nowrap; font-weight: 500; color: var(--clock); text-shadow: var(--clock-shadow); }
   body.cf-thin #time { font-weight: 200; }
   body.cf-bold #time { font-weight: 700; letter-spacing: -.05em; }
   body.cf-serif #time { font-family: serif; font-weight: 400; }
@@ -97,7 +135,7 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   body.cf-wide #time { font-weight: 300; letter-spacing: .12em; }
   body.cf-italic #time { font-weight: 200; font-style: italic; }
   body.cf-casual #time { font-family: casual; font-weight: 400; letter-spacing: 0; }
-  body.cf-outline #time { font-weight: 800; color: transparent; -webkit-text-stroke: .025em #fff; }
+  body.cf-outline #time { font-weight: 800; color: transparent; -webkit-text-stroke: .025em var(--clock); }
   /* Google Fonts (bundled subsets, see fonts/README.txt). */
   @font-face { font-family: 'dd-orbitron'; src: url('fonts/orbitron.woff2') format('woff2'); }
   body.cf-orbitron #time { font-family: 'dd-orbitron', sans-serif; font-weight: 400; letter-spacing: 0; }
@@ -112,7 +150,7 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   @font-face { font-family: 'dd-monoton'; src: url('fonts/monoton.woff2') format('woff2'); }
   body.cf-monoton #time { font-family: 'dd-monoton', sans-serif; font-weight: 400; letter-spacing: 0; }
   body.cf-bebas #time, body.cf-teko #time { font-size: calc(min(70cqh, 33cqw) * var(--k)); }
-  body.cf-neon #time { font-weight: 300; color: #e9fffb; text-shadow: 0 0 .06em #fff, 0 0 .18em var(--accent), 0 0 .4em var(--accent); }
+  body.cf-neon #time { font-weight: 300; color: var(--clock); text-shadow: 0 0 .18em var(--accent); }
 
   /* Info tiles (prayer, weather, football, fuel): icon + text in a row; stacked when tall */
   .info { align-items: center; gap: max(10px, min(8cqh, 4.5cqw)); }
@@ -123,15 +161,16 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   .w[data-ta="left"] .info .txt, .w:not([data-ta]) .info .txt { flex: 1; }
   .t1 { font-size: max(var(--f16), calc(min(17cqh, 6.5cqw) * var(--k))); font-weight: 600; letter-spacing: -0.01em; }
   .big { font-size: calc(min(36cqh, 11cqw) * var(--k)); font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums;
-         white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; color: #FFFFFF; }
+         white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; color: var(--ink); }
   .sub { font-size: max(var(--f15), calc(min(16cqh, 6cqw) * var(--k))); color: var(--dim); font-weight: 500; }
   #scoreText { font-weight: 600; }
-  #scoreSub .lv { color: #ff8a94; font-weight: 700; }
+  #scoreSub .lv { color: var(--danger-ink); font-weight: 700; }
+  .w.tile[data-w="prayer"], .w.tile[data-w="fuel"] { cursor: pointer; }
   #fuelText { display: flex; gap: 1.4em; overflow: hidden; align-items: center; }
   #fuelText .fu { display: flex; flex-direction: column; min-width: 0; }
   #fuelText .fu small { font-size: .85em; color: var(--dim); white-space: nowrap; font-weight: 600; letter-spacing: 0.02em; }
-  #fuelText .fu b { font-size: 1.3em; font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; line-height: 1.15; }
-  .w[data-w="football"] { background: linear-gradient(145deg, rgba(64,20,28,.74) 0%, rgba(20,14,20,.82) 100%); border-color: rgba(255,122,133,.28); }
+  #fuelText .fu b { font-size: 1.3em; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; line-height: 1.15; }
+  .w[data-w="football"] { background: color-mix(in srgb, var(--danger) 8%, var(--tile-bg)); border-color: color-mix(in srgb, var(--danger) 28%, var(--border)); }
   @container tile (max-aspect-ratio: 1/1) {
     .info { flex-direction: column; justify-content: center; text-align: center; }
     .info .txt { align-items: center; }
@@ -150,7 +189,7 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
          column-gap: max(10px, min(8cqh, 4cqw)); row-gap: max(6px, min(5cqh, 2.5cqw)); align-items: center; }
   /* --as: album art size from the phone (1 = default); rows cap it at the tile height. */
   #cover { grid-row: 1 / span 2; height: calc(100% * min(1, var(--as, 1))); max-width: calc(42cqw * var(--as, 1)); aspect-ratio: 1; border-radius: clamp(10px, min(12cqh, 5cqw), 20px);
-           background: rgba(255,255,255,.1) center/cover no-repeat; box-shadow: 0 8px 24px rgba(0,0,0,.45), inset 0 0 0 1px rgba(255,255,255,.14);
+           background: var(--surface-2) center/cover no-repeat; box-shadow: var(--shadow);
            display: grid; place-items: center; font-size: calc(min(28cqh, 9cqw) * var(--k)); color: var(--dim); }
   .w.noart .mus { grid-template-columns: minmax(0, 1fr); }
   .w.noart #cover { display: none; }
@@ -159,26 +198,34 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   #songRow { display: flex; gap: .6em; align-items: baseline; font-size: max(var(--f14), calc(min(7.5cqw, 10cqh) * var(--k))); }
   .w[data-ta="center"] #songRow { justify-content: center; }
   .w[data-ta="right"] #songRow { justify-content: flex-end; }
-  #song { font-weight: 700; color: #FFFFFF; min-width: 0; flex: 0 1 auto; }
+  #song { font-weight: 700; color: var(--ink); min-width: 0; flex: 0 1 auto; }
   #artist { color: var(--dim); min-width: 0; flex: 0 1 auto; font-weight: 500; }
-  #line { font-size: max(var(--f17), calc(min(13cqw, 17cqh) * var(--k))); font-weight: 700; line-height: 1.25; color: #FFFFFF;
-          text-shadow: 0 2px 8px rgba(0,0,0,.6); /* readability on photos, not a glow */
+  #line { font-size: max(var(--f17), calc(min(13cqw, 17cqh) * var(--k))); font-weight: 700; line-height: 1.25; color: var(--ink);
           white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   #next { font-size: max(var(--f14), calc(min(8cqw, 10cqh) * var(--k))); color: var(--dim); font-weight: 500; }
-  #progress { height: max(3px, 3cqh); border-radius: 99px; background: rgba(255,255,255,.16); overflow: hidden; margin-top: .35em; }
-  #progressFill { height: 100%; width: 0; border-radius: 99px; background: linear-gradient(90deg, var(--accent), var(--violet)); box-shadow: 0 0 8px rgba(94,242,214,.5); }
+  #progress { height: max(3px, 3cqh); border-radius: 99px; background: var(--border); overflow: hidden; margin-top: .35em; }
+  /* Full width, scaled from the left (transform only: no layout per frame). */
+  #progressFill { height: 100%; width: 100%; background: var(--accent); transform: scaleX(0); transform-origin: 0 50%; will-change: transform; }
   #controls { grid-column: 2; align-self: start; display: flex; align-items: center; gap: max(8px, min(6cqh, 2.8cqw)); }
   .w[data-ta="center"] #controls { justify-content: center; }
   .w[data-ta="right"] #controls { justify-content: flex-end; }
   .w.noart #controls { grid-column: 1; }
-  .ctl { width: max(48px, min(18cqh, 10cqw)); height: max(48px, min(18cqh, 10cqw)); border-radius: 50%; border: 1px solid rgba(255,255,255,.18);
-         background: linear-gradient(135deg, rgba(255,255,255,.14), rgba(255,255,255,.05)); box-shadow: 0 4px 12px rgba(0,0,0,.25);
-         display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; flex: none; transition: transform .12s ease; }
-  .ctl svg { width: 50%; height: 50%; fill: #fff; }
-  .ctl.play { width: max(56px, min(24cqh, 13cqw)); height: max(56px, min(24cqh, 13cqw)); background: #fff; border-color: #fff; box-shadow: 0 6px 20px rgba(255,255,255,.25); }
-  .ctl.play svg { fill: #0B0F1A; width: 48%; height: 48%; }
+  .ctl { width: max(48px, min(18cqh, 10cqw)); height: max(48px, min(18cqh, 10cqw)); border-radius: 50%; border: 1px solid var(--border);
+         background: var(--surface-2);
+         display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; flex: none; transition: transform .15s ease; }
+  .ctl svg { width: 50%; height: 50%; fill: var(--ink); }
+  .ctl.play { width: max(56px, min(24cqh, 13cqw)); height: max(56px, min(24cqh, 13cqw)); background: var(--accent); border-color: var(--accent); }
+  .ctl.play svg { fill: var(--on-accent); width: 48%; height: 48%; }
   .ctl:active { transform: scale(.92); }
   #music > * { flex: none; }   /* drop whole lines, never squash one */
+  /* Tall screens (same test as isTallScreen): a smaller lyric line so the song, line, next line and
+     progress fit the tile instead of being cut half-way; buttons at least driver size (56 px).
+     Placed before the shape rules below so they still win for strip / tall tiles. */
+  @media (max-aspect-ratio: 20/21) {
+    #line { font-size: max(var(--f17), calc(min(10cqw, 11cqh) * var(--k))); }
+    .ctl { min-width: 56px; min-height: 56px; }
+    .ctl.play { min-width: 64px; min-height: 64px; }
+  }
   @container tile (max-height: 180px) { #next { display: none; } }
   @container tile (max-height: 200px) { #line { -webkit-line-clamp: 1; } }
   /* Small block: the text gets the whole tile (a tiny cover helps nobody). */
@@ -229,15 +276,15 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   #fcNow .d { display: flex; flex-direction: column; color: var(--dim); }
   #fcHours { display: flex; justify-content: space-between; gap: .2em; font-size: max(var(--f14), calc(min(6.5cqh, 3.2cqw) * var(--k))); }
   #fcHours .h { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: .15em;
-                padding: .4em 0; border-radius: .8em; background: rgba(255,255,255,.05); }
+                padding: .4em 0; border-radius: .8em; background: var(--surface-2); }
   #fcHours .h .i { font-size: 1.6em; line-height: 1; }
-  #fcHours .h .r, #fcDays .r { color: #8fd0ff; font-size: max(var(--f13), .85em); }
+  #fcHours .h .r, #fcDays .r { color: var(--rain); font-size: max(var(--f13), .85em); }
   /* Rows that don't fit wrap into a hidden second column: a day shows whole or not at all. */
   #fcDays { display: flex; flex-direction: column; flex-wrap: wrap; align-content: flex-start; gap: .15em; font-size: max(var(--f14), calc(min(6.2cqh, 3.4cqw) * var(--k))); min-height: 0; overflow: hidden; }
   #fcDays .d { width: 100%; display: grid; grid-template-columns: 3.2em 1.8em 3em 2.6em 1fr 2.6em; align-items: center; gap: .4em; }
   #fcDays .d .i { font-size: 1.3em; text-align: center; }
   #fcDays .lo { color: var(--dim); text-align: right; }
-  #fcDays .bar { height: .35em; border-radius: 99px; background: rgba(255,255,255,.12); position: relative; }
+  #fcDays .bar { height: .35em; border-radius: 99px; background: var(--border); position: relative; }
   #fcDays .bar b { position: absolute; top: 0; bottom: 0; border-radius: 99px; background: linear-gradient(90deg, #7cc4ff, #ffd36e); }
   @container tile (max-height: 300px) { #fcDays { display: none; } }
   @container tile (max-height: 150px) { #fcHours { display: none; } }
@@ -246,40 +293,41 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
                                        #fcDays .d { grid-template-columns: 3.2em 1.8em 3em 2.6em 2.6em; } }
 
   /* Weather dashboard (big tile, e.g. the Custom page): hero card · hourly strip · day cards */
-  .card { background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.12); border-radius: 1.1em; }
+  .card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 1.1em; }
   #fcNow .hl, #fcNow .note { display: none; }
   @container tile (min-width: 440px) and (min-height: 280px) {
     .w[data-w="forecast"].big { background: none; border: 0; box-shadow: none; border-radius: 0; overflow: visible; }
+    .w[data-w="forecast"].big .card { background: var(--tile-bg); box-shadow: var(--shadow); }
     .w[data-w="forecast"].big .in { padding: 0; }
     .fc { gap: min(2.4cqh, 1.4cqw); font-size: max(var(--f15), calc(min(3.2cqh, 1.9cqw) * var(--k))); }
     #fcNow { flex: 1.35; min-height: 0; position: relative; overflow: hidden; padding: .8em 1.4em; font-size: inherit;
              display: grid; grid-template-columns: auto 1fr auto; grid-template-rows: 1fr auto auto; column-gap: 1em;
-             background: linear-gradient(135deg, rgba(255,255,255,.12), rgba(255,255,255,.03)); }
+             }
     #fcNow .t { grid-column: 1; grid-row: 1; font-size: 4em; font-weight: 200; align-self: center; line-height: 1; }
     #fcNow .ic { grid-column: 2; grid-row: 1; align-self: center; width: 5em; height: 5em; margin: -1.2em 0; }
-    #fcNow.sun { background: linear-gradient(135deg, rgba(255,196,84,.28), rgba(255,255,255,.04)); }
-    #fcNow.cloud { background: linear-gradient(135deg, rgba(170,190,215,.22), rgba(255,255,255,.04)); }
-    #fcNow.rain { background: linear-gradient(135deg, rgba(66,134,238,.3), rgba(255,255,255,.04)); }
-    #fcNow.storm { background: linear-gradient(135deg, rgba(126,87,194,.34), rgba(255,255,255,.04)); }
-    #fcNow.night { background: linear-gradient(135deg, rgba(60,70,140,.32), rgba(255,255,255,.04)); }
+    .w[data-w="forecast"].big #fcNow.sun { background: color-mix(in srgb, #F59E0B 14%, var(--tile-bg)); }
+    .w[data-w="forecast"].big #fcNow.cloud { background: color-mix(in srgb, #94A3B8 14%, var(--tile-bg)); }
+    .w[data-w="forecast"].big #fcNow.rain { background: color-mix(in srgb, #3B82F6 14%, var(--tile-bg)); }
+    .w[data-w="forecast"].big #fcNow.storm { background: color-mix(in srgb, #7C3AED 14%, var(--tile-bg)); }
+    .w[data-w="forecast"].big #fcNow.night { background: color-mix(in srgb, #4F46E5 14%, var(--tile-bg)); }
     #fcNow .d { grid-column: 1 / 3; grid-row: 2; color: var(--ink); }
     #fcNow .d b { font-size: 1.7em; font-weight: 600; }
     #fcNow .d span { color: var(--dim); font-size: 1.1em; }
     #fcNow .hl { display: flex; gap: .6em; grid-column: 1 / 3; grid-row: 3; margin-top: .5em; }
-    #fcNow .hl span { padding: .3em .9em; border-radius: 99px; background: rgba(255,255,255,.1); color: var(--dim); }
+    #fcNow .hl span { padding: .3em .9em; border-radius: 99px; background: var(--surface-2); color: var(--dim); }
     #fcNow .hl b { color: var(--ink); margin-left: .3em; }
-    #fcNow .note { display: block; grid-column: 3; grid-row: 1 / 4; align-self: center; width: 12em; padding: 1em 1.1em; white-space: normal;
+    #fcNow .note { display: block; grid-column: 3; grid-row: 1 / 4; align-self: center; width: min(12em, 30cqw); padding: 1em 1.1em; white-space: normal; min-width: 0;
                    font-size: 1em; line-height: 1.45; color: var(--dim); }
     #fcNow .note b { display: block; color: var(--ink); font-size: 1.15em; margin-bottom: .3em; }
     #fcHours { flex: none; padding: .7em .6em; gap: .3em; font-size: inherit; }
     #fcHours .h { background: none; padding: .5em 0; gap: .35em; }
-    #fcHours .h:first-child { background: rgba(255,255,255,.1); }
+    #fcHours .h:first-child { background: var(--surface-2); }
     #fcHours .h .i { font-size: 1.9em; }
     #fcHours .h b { font-size: 1.25em; font-weight: 500; }
     #fcDays { flex: 1; flex-direction: row; flex-wrap: nowrap; gap: .45em; font-size: inherit; overflow: hidden; width: 100%; padding: 0 2px 2px 0; }
     #fcDays .d { flex: 1 1 0; min-width: 0; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .3em;
-                 background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.12); border-radius: 1.1em; }
-    #fcDays .d:first-child { background: rgba(255,255,255,.14); }
+                 background: var(--tile-bg); border: 1px solid var(--border); border-radius: 1.1em; }
+    #fcDays .d:first-child { background: color-mix(in srgb, var(--accent) 10%, var(--tile-bg)); border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
     #fcDays .d > span:first-child { font-weight: 600; }
     #fcDays .d .i { order: 1; font-size: 2em; }
     #fcDays .d .hi { order: 2; font-size: 1.35em; font-weight: 500; }
@@ -304,26 +352,46 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
 
   /* Rain radar: map tiles + radar overlay, centred on the prayer zone */
   .w[data-w="radar"] .in { padding: 0; position: relative; }
-  #rdMap { position: absolute; inset: 0; overflow: hidden; background: #1b2230; }
+  #rdMap { position: absolute; inset: 0; overflow: hidden; background: var(--surface-2); }
   #rdMap img { position: absolute; width: 256px; height: 256px; }
-  #rdMap img.base { filter: invert(.92) hue-rotate(180deg) saturate(.4) brightness(.9); }
+  :root[data-theme="dark"] #rdMap img.base { filter: invert(.92) hue-rotate(180deg) saturate(.4) brightness(.9); }
   #rdMap img.rain { opacity: .8; }
   #rdDot { position: absolute; left: 50%; top: 50%; width: 12px; height: 12px; margin: -6px; border-radius: 50%;
-           background: var(--accent); box-shadow: 0 0 0 4px rgba(94,242,214,.35); }
+           background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 35%, transparent); }
   #rdInfo { position: absolute; left: .6em; top: .5em; font-size: max(var(--f14), calc(min(7cqh, 3.5cqw) * var(--k))); font-weight: 700;
-            text-shadow: 0 1px 4px #000; }
-  #rdAttr { position: absolute; right: .4em; bottom: .2em; font-size: 9px; color: rgba(255,255,255,.6); text-shadow: 0 1px 2px #000; }
+            color: var(--ink); background: var(--photo-surface); padding: .15em .6em; border-radius: 99px; }
+  /* Radar card: Rain radar or Map (street map with the car's GPS, owner 26 Oct); the choice is remembered. */
+  /* Map mode: the car as a blue dot (an arrow when moving); the ◎ button is lit while following. */
+  #rdDot.car { width: 18px; height: 18px; margin: -9px; background: #2563EB; border: 3px solid #fff;
+               box-shadow: 0 0 0 6px rgba(37,99,235,.25), 0 2px 6px rgba(0,0,0,.3); }
+  #rdDot.car.heading::after { content: ""; position: absolute; left: 50%; top: -14px; margin-left: -7px; border: 7px solid transparent;
+               border-bottom: 10px solid #2563EB; transform-origin: 7px 21px; transform: rotate(var(--bearing, 0deg)); }
+  .w.mapmode.follow #rdCtl button[data-rdz="0"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  /* Zoom buttons + drag to move (owner, 26 Oct). */
+  #rdMap { touch-action: none; }
+  #rdCtl { position: absolute; right: .5em; bottom: 1.6em; z-index: 2; display: flex; flex-direction: column; gap: 6px; }
+  #rdCtl button { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface);
+                  color: var(--ink); font-family: inherit; font-weight: 700; font-size: 24px; line-height: 1; box-shadow: 0 2px 8px rgba(0,0,0,.15); cursor: pointer; }
+  #rdCtl button[data-rdz="0"] { font-size: 18px; }
+  @container tile (max-height: 200px) { #rdCtl { flex-direction: row; bottom: .4em; } #rdCtl button { width: 36px; height: 36px; font-size: 20px; } }
+  #rdSwitch { position: absolute; right: .5em; top: .5em; z-index: 2; display: flex; padding: 3px; gap: 2px; border-radius: 99px;
+              background: var(--surface);
+              border: 1px solid var(--border); box-shadow: 0 2px 10px rgba(0,0,0,.12); }
+  #rdSwitch button { border: 0; background: transparent; color: var(--ink-2); font-family: inherit; font-weight: 600; font-size: max(13px, calc(min(5cqh, 2.6cqw) * var(--k))); line-height: 1;
+                     padding: .55em .95em; border-radius: 99px; min-height: 36px; cursor: pointer; }
+  #rdSwitch button.on { background: var(--accent); color: var(--on-accent); }
+  #rdAttr { position: absolute; right: .4em; bottom: .2em; font-size: 9px; color: var(--ink-2); background: var(--photo-surface); padding: 0 .3em; border-radius: 4px; }
 
   /* YouTube: search + quick pages; opens YouTube in the car browser (video plays only when parked). */
   .yt { flex-direction: column; justify-content: center; gap: .7em; font-size: max(var(--f16), calc(min(9cqh, 3.6cqw) * var(--k))); }
-  .yt button { all: unset; cursor: pointer; box-sizing: border-box; min-height: 48px; display: flex; align-items: center; border-radius: 99px; transition: background .15s ease, transform .12s ease; }
-  .yt .yt-s { gap: .8em; padding: 0 1.2em; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18); color: rgba(255,255,255,.8); box-shadow: 0 2px 8px rgba(0,0,0,.2); }
+  .yt button { all: unset; cursor: pointer; box-sizing: border-box; min-height: 48px; display: flex; align-items: center; border-radius: 99px; transition: transform .15s ease; }
+  .yt .yt-s { gap: .8em; padding: 0 1.2em; background: var(--surface-2); border: 1px solid var(--border); color: var(--ink-2); }
   .yt-s svg { width: 1.7em; height: 1.2em; flex: none; }
   .yt-s span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
   .yt-c { display: flex; gap: .6em; }
-  .yt .yt-c button { flex: 1; min-width: 0; justify-content: center; padding: 0 .6em; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.12); font-weight: 600; font-size: .82em;
+  .yt .yt-c button { flex: 1; min-width: 0; justify-content: center; padding: 0 .6em; background: var(--surface-2); border: 1px solid var(--border); font-weight: 600; font-size: .82em;
                  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--dim); }
-  .yt button:active { background: rgba(255,255,255,.2); color: #fff; transform: scale(.96); }
+  .yt button:active { background: var(--border); color: var(--ink); transform: scale(.96); }
   @container tile (max-height: 120px) { .yt-c { display: none; } }
 
   /* EV charging (Open Charge Map): list of nearest chargers; map beside it on wide tiles */
@@ -333,12 +401,12 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
             font-size: max(var(--f16), calc(min(6cqh, 3.6cqw) * var(--k)));
             -webkit-mask-image: linear-gradient(#000 calc(100% - 1.5em), transparent); mask-image: linear-gradient(#000 calc(100% - 1.5em), transparent); }
   .ch { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: .3em 1em; align-items: center; padding: .75em 1em;
-        border-radius: 1.1em; background: linear-gradient(135deg, rgba(255,255,255,.07), rgba(255,255,255,.03));
-        border: 1px solid rgba(255,255,255,.12); box-shadow: 0 2px 8px rgba(0,0,0,.2); cursor: pointer; flex: none; transition: background .15s ease; }
-  .ch:active { background: rgba(255,255,255,.16); }
+        border-radius: 1.1em; background: var(--surface-2);
+        border: 1px solid var(--border); cursor: pointer; flex: none; }
+  .ch:active { background: var(--border); }
   .ch .n { grid-row: 1 / 3; width: 2em; height: 2em; border-radius: 50%; display: grid; place-items: center; font-weight: 800;
-           background: var(--accent); color: #0B0F1A; font-size: .85em; }
-  .ch.down .n { background: #ff5f6d; }
+           background: var(--accent); color: var(--on-accent); font-size: .85em; }
+  .ch.down .n { background: var(--danger); }
   /* Name + access pill on line 1; plugs then operator (cut with …) on line 2: a card stays two lines. */
   .ch .nm { display: flex; align-items: center; gap: .6em; min-width: 0; }
   .ch b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; font-weight: 600; }
@@ -347,19 +415,19 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   .ch .sub { grid-column: 2 / 4; display: flex; flex-wrap: nowrap; align-items: center; gap: .4em; min-width: 0; overflow: hidden; font-size: max(var(--f13), .82em); }
   .ch .sub .plug { flex: none; }
   .ch .op { color: var(--dim); margin-left: .2em; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .plug { padding: .15em .6em; border-radius: 99px; background: rgba(94,242,214,.14); color: var(--accent); font-weight: 700; white-space: nowrap; }
-  #evMap .pin.no { background: #ff5f6d; }
+  .plug { padding: .15em .6em; border-radius: 99px; background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent-ink); font-weight: 700; white-space: nowrap; }
+  #evMap .pin.no { background: var(--danger); }
   .acc { padding: .15em .6em; border-radius: 99px; font-weight: 700; white-space: nowrap; }
-  .acc.no { background: rgba(255,77,94,.2); color: #ff8a94; }
-  .acc.mb { background: rgba(245,158,11,.2); color: #ffc15a; }
-  .plug.fast { background: rgba(255,196,84,.18); color: #ffc454; }
-  .plug.fuel { background: rgba(59,130,246,.2); color: #60a5fa; }
-  #evMap { display: none; position: relative; overflow: hidden; border-radius: 1.1em; background: #1b2230; border: 1px solid rgba(255,255,255,.1); }
-  #evMap img { position: absolute; width: 256px; height: 256px; filter: invert(.92) hue-rotate(180deg) saturate(.4) brightness(.9); }
+  .acc.no { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger-ink); }
+  .acc.mb { background: color-mix(in srgb, var(--amber) 14%, transparent); color: var(--amber); }
+  .plug.fast { background: color-mix(in srgb, var(--amber) 14%, transparent); color: var(--amber); }
+  #evMap { display: none; position: relative; overflow: hidden; border-radius: 1.1em; background: var(--surface-2); border: 1px solid var(--border); }
+  #evMap img { position: absolute; width: 256px; height: 256px; }
+  :root[data-theme="dark"] #evMap img { filter: invert(.92) hue-rotate(180deg) saturate(.4) brightness(.9); }
   #evMap .pin { position: absolute; width: 1.6em; height: 1.6em; margin: -.8em; border-radius: 50%; display: grid; place-items: center; font-size: .75em;
-                font-weight: 800; background: var(--accent); color: #0B0F1A; box-shadow: 0 0 0 3px rgba(11,15,26,.7); }
+                font-weight: 800; background: var(--accent); color: var(--on-accent); box-shadow: 0 0 0 3px var(--surface); }
   #evMap .me { position: absolute; width: 12px; height: 12px; margin: -6px; border-radius: 50%; background: #4f8cff; box-shadow: 0 0 0 5px rgba(79,140,255,.3); }
-  #evAttr { font-size: 12px; /* legal credit: fixed caption, not scaled */ color: rgba(255,255,255,.5); text-align: right; flex: none; }
+  #evAttr { font-size: 12px; /* legal credit: fixed caption, not scaled */ color: var(--ink-2); text-align: right; flex: none; }
   .evw .tl { font-size: max(var(--f14), calc(min(6cqh, 3.2cqw) * var(--k))); }
   /* Wide: list (≈45%) + map, so the list's text is sized for its own column. */
   @container tile (min-width: 620px) and (min-height: 300px) {
@@ -372,31 +440,31 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   .sp-h { display: flex; align-items: center; gap: .8em; font-size: max(var(--f14), calc(min(7cqh, 3.2cqw) * var(--k))); }
   .sp-h .tl { font-size: 1em; }
   .sp-live { display: none; align-items: center; gap: .4em; padding: .2em .8em; border-radius: 99px; font-size: .8em; font-weight: 700;
-             color: #ff6b7a; background: rgba(255,107,122,.16); }
+             color: var(--danger-ink); background: color-mix(in srgb, var(--danger) 12%, transparent); }
   .sp-live.on { display: inline-flex; }
-  .sp-live i { width: .5em; height: .5em; border-radius: 50%; background: #ff6b7a; box-shadow: 0 0 0 3px rgba(255,107,122,.25); }
+  .sp-live i { width: .5em; height: .5em; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 25%, transparent); }
   #spList { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: .9em;
             font-size: max(var(--f14), calc(min(6cqh, 3.6cqw) * var(--k))); }
   .lg { break-inside: avoid; display: flex; flex-direction: column; gap: .55em; }
   .lh { font-size: max(var(--f13), .82em); font-weight: 700; letter-spacing: .02em; color: var(--dim);
         display: flex; align-items: center; gap: .6em; }
-  .lh::after { content: ''; flex: 1; height: 1px; background: rgba(255,255,255,.12); }
+  .lh::after { content: ''; flex: 1; height: 1px; background: var(--border); }
   .g { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: .8em;
-       padding: .75em 1em; border-radius: 1.1em; background: linear-gradient(135deg, rgba(255,255,255,.08), rgba(255,255,255,.03));
-       border: 1px solid rgba(255,255,255,.12); box-shadow: 0 2px 8px rgba(0,0,0,.2); }
-  .g.live { border-color: rgba(255,107,122,.5); background: linear-gradient(135deg, rgba(255,107,122,.18), rgba(255,255,255,.04)); }
+       padding: .75em 1em; border-radius: 1.1em; background: var(--surface-2);
+       border: 1px solid var(--border); }
+  .g.live { border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); background: color-mix(in srgb, var(--danger) 8%, var(--surface-2)); }
   .g.post { opacity: .78; }
   .g .tm { display: flex; align-items: center; gap: .6em; min-width: 0; font-weight: 600; }
   .g .tm.a { flex-direction: row-reverse; text-align: right; }
   .g .tm span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .g .tm img { width: 1.9em; height: 1.9em; flex: none; object-fit: contain; filter: drop-shadow(0 2px 4px rgba(0,0,0,.4)); }
+  .g .tm img { width: 1.9em; height: 1.9em; flex: none; object-fit: contain; }
   .g .mid { display: flex; flex-direction: column; align-items: center; gap: .3em; min-width: 4.4em; }
   .g .sc { font-size: 1.45em; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: .02em; line-height: 1; }
   .g .sc.vs { font-size: .9em; font-weight: 600; color: var(--dim); }
-  .pill { font-size: max(var(--f13), .78em); font-weight: 700; padding: .25em .75em; border-radius: 99px; background: rgba(255,255,255,.1); color: var(--dim);
+  .pill { font-size: max(var(--f13), .78em); font-weight: 700; padding: .25em .75em; border-radius: 99px; background: var(--border); color: var(--dim);
           white-space: nowrap; }
-  .g.live .pill { background: #ff4d5e; color: #fff; box-shadow: 0 2px 8px rgba(255,77,94,.4); }
-  .g.pre .pill { background: rgba(94,242,214,.15); color: var(--accent); }
+  .g.live .pill { background: var(--danger); color: var(--on-accent); }
+  .g.pre .pill { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent-ink); }
   .g.title { grid-template-columns: minmax(0, 1fr) auto; }
   .g.title .tm span { white-space: normal; }
   @container tile (max-width: 300px) { .g .tm img { display: none; } .g .mid { min-width: 3em; } }
@@ -423,19 +491,19 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   }
   #spChips { display: none; gap: .4em; flex-wrap: wrap; font-size: max(var(--f14), calc(min(4.4cqh, 2.4cqw) * var(--k))); }
   #spChips.on { display: flex; }
-  #spChips button { all: unset; cursor: pointer; padding: .3em .9em; border-radius: 99px; background: rgba(255,255,255,.07);
-                    border: 1px solid rgba(255,255,255,.12); color: var(--dim); font-weight: 600; }
-  #spChips button.on { background: rgba(94,242,214,.16); border-color: rgba(94,242,214,.5); color: var(--accent); }
+  #spChips button { all: unset; cursor: pointer; padding: .3em .9em; border-radius: 99px; background: var(--surface-2);
+                    border: 1px solid var(--border); color: var(--dim); font-weight: 600; }
+  #spChips button.on { background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: var(--accent); color: var(--accent-ink); }
   .tb { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
   .tb th { font-size: .72em; font-weight: 700; letter-spacing: .08em; color: var(--dim); text-align: center; padding: .3em .2em; }
-  .tb td { text-align: center; padding: .32em .25em; border-top: 1px solid rgba(255,255,255,.06); }
+  .tb td { text-align: center; padding: .32em .25em; border-top: 1px solid var(--border); }
   .tb td.tn { text-align: left; }
   .tb td.tn div { display: flex; align-items: center; gap: .5em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 14em; }
   .tb td.tn img { width: 1.3em; height: 1.3em; object-fit: contain; flex: none; }
   .tb td.pts { font-weight: 800; }
-  .tb tr.q1 td:first-child { box-shadow: inset 3px 0 0 #3ecf8e; }
-  .tb tr.q2 td:first-child { box-shadow: inset 3px 0 0 #f5a524; }
-  .tb tr.rel td:first-child { box-shadow: inset 3px 0 0 #ff5f6d; }
+  .tb tr.q1 td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
+  .tb tr.q2 td:first-child { box-shadow: inset 3px 0 0 var(--amber); }
+  .tb tr.rel td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
   #spList.flat { column-count: 1 !important; overflow-y: hidden; }
   .tb-g { font-size: .75em; font-weight: 700; letter-spacing: .01em; color: var(--dim); margin: .6em 0 .2em; }
 
@@ -453,45 +521,44 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   }
   .wk-h { display: flex; align-items: center; gap: .9em; margin-bottom: .9em; }
   .wk-b { display: flex; flex-direction: column; align-items: center; width: 3.6em; padding: .35em 0; border-radius: .9em;
-          background: linear-gradient(160deg, var(--accent), #3bb6a3); color: #0B0F1A; line-height: 1.05;
-          box-shadow: 0 .4em 1.2em rgba(94,242,214,.25); }
+          background: var(--accent); color: var(--on-accent); line-height: 1.05; }
   .wk-b small { font-size: .8em; font-weight: 700; letter-spacing: .1em; opacity: .75; }
   .wk-b b { font-size: 1.6em; }
   .wk-t { flex: 1; min-width: 0; }
   .wk-t b { display: block; font-size: 1.45em; letter-spacing: -.01em; }
   .wk-t span { color: var(--dim); font-size: .9em; }
   .wk-nx { flex: none; max-width: 45%; display: flex; align-items: center; gap: .6em; padding: .45em .9em .45em .5em; border-radius: 99px;
-           background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.1); font-size: .9em; }
+           background: var(--surface-2); border: 1px solid var(--border); font-size: .9em; }
   .wk-nx i { width: .7em; height: .7em; border-radius: 50%; flex: none; }
   .wk-nx span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .wk-nx em { font-style: normal; color: var(--dim); white-space: nowrap; }
   .wk-g { flex: 1; min-height: 0; display: grid; grid-template-columns: 3.4em repeat(7, minmax(0, 1fr));
           grid-template-rows: auto auto minmax(0, 1fr); border-radius: 1.1em; overflow: hidden;
-          background: rgba(255,255,255,.035); border: 1px solid rgba(255,255,255,.08); }
+          background: var(--surface-2); border: 1px solid var(--border); }
   .wk-dh { padding: .45em 0 .5em; text-align: center; display: flex; flex-direction: column; align-items: center; gap: .1em; }
   .wk-dh small { font-size: .7em; letter-spacing: .1em; color: var(--dim); font-weight: 600; }
   .wk-dh b { font-size: 1.25em; font-weight: 600; width: 1.9em; line-height: 1.9em; border-radius: 50%; }
   .wk-dh.we small, .wk-dh.we b { opacity: .55; }
   .wk-dh.td small { color: var(--accent); }
-  .wk-dh.td b { background: var(--accent); color: #0B0F1A; opacity: 1; }
+  .wk-dh.td b { background: var(--accent); color: var(--on-accent); opacity: 1; }
   .wk-ad { min-height: 1.5em; padding: .15em .2em; display: flex; flex-direction: column; gap: .15em; overflow: hidden;
-           border-bottom: 1px solid rgba(255,255,255,.08); }
+           border-bottom: 1px solid var(--border); }
   .wk-tm { position: relative; }
-  .wk-tm span { position: absolute; right: .55em; transform: translateY(-50%); font-size: .8em; color: rgba(255,255,255,.6); white-space: nowrap; }
-  .wk-col { position: relative; border-left: 1px solid rgba(255,255,255,.05);
-            background-image: linear-gradient(rgba(255,255,255,.06) 1px, transparent 1px); background-size: 100% var(--hr); }
-  .wk-col.td { background-color: rgba(94,242,214,.05); }
-  .wk-col.we { background-color: rgba(0,0,0,.12); }
+  .wk-tm span { position: absolute; right: .55em; transform: translateY(-50%); font-size: .8em; color: var(--ink-2); white-space: nowrap; }
+  .wk-col { position: relative; border-left: 1px solid var(--border);
+            background-image: linear-gradient(var(--border) 1px, transparent 1px); background-size: 100% var(--hr); }
+  .wk-col.td { background-color: color-mix(in srgb, var(--accent) 6%, transparent); }
+  .wk-col.we { background-color: color-mix(in srgb, var(--ink) 4%, transparent); }
   .wk-e { position: absolute; left: 3px; right: 3px; padding: .3em .45em; border-radius: .55em; overflow: hidden;
-          border-left: 3px solid; font-size: .88em; line-height: 1.25; box-shadow: 0 .2em .8em rgba(0,0,0,.25); }
+          border-left: 3px solid; font-size: .88em; line-height: 1.25; }
   .wk-e b { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .wk-e span { color: rgba(255,255,255,.7); font-size: .9em; }
+  .wk-e span { color: var(--ink-2); font-size: .9em; }
   .wk-e.past { opacity: .45; }
   .wk-ad .wk-e { position: static; padding: .12em .45em; box-shadow: none; }
   /* Day / Week / Month switch */
-  .cv { display: flex; flex: none; padding: .2em; border-radius: 99px; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.1); }
+  .cv { display: flex; flex: none; padding: .2em; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--border); }
   .cv button { all: unset; cursor: pointer; padding: .4em 1.1em; min-height: 48px; box-sizing: border-box; display: inline-flex; align-items: center; border-radius: 99px; font-size: .9em; font-weight: 600; color: var(--dim); }
-  .cv button.on { background: var(--accent); color: #0B0F1A; }
+  .cv button.on { background: var(--accent); color: var(--on-accent); }
   /* Day view: one wide column */
   .wk-g.day { grid-template-columns: 3.4em minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
   .wk-g.day .wk-e { left: .6em; right: .6em; font-size: 1.05em; padding: .45em .8em; }
@@ -502,22 +569,22 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   /* Week board: 7 day columns, events stacked in time order (readable at car size) */
   .wb { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .45em; }
   .wb-c { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: .4em; padding: .55em .45em;
-          border-radius: 1em; background: rgba(255,255,255,.045); border: 1px solid rgba(255,255,255,.07); overflow: hidden;
+          border-radius: 1em; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden;
           -webkit-mask-image: linear-gradient(#000 calc(100% - 1.6em), transparent); mask-image: linear-gradient(#000 calc(100% - 1.6em), transparent); }
-  .wb-c.td { background: rgba(94,242,214,.08); border-color: rgba(94,242,214,.35); }
-  .wb-c.we { background: rgba(0,0,0,.15); }
+  .wb-c.td { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+  .wb-c.we { background: color-mix(in srgb, var(--ink) 4%, var(--surface-2)); }
   .wb-h { display: flex; flex-direction: column; align-items: center; gap: .1em; padding-bottom: .35em; margin-bottom: .1em;
-          border-bottom: 1px solid rgba(255,255,255,.08); flex: none; }
-  .wb-h small { font-size: .85em; font-weight: 700; letter-spacing: .1em; color: rgba(255,255,255,.6); }
+          border-bottom: 1px solid var(--border); flex: none; }
+  .wb-h small { font-size: .85em; font-weight: 700; letter-spacing: .1em; color: var(--ink-2); }
   .wb-h b { font-size: 1.35em; font-weight: 700; width: 1.9em; line-height: 1.9em; text-align: center; border-radius: 50%; }
   .wb-c.td .wb-h small { color: var(--accent); }
-  .wb-c.td .wb-h b { background: var(--accent); color: #0B0F1A; }
+  .wb-c.td .wb-h b { background: var(--accent); color: var(--on-accent); }
   .wb-e { flex: none; padding: .4em .5em; border-radius: .6em; border-left: 3px solid; line-height: 1.25; }
   .wb-e .t { font-size: .88em; font-weight: 700; font-variant-numeric: tabular-nums; opacity: .9; }
   .wb-e b { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-weight: 600; font-size: .92em; }
   .wb-e.past { opacity: .45; }
   .wb-e.now { box-shadow: 0 0 0 2px var(--accent); }
-  .wb-none { margin: auto 0; text-align: center; font-size: .8em; color: rgba(255,255,255,.35); }
+  .wb-none { margin: auto 0; text-align: center; font-size: .8em; color: var(--ink-3); }
 
   /* Day view: today's events as big cards */
   .dv { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(15em, 1fr)); grid-auto-rows: min-content;
@@ -526,101 +593,99 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   .dv-e { display: flex; gap: .9em; padding: .9em 1em; border-radius: 1em; border-left: 4px solid; line-height: 1.3; }
   .dv-e .tm { flex: none; display: flex; flex-direction: column; font-variant-numeric: tabular-nums; }
   .dv-e .tm b { font-size: 1.35em; font-weight: 700; }
-  .dv-e .tm span { font-size: .85em; color: rgba(255,255,255,.6); }
+  .dv-e .tm span { font-size: .85em; color: var(--ink-2); }
   .dv-e .bd { min-width: 0; }
   .dv-e .bd b { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 1.1em; font-weight: 600; }
-  .dv-e .bd span { display: block; font-size: .85em; color: rgba(255,255,255,.65); margin-top: .2em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dv-e .bd span { display: block; font-size: .85em; color: var(--ink-2); margin-top: .2em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .dv-e.now { box-shadow: 0 0 0 2px var(--accent); }
-  .dv-e.now .bd span:first-of-type { color: var(--accent); }
+  .dv-e.now .bd span:first-of-type { color: var(--accent-ink); }
   .dv-e.past { opacity: .45; }
-  .dv-none { grid-column: 1 / -1; padding: 3em 0; text-align: center; color: rgba(255,255,255,.5); font-size: 1.1em; }
+  .dv-none { grid-column: 1 / -1; padding: 3em 0; text-align: center; color: var(--ink-2); font-size: 1.1em; }
 
   /* Event details popup (tap an event) */
   #calPop { position: fixed; inset: 0; z-index: 50; display: none; align-items: center; justify-content: center;
             background: rgba(4,6,12,.62); font-size: max(var(--f14), calc(2.6vh * var(--hs, 1))); }
   #calPop.on { display: flex; }
   .cp { width: min(34em, 86vw); max-height: 84vh; overflow: hidden; display: flex; flex-direction: column; border-radius: 1.3em;
-        background: #171b2b; border: 1px solid rgba(255,255,255,.12); box-shadow: 0 1.5em 4em rgba(0,0,0,.55); }
+        background: var(--surface); color: var(--ink); border: 1px solid var(--border); box-shadow: 0 1.5em 4em rgba(15,23,42,.25); }
   .cp-bar { height: .45em; flex: none; }
   .cp-in { padding: 1.1em 1.3em 1.2em; display: flex; flex-direction: column; gap: .7em; min-height: 0; overflow: hidden; }
   .cp-top { display: flex; align-items: flex-start; gap: .8em; }
   .cp-top b { flex: 1; font-size: 1.45em; line-height: 1.2; }
   .cp-x { all: unset; cursor: pointer; flex: none; width: 2.2em; height: 2.2em; border-radius: 50%; display: grid; place-items: center;
-          background: rgba(255,255,255,.1); font-size: 1em; }
-  .cp-row { display: flex; gap: .7em; align-items: baseline; color: rgba(255,255,255,.85); }
+          background: var(--surface-2); color: var(--ink); font-size: 1em; }
+  .cp-row { display: flex; gap: .7em; align-items: baseline; color: var(--ink); }
   .cp-row i { font-style: normal; width: 1.4em; flex: none; text-align: center; }
-  .cp-row .sub { color: rgba(255,255,255,.55); }
-  .cp-notes { white-space: pre-line; color: rgba(255,255,255,.75); font-size: .92em; line-height: 1.45; padding: .8em 1em; border-radius: .8em;
-              background: rgba(255,255,255,.05); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; }
-  .cp-now { align-self: flex-start; font-size: .8em; font-weight: 700; padding: .25em .8em; border-radius: 99px; background: var(--accent); color: #0B0F1A; }
+  .cp-row .sub { color: var(--ink-2); }
+  .cp-notes { white-space: pre-line; color: var(--ink-2); font-size: .92em; line-height: 1.45; padding: .8em 1em; border-radius: .8em;
+              background: var(--surface-2); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; }
+  .cp-now { align-self: flex-start; font-size: .8em; font-weight: 700; padding: .25em .8em; border-radius: 99px; background: var(--accent); color: var(--on-accent); }
   .cp-list { display: flex; flex-direction: column; gap: .5em; overflow: hidden; }
-  .cp-li { display: flex; gap: .7em; padding: .6em .8em; border-radius: .8em; background: rgba(255,255,255,.05); cursor: pointer; }
+  .cp-li { display: flex; gap: .7em; padding: .6em .8em; border-radius: .8em; background: var(--surface-2); cursor: pointer; }
   .cp-li i { width: .3em; border-radius: 99px; flex: none; }
   .cp-li .tm { font-weight: 700; font-variant-numeric: tabular-nums; width: 3.3em; flex: none; }
   [data-ev], [data-day] { cursor: pointer; }
 
   /* Month view */
   .mo { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-template-rows: auto;
-        grid-auto-rows: minmax(0, 1fr); border-radius: 1.1em; overflow: hidden; background: rgba(255,255,255,.035);
-        border: 1px solid rgba(255,255,255,.08); }
+        grid-auto-rows: minmax(0, 1fr); border-radius: 1.1em; overflow: hidden; background: var(--surface-2);
+        border: 1px solid var(--border); }
   .mo .mw { padding: .45em 0; text-align: center; font-size: .78em; letter-spacing: .1em; font-weight: 600; color: var(--dim);
-            border-bottom: 1px solid rgba(255,255,255,.08); }
+            border-bottom: 1px solid var(--border); }
   .mo .mc { min-width: 0; min-height: 0; padding: .25em .3em; overflow: hidden; display: flex; flex-direction: column; gap: .15em;
-            border-left: 1px solid rgba(255,255,255,.05); border-top: 1px solid rgba(255,255,255,.05); }
+            border-left: 1px solid var(--border); border-top: 1px solid var(--border); }
   .mo .mc:nth-child(7n+1) { border-left: 0; }
   .mo .mc.o { opacity: .3; }
-  .mo .mc.we { background: rgba(0,0,0,.12); }
-  .mo .mc.td { background: rgba(94,242,214,.06); }
+  .mo .mc.we { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+  .mo .mc.td { background: color-mix(in srgb, var(--accent) 8%, transparent); }
   .mo .mc > b { font-size: .95em; font-weight: 600; width: 1.8em; line-height: 1.8em; text-align: center; border-radius: 50%; flex: none; }
-  .mo .mc.td > b { background: var(--accent); color: #0B0F1A; }
+  .mo .mc.td > b { background: var(--accent); color: var(--on-accent); }
   .mo .me { font-size: max(var(--f12), .85em); padding: .1em .4em; border-radius: .35em; border-left: 2px solid; white-space: nowrap; overflow: hidden;
             text-overflow: ellipsis; flex: none; }
   .mo .mm { font-size: .7em; color: var(--dim); padding-left: .4em; }
 
-  .wk-now { position: absolute; left: 0; right: 0; border-top: 2px solid #ff6b7a; z-index: 2; }
+  .wk-now { position: absolute; left: 0; right: 0; border-top: 2px solid var(--danger); z-index: 2; }
   .wk-now::before { content: ''; position: absolute; left: -5px; top: -6px; width: 10px; height: 10px; border-radius: 50%;
-                    background: #ff6b7a; box-shadow: 0 0 0 4px rgba(255,107,122,.25); }
+                    background: var(--danger); box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 25%, transparent); }
 
-  /* Custom page: no Home photo; each function has its own calm background, tiles are glass on top. */
-  body.pg-custom .tile { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.1); box-shadow: none; }
+  /* Custom page: no Home photo; each function has its own calm background, solid tiles on top. */
+  body.pg-custom .tile { background: var(--surface); border-color: var(--border); box-shadow: var(--shadow); }
   body.pg-custom #dim, body.pg-custom #shade, body.pg-custom #credit { display: none; }
-  body.fn-weather #plain { background: radial-gradient(circle at 20% 0%, #2c5a8a 0%, transparent 55%),
-                                       radial-gradient(circle at 90% 100%, #1d3557 0%, transparent 60%), #0e1a2b; }
-  body.fn-calendar #plain { background: radial-gradient(circle at 0% 0%, #1d2c40 0%, transparent 55%),
-                                        radial-gradient(circle at 100% 100%, #161b33 0%, transparent 60%), #0d0f1c; }
-  body.fn-sports #plain { background: radial-gradient(circle at 50% 120%, #11402c 0%, transparent 60%), #0a1210; }
-  body.fn-radar #plain { background: #0b0f16; }
+  body.fn-weather #plain { background: color-mix(in srgb, #3B82F6 7%, var(--bg)); }
+  body.fn-calendar #plain { background: var(--bg); }
+  body.fn-sports #plain { background: color-mix(in srgb, #16A34A 6%, var(--bg)); }
+  body.fn-radar #plain { background: var(--bg); }
 
   /* Agenda (small / medium tiles): date header · week strip · events grouped by day.
      Readable minimums: nothing under ~12px on the car. */
   #calHead { display: none; align-items: center; gap: .6em; flex: none; font-size: max(var(--f13), calc(min(7cqh, 4.6cqw) * var(--k))); }
-  #calHead .dn { font-size: 2.6em; font-weight: 700; line-height: 1; color: var(--accent); letter-spacing: -.03em; }
+  #calHead .dn { font-size: 2.6em; font-weight: 700; line-height: 1; color: var(--accent-ink); letter-spacing: -.03em; }
   #calHead .dw { display: flex; flex-direction: column; line-height: 1.2; }
   #calHead .dw b { font-size: 1.1em; }
-  #calHead .dw span { color: rgba(255,255,255,.65); font-size: .9em; }
+  #calHead .dw span { color: var(--ink-2); font-size: .9em; }
   #calEvents { font-size: max(var(--f13), calc(min(7.5cqh, 4.8cqw) * var(--k))) !important; gap: .55em !important;
                -webkit-mask-image: linear-gradient(#000 calc(100% - 2em), transparent); mask-image: linear-gradient(#000 calc(100% - 2em), transparent); }
-  .ag-d { font-size: max(var(--f12), .8em); font-weight: 700; letter-spacing: .01em; color: rgba(255,255,255,.7); margin-top: .3em; }
+  .ag-d { font-size: max(var(--f12), .8em); font-weight: 700; letter-spacing: .01em; color: var(--ink-2); margin-top: .3em; }
   .ag-d:first-child { margin-top: 0; }
-  .ag-d.td { color: var(--accent); }
+  .ag-d.td { color: var(--accent-ink); }
   .ag { display: grid; grid-template-columns: 3.3em .25em minmax(0, 1fr); gap: .65em; align-items: stretch; }
   .ag .at { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; padding-top: .05em; line-height: 1.25; }
-  .ag .at small { display: block; font-weight: 500; font-size: max(var(--f12), .82em); color: rgba(255,255,255,.55); }
+  .ag .at small { display: block; font-weight: 500; font-size: max(var(--f12), .82em); color: var(--ink-2); }
   .ag i { border-radius: 99px; }
   .ag .ab { min-width: 0; line-height: 1.25; }
   .ag .ab b { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .ag .ab span { display: block; font-size: max(var(--f13), .85em); color: rgba(255,255,255,.62); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .ag.now .ab b { color: var(--accent); }
+  .ag .ab span { display: block; font-size: max(var(--f13), .85em); color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ag.now .ab b { color: var(--accent-ink); }
   .ag.past { opacity: .5; }
   #calStrip { display: none; gap: .3em; font-size: max(var(--f12), calc(min(7cqh, 4.4cqw) * var(--k))); }
   #calStrip .sd { flex: 1; display: flex; flex-direction: column; align-items: center; gap: .15em; padding: .35em 0; border-radius: .7em; }
   #calStrip .sd small { font-size: .72em; color: var(--dim); font-weight: 600; letter-spacing: .06em; }
   #calStrip .sd b { font-size: 1.15em; }
-  #calStrip .sd.td { background: var(--accent); color: #0B0F1A; }
-  #calStrip .sd.td small { color: #0B0F1A; }
-  #calStrip .sd i { width: .35em; height: .35em; border-radius: 50%; background: rgba(255,255,255,.75); visibility: hidden; }
+  #calStrip .sd.td { background: var(--accent); color: var(--on-accent); }
+  #calStrip .sd.td small { color: var(--on-accent); }
+  #calStrip .sd i { width: .35em; height: .35em; border-radius: 50%; background: var(--ink-2); visibility: hidden; }
   #calStrip .sd.ev i { visibility: visible; }
-  .sd.td i { background: #0B0F1A; }
+  .sd.td i { background: var(--on-accent); }
   /* Not tall enough for a readable month grid: week strip + events. */
   @container tile (max-height: 360px) and (max-width: 619px), (max-height: 299px) {
     .cal { flex-direction: column; }
@@ -638,10 +703,10 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   #calMonth .grid { display: grid; grid-template-columns: repeat(7, 2.1em); gap: .15em; text-align: center; }
   #calMonth .wd { color: var(--dim); font-size: .8em; }
   #calMonth .dy { line-height: 2em; border-radius: 50%; position: relative; }
-  #calMonth .dy.o { color: rgba(255,255,255,.25); }
-  #calMonth .dy.td { background: var(--accent); color: #0B0F1A; font-weight: 700; }
+  #calMonth .dy.o { color: var(--ink-3); opacity: .6; }
+  #calMonth .dy.td { background: var(--accent); color: var(--on-accent); font-weight: 700; }
   #calMonth .dy.ev::after { content: ''; position: absolute; left: 50%; bottom: .15em; width: .3em; height: .3em; margin-left: -.15em;
-                             border-radius: 50%; background: rgba(255,255,255,.75); }
+                             border-radius: 50%; background: var(--ink-2); }
   #calEvents { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .4em; font-size: max(var(--f14), calc(min(6cqh, 3.4cqw) * var(--k)));
                min-height: 0; overflow: hidden; }
   .ev { display: flex; gap: .6em; align-items: stretch; }
@@ -661,7 +726,7 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   .spd { flex-direction: column; align-items: center; justify-content: center; }
   .w[data-ta="left"] .spd { align-items: flex-start; }
   .w[data-ta="right"] .spd { align-items: flex-end; }
-  #speed { font-size: calc(min(55cqh, 38cqw) * var(--k)); font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; color: #FFFFFF; }
+  #speed { font-size: calc(min(55cqh, 38cqw) * var(--k)); font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; color: var(--ink); }
   #speedUnit { font-size: max(var(--f13), calc(min(13cqh, 10cqw) * var(--k))); color: var(--dim); margin-top: .3em; font-weight: 500; letter-spacing: 0.05em; }
 
   /* Shortcuts: icons sized to fit the tile (--n = how many) */
@@ -669,12 +734,437 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
                --ic: max(48px, min(60cqh, calc(76cqw / var(--n, 2)))); }
   .w[data-ta="left"] #shortcuts { justify-content: flex-start; }
   .w[data-ta="right"] #shortcuts { justify-content: flex-end; }
-  .app { width: var(--ic); height: var(--ic); border-radius: 28%; border: 1px solid rgba(255,255,255,.18);
-         background: linear-gradient(135deg, rgba(255,255,255,.14), rgba(255,255,255,.05));
-         box-shadow: 0 4px 14px rgba(0,0,0,.3); display: grid; place-items: center; cursor: pointer;
-         font-weight: 700; font-size: calc(var(--ic) * .42); transition: transform .15s ease, background .15s ease; }
-  .app:active { transform: scale(.92); background: rgba(255,255,255,.24); }
+  .app { width: var(--ic); height: var(--ic); border-radius: 28%; border: 1px solid var(--border);
+         background: var(--surface-2); color: var(--ink);
+         display: grid; place-items: center; cursor: pointer;
+         font-weight: 700; font-size: calc(var(--ic) * .42); transition: transform .15s ease; }
+  .app:active { transform: scale(.92); background: var(--border); }
   .app img { width: 64%; height: 64%; border-radius: 22%; object-fit: contain; }
+
+  /* Tall screens: the floating dock (16 dp + 46 dp) sits over the top row, so keep a strip free for it. */
+  @media (max-aspect-ratio: 20/21) {
+    html:not(.dock-in-strip) #app { padding-top: calc(var(--u) * .5 + 62px); }
+  }
+  /* The phone editor's Left / Center / Right alignment wins over the square/tall tile defaults.
+     Icon and text move together (stacked layout), so a tile never mixes a centred icon with left text. */
+  @container tile (max-aspect-ratio: 1/1) {
+    .w[data-ta="left"] .info { flex-direction: column; align-items: flex-start; text-align: left; } .w[data-ta="left"] .info .txt { align-items: flex-start; }
+    .w[data-ta="right"] .info { flex-direction: column; align-items: flex-end; text-align: right; } .w[data-ta="right"] .info .txt { align-items: flex-end; }
+    .w[data-ta="center"] .info, .w:not([data-ta]) .info { align-items: center; }
+    /* Music on a tall tile: cover, song and controls as one centred group (no stretched gap). */
+    .mus { grid-template-rows: auto auto auto; align-content: center; row-gap: min(4cqh, 28px); }
+    .w[data-ta="left"] .mus { justify-items: start; text-align: left; } .w[data-ta="left"] #songRow, .w[data-ta="left"] #controls { justify-content: flex-start; }
+    .w[data-ta="right"] .mus { justify-items: end; text-align: right; } .w[data-ta="right"] #songRow, .w[data-ta="right"] #controls { justify-content: flex-end; }
+  }
+  /* Owner, 25 Oct: much smaller album art on Home, so the lyrics get the space (several lines
+     instead of one). --as (album art size from the phone) still scales it. */
+  @container tile (min-aspect-ratio: 1/1) and (max-aspect-ratio: 13/5) {
+    #cover { height: auto; width: calc(min(20cqw, 50cqh) * var(--as, 1)); max-width: none; align-self: center; }
+  }
+  @container tile (max-aspect-ratio: 1/1) {
+    #cover { width: min(calc(min(30cqw, 16cqh) * var(--as, 1)), 22cqh, 40cqw); }
+    #line { -webkit-line-clamp: 5; }
+    #next { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  }
+
+  /* ================= Any tile size (phone "Edit widgets": 1–12 columns × 1–18 rows) =================
+     A tall J7 cell is only ~47 × 44 px and a wide one ~100 × 75 px, so every widget gets size tiers:
+     tiny tiles keep only their main value, short strips go one-row, narrow columns stack, and big
+     tiles scale text with the tile. Less important parts are dropped whole, never squashed or cut. */
+
+  /* Tiny / one-row tiles: thinner padding so the content gets the room. */
+  @container tile (max-width: 130px) or (max-height: 80px) {
+    .in { padding: 6px 8px; }
+  }
+
+  /* Clock: bigger digits (still fit "12:59 PM"); the date wraps on narrow tiles, drops when there's no room. */
+  #time { font-size: max(var(--f14), calc(min(58cqh, 30cqw) * var(--k))); }
+  #date { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  @container tile (max-width: 200px) { #date { white-space: normal; line-height: 1.2; } }
+  @container tile (max-height: 70px) { #time { font-size: max(var(--f14), calc(min(80cqh, 30cqw) * var(--k))); } #date { display: none; } }
+  @container tile (max-width: 70px) { #date { display: none; } }
+
+  /* Info tiles (prayer, weather, football, fuel). */
+  .info .ic { font-size: calc(min(44cqh, 20cqw) * var(--k)); }
+  .big { font-size: calc(min(36cqh, 13cqw) * var(--k)); }
+  .t1 { font-size: max(var(--f16), calc(min(17cqh, 7.5cqw) * var(--k))); }
+  .sub { font-size: max(var(--f15), calc(min(16cqh, 7cqw) * var(--k))); }
+  /* Long names wrap onto a second line instead of "Arsenal 2 – 1 Liv…". */
+  #scoreText, .w[data-w="prayer"] .t1 { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.2; }
+  @container tile (max-aspect-ratio: 1/1) {
+    /* Stacked: the icon + text group sits in the middle of the tile (not stuck at the top). */
+    .info { justify-content: center; }
+    .w[data-ta] .info .txt { flex: none; max-width: 100%; }
+    .info .ic { font-size: calc(min(26cqh, 34cqw) * var(--k)); }
+    .big { font-size: calc(min(16cqh, 20cqw) * var(--k)); }
+    .t1, .sub { font-size: max(var(--f14), calc(min(8cqh, 12cqw) * var(--k))); }
+  }
+  .info .txt > * { max-width: 100%; }
+  /* Narrow row: no icon, the text gets the width (and grows into it). */
+  @container tile (max-width: 199px) and (min-aspect-ratio: 1/1) {
+    .info .ic { display: none; }
+    .big { font-size: calc(min(36cqh, 20cqw) * var(--k)); }
+    .t1, .sub { font-size: max(var(--f14), calc(min(17cqh, 11cqw) * var(--k))); }
+  }
+  @container tile (max-width: 130px) { .info .ic { display: none; } }
+  /* A single J7 column (~47 px) holds no words: the icon alone. */
+  @container tile (max-width: 70px) {
+    .info .ic { display: flex; font-size: min(70cqw, 60cqh); } .info .txt { display: none; }
+    .w[data-w="weather"] .info .ic, #wDesc { display: none; } .w[data-w="weather"] .info .txt { display: flex; }
+    #wTemp { font-size: max(var(--f14), calc(min(40cqh, 34cqw) * var(--k))); }
+  }
+  /* One-row strip: text side by side, one line each. */
+  @container tile (max-height: 80px) {
+    .info .ic { font-size: calc(min(70cqh, 20cqw) * var(--k)); }
+    .info .txt { flex-direction: row; align-items: baseline; gap: .6em; }
+    .big { font-size: max(var(--f16), calc(min(60cqh, 13cqw) * var(--k))); }
+    .t1, .sub { font-size: max(var(--f14), calc(min(36cqh, 7cqw) * var(--k))); }
+    #scoreText, .w[data-w="prayer"] .t1 { -webkit-line-clamp: 1; }
+    .info .txt > * { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  }
+  @container tile (max-height: 80px) and (max-width: 260px) {
+    #wDesc, #scoreSub, .w[data-w="prayer"] .t1 { display: none; }
+  }
+  /* Fuel: on narrow or tall tiles each fuel is its own row (name · price), so none overlap or drop. */
+  @container tile (max-width: 299px) or (max-aspect-ratio: 1/1) {
+    #fuelText { flex-direction: column; align-items: stretch; gap: .25em; width: 100%; }
+    #fuelText .fu { flex-direction: row; align-items: baseline; justify-content: space-between; gap: .5em; }
+    #fuelText .fu small { font-size: .9em; }
+    #fuelText .fu b { font-size: 1.2em; line-height: 1.1; }
+    .w[data-w="fuel"] .info .txt { align-self: stretch; justify-content: center; }
+    .w[data-w="fuel"] .info .txt, .w[data-w="fuel"] #fuelText { width: 100%; }
+  }
+  @container tile (max-width: 299px) and (min-aspect-ratio: 1/1) { .w[data-w="fuel"] .info .ic { display: none; } }
+  /* Row of three prices: sized so all three always fit beside the pump. */
+  .w[data-w="fuel"] .sub { font-size: max(var(--f15), calc(min(16cqh, 4.2cqw) * var(--k))); }
+  @container tile (max-width: 299px) and (min-aspect-ratio: 1/1) {
+    .w[data-w="fuel"] .sub { font-size: max(var(--f15), calc(min(13cqh, 8cqw) * var(--k))); }
+  }
+  @container tile (max-aspect-ratio: 1/1) {
+    .w[data-w="fuel"] .sub { font-size: max(var(--f14), calc(min(6cqh, 9cqw) * var(--k))); }
+    .w[data-w="fuel"] .info .txt { flex: none; width: 100%; }
+  }
+  @container tile (max-width: 130px) {
+    #fuelText .fu small { font-size: max(var(--f12), .8em); }
+    #fuelText .fu b { font-size: 1.1em; }
+    #fuelText .fu { gap: .3em; }
+  }
+  @container tile (max-height: 80px) and (max-width: 130px) { #fuelText .fu small { display: none; } }
+  @container tile (max-width: 70px) { #fuelText { font-size: 12px; } #fuelText .fu b { font-size: 1.1em; } #fuelText .fu small { display: none; } .w[data-w="fuel"] .info .txt { display: flex; } .w[data-w="fuel"] .info .ic { display: none; } }
+  @container tile (max-aspect-ratio: 1/1) and (max-height: 200px) { .w[data-w="fuel"] .info .ic { display: none; } }
+  /* Blocky tiles (not a strip): pump on the left, the three prices as a list beside it. */
+  @container tile (min-aspect-ratio: 1/1) and (max-aspect-ratio: 9/5) and (min-height: 200px) and (min-width: 300px) {
+    #fuelText { flex-direction: column; align-items: stretch; gap: .25em; width: 100%; }
+    #fuelText .fu { flex-direction: row; align-items: baseline; justify-content: space-between; gap: .8em; }
+    #fuelText .fu b { font-size: 1.2em; line-height: 1.1; }
+    .w[data-w="fuel"] .info .txt { flex: 1; }
+    #fuelText { max-width: 10em; }
+    .w[data-w="fuel"] .sub { font-size: max(var(--f15), calc(min(9cqh, 6cqw) * var(--k))); }
+  }
+  /* One-row fuel strip that's too narrow for three: the first price only. */
+  @container tile (max-height: 80px) and (max-width: 299px) {
+    #fuelText { flex-direction: row; }
+    #fuelText .fu + .fu { display: none; }
+  }
+
+  /* Speed: bigger number; on a long strip the unit sits beside it. */
+  #speed { font-size: max(var(--f16), calc(min(55cqh, 44cqw) * var(--k))); }
+  #speedUnit { font-size: max(var(--f14), calc(min(13cqh, 10cqw) * var(--k))); }
+  @container tile (min-aspect-ratio: 3/1) or (max-height: 80px) {
+    .spd { flex-direction: row; align-items: baseline; justify-content: center; gap: .4em; }
+    .w[data-ta="left"] .spd { justify-content: flex-start; } .w[data-ta="right"] .spd { justify-content: flex-end; }
+    #speed { font-size: max(var(--f16), calc(min(72cqh, 30cqw) * var(--k))); }
+    #speedUnit { font-size: max(var(--f14), calc(min(24cqh, 8cqw) * var(--k))); margin-top: 0; }
+  }
+
+  @container tile (max-width: 70px) { #speedUnit { display: none; } }
+
+  /* Shortcuts: never bigger than the tile; a column of icons on tall tiles. */
+  #shortcuts { --ic: max(min(48px, 80cqh, calc(72cqw / var(--n, 2))), min(60cqh, calc(76cqw / var(--n, 2)))); }
+  @container tile (max-aspect-ratio: 3/4) {
+    #shortcuts { flex-direction: column; flex-wrap: nowrap; align-items: center;
+                 --ic: max(min(48px, 80cqw, calc(72cqh / var(--n, 2))), min(60cqw, calc(76cqh / var(--n, 2)))); }
+    .w[data-ta="left"] #shortcuts { align-items: flex-start; } .w[data-ta="right"] #shortcuts { align-items: flex-end; }
+  }
+
+  /* Music. Short tile (≤ 2 tall rows / one wide row): one row — text · controls. */
+  @container tile (max-height: 130px) and (min-aspect-ratio: 1/1) {
+    .mus, .w.noart .mus { display: flex; align-items: center; gap: max(10px, min(6cqh, 3cqw)); }
+    #cover { height: 100%; width: auto; max-width: none; flex: none; }
+    #music { flex: 1; min-width: 0; align-self: center; }
+    #line { -webkit-line-clamp: 1; }
+    #next { display: none; }
+    #controls { align-self: center; flex: none; }
+    .ctl, .w .ctl { width: min(48px, calc(100cqh - 12px)); height: min(48px, calc(100cqh - 12px)); min-width: 0; min-height: 0; }
+    .ctl.play, .w .ctl.play { width: min(56px, calc(100cqh - 12px)); height: min(56px, calc(100cqh - 12px)); }
+  }
+  @container tile (max-height: 130px) and (min-aspect-ratio: 1/1) and (max-width: 599px) { #cover { display: none; } }
+  @container tile (max-height: 130px) and (min-aspect-ratio: 1/1) and (max-width: 429px) { .ctl:not(.play) { display: none; } }
+  @container tile (max-height: 80px) { #progress { display: none; } #songRow { font-size: max(var(--f14), calc(30cqh * var(--k))); } #line { display: none; } }
+  /* Block tile: the lyric line sized so song · line · next line · progress fit above the controls. */
+  @container tile (min-aspect-ratio: 1/1) and (max-aspect-ratio: 13/5) and (min-height: 131px) {
+    #line { font-size: max(var(--f17), calc(min(9cqw, 10cqh) * var(--k))); }
+    #next { font-size: max(var(--f14), calc(min(6cqw, 7cqh) * var(--k))); }
+  }
+  /* Narrow text column: the artist gives way to the song title. */
+  @container (max-width: 170px) { #artist { display: none; } }
+  /* Small block (e.g. wide 2×2): song, lyric and one big play button. */
+  @container tile (max-width: 199px) and (min-aspect-ratio: 1/1) {
+    .ctl:not(.play) { display: none; }
+    .ctl.play, .w .ctl.play { width: max(48px, min(30cqh, 20cqw)); height: max(48px, min(30cqh, 20cqw)); }
+  }
+  /* Narrow column: play only (three buttons don't fit side by side). */
+  @container tile (max-width: 259px) and (max-aspect-ratio: 1/1) {
+    .ctl:not(.play) { display: none; }
+    .ctl.play, .w .ctl.play { width: min(64px, 80cqw); height: min(64px, 80cqw); min-width: 0; min-height: 0; }
+  }
+  /* Too small for any text: just the play / pause button, centred. */
+  @container tile (max-width: 130px) {
+    .mus, .w.noart .mus { display: flex; align-items: center; justify-content: center; }
+    #cover, #music { display: none; }
+    #controls { justify-content: center; align-self: center; }
+    .ctl.play, .w .ctl.play { width: min(64px, calc(100cqw - 12px), calc(100cqh - 12px)); height: min(64px, calc(100cqw - 12px), calc(100cqh - 12px)); min-width: 0; min-height: 0; }
+  }
+  @container tile (max-aspect-ratio: 1/1) and (max-height: 260px) { #cover { display: none; } #next { display: none; } }
+
+  /* Forecast: tiny → temperature + icon only; short strip → one row; narrow → fewer columns. */
+  #fcHours .h .r, #fcDays .r { font-size: max(var(--f14), .85em); }
+  @container tile (max-width: 260px) { #fcNow .d { display: none; } #fcNow { justify-content: center; } }
+  @container tile (max-height: 80px) { #fcNow { font-size: max(var(--f14), calc(30cqh * var(--k))); } #fcNow .d br, #fcNow .d br + span { display: none; } }
+  @container tile (max-width: 130px) or (max-height: 60px) { #fcNow .ic { font-size: 1.6em; } #fcNow .t { font-size: 1.8em; } }
+  @container tile (max-width: 130px) { #fcNow { font-size: max(var(--f14), calc(min(14cqh, 13cqw) * var(--k))); } }
+  .w[data-w="forecast"]:not(.big) #fcNow { flex: none; padding: .35em .7em; border-radius: .9em; }
+  @container tile (max-width: 260px) and (min-height: 151px) { #fcHours .h:nth-child(n+4) { display: none; } }
+  /* Short tiles: hours keep time · icon · temperature (rain % drops) so the row is never cut. */
+  @container tile (max-height: 250px) {
+    #fcHours .h .r { display: none; }
+    #fcHours .h { padding: .25em 0; gap: .05em; }
+    #fcHours .h .i { font-size: 1.35em; }
+    .w[data-w="forecast"]:not(.big) #fcNow .d br, .w[data-w="forecast"]:not(.big) #fcNow .d br + span { display: none; }
+  }
+  @container tile (max-height: 150px) { .fc { justify-content: center; } }
+  @container tile (max-width: 130px) { #fcHours, #fcDays { display: none; } .fc { justify-content: center; } }
+  @container tile (max-width: 70px) { #fcNow .ic { display: none; } #fcNow { padding: .2em; justify-content: center; } }
+  /* Tall dashboard: the hero keeps its own height, days and hours share the rest; text from the width. */
+  @container tile (min-width: 440px) and (min-height: 280px) and (max-aspect-ratio: 1/1) {
+    .fc { font-size: max(var(--f15), calc(min(3.2cqh, 3cqw) * var(--k))); }
+    #fcNow { flex: none; }
+  }
+  /* Narrow + tall (e.g. 3 or 6 columns wide on the J7): rows sized from the width, fewer columns. */
+  @container tile (max-aspect-ratio: 1/1) and (max-width: 439px) {
+    #fcNow { font-size: max(var(--f14), calc(min(6cqh, 8cqw) * var(--k))); }
+    #fcHours { font-size: max(var(--f14), calc(min(4.5cqh, 6cqw) * var(--k))); }
+    #fcDays { font-size: max(var(--f14), calc(min(4.5cqh, 6.4cqw) * var(--k))); gap: .35em; }
+    #fcDays .d { grid-template-columns: 3em 1.6em 2.6em 2.4em minmax(0, 1fr) 2.4em; }
+    #fcDays .bar { display: block; }
+    /* Hero: temperature + icon on one line, the words centred under them. */
+    .w[data-w="forecast"]:not(.big) #fcNow { flex-wrap: wrap; justify-content: center; row-gap: .2em; }
+    .w[data-w="forecast"]:not(.big) #fcNow .d { flex-basis: 100%; text-align: center; }
+  }
+  @container tile (max-aspect-ratio: 1/1) and (max-width: 299px) {
+    #fcDays .d { grid-template-columns: 3em 1.6em 2.4em 2.4em; }
+    #fcDays .d .r, #fcDays .bar { display: none; }
+  }
+  @container tile (max-width: 199px) {
+    #fcDays .d { grid-template-columns: 3em 1.6em 2.4em; }
+    #fcDays .d .lo, #fcDays .d .r, #fcDays .bar { display: none; }
+  }
+  /* Dashboard tile: the side note only when there's room for it. */
+  @container tile (min-width: 440px) and (min-height: 280px) and ((max-height: 380px) or (max-width: 700px)) {
+    #fcNow .note { display: none; }
+  }
+
+  /* Air quality: short tiles keep the number + band; the details drop whole lines (fixed line boxes). */
+  #aqCat { font-size: max(var(--f14), calc(min(8cqh, 8cqw) * var(--k))); }
+  #aqMore { row-gap: .3em; overflow: hidden; max-height: 4.4em; }
+  #aqMore > span { display: inline-flex; align-items: center; gap: .25em; height: 1.4em; line-height: 1.4em; white-space: nowrap; }
+  @container tile (max-height: 260px) { .aq .tl { display: none; } #aqMore { max-height: 3.1em; } }
+  @container tile (max-height: 200px) { #aqMore { max-height: 1.4em; } }
+  @container tile (max-height: 130px) { #aqMore { display: none; } }
+  @container tile (max-height: 130px) and (min-aspect-ratio: 2/1) { #aqMore { display: flex; max-height: 3.1em; } }
+  @container tile (max-height: 80px) { #aqMore { max-height: 1.4em; } #aqVal { font-size: max(var(--f16), calc(min(70cqh, 30cqw) * var(--k))); } }
+  @container tile (min-aspect-ratio: 2/1) and (max-width: 299px) { #aqMore { display: none; } }
+  @container tile (max-width: 130px) { #aqMore { display: none; } }
+  @container tile (max-width: 70px) or ((max-height: 80px) and (max-width: 199px)) { #aqCat { display: none; } }
+  @container tile (min-aspect-ratio: 2/1) and (max-width: 699px) { .aq .tl { display: none; } }
+  @container tile (max-aspect-ratio: 1/1) {
+    #aqVal { font-size: max(var(--f16), calc(min(24cqh, 34cqw) * var(--k))); }
+    #aqMore { font-size: max(var(--f14), calc(min(5cqh, 8cqw) * var(--k))); }
+    .aq .tl, #aqCat { font-size: max(var(--f14), calc(min(5cqh, 8cqw) * var(--k))); }
+  }
+
+  /* Radar: labels stay on one line inside the tile. */
+  #rdInfo, #rdAttr { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: calc(100% - 1em); }
+  @container tile (max-width: 199px) or (max-height: 80px) { #rdAttr { display: none; } }
+
+  /* Sports. */
+  .sp-live, .pill, .lh, .g .sc.vs { font-size: max(var(--f14), .78em); }
+  .g .tm span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Short tile: one game, never split into columns. */
+  @container tile (max-height: 160px) {
+    #spList { display: flex; column-count: auto; }
+    #spList .lg { margin-bottom: 0; }
+  }
+  @container tile (max-height: 80px) {
+    .g { padding: .1em .7em; border-radius: .7em; }
+    .g .mid { flex-direction: row; gap: .5em; }
+    .g .tm img { display: none; }
+    #spList { font-size: max(var(--f14), calc(36cqh * var(--k))); }
+  }
+  /* Narrow: home / away on two lines, score + status on the right (names get the width). */
+  @container tile (max-width: 300px) {
+    .g { grid-template-columns: minmax(0, 1fr) auto; gap: .2em .6em; }
+    .g .tm, .g .tm.a { grid-column: 1; flex-direction: row; text-align: left; font-size: 1em; }
+    .g .tm.a { grid-row: 2; }
+    .g .mid { grid-column: 2; grid-row: 1 / 3; min-width: 0; }
+    .g.title .tm { grid-row: 1 / 3; }
+    .g.title .pill { grid-column: 2; grid-row: 1 / 3; }
+    .lg .g + .g { display: grid; }
+  }
+  @container tile (max-width: 300px) and (max-height: 160px) { .lg .g + .g, .lg + .lg { display: none; } }
+  @container tile (max-width: 300px) and (max-height: 80px) { .g .tm.a { display: none; } .g .mid .pill { display: none; } }
+  @container tile (max-width: 130px) {
+    .g .tm, .sp-h, .lh { display: none; }
+    .g { grid-template-columns: 1fr; padding: .3em; } .g .mid { grid-column: 1; }
+    .g .sc { white-space: nowrap; }
+    #spList { font-size: max(var(--f14), calc(min(14cqh, 14cqw) * var(--k))); }
+  }
+  @container tile (max-width: 70px) { #spList { font-size: 12px; } .g .sc { font-size: 1.1em; } .g { padding: .2em 0; } .g .mid .pill { display: none; } }
+  /* Two league columns only on a tile tall enough for whole cards in each. */
+  @container tile (min-width: 640px) and (max-height: 259px) { #spList { display: flex; column-count: auto; } }
+  /* Whatever doesn't fit fades out at the bottom instead of a hard cut through a card. */
+  #spList { -webkit-mask-image: linear-gradient(#000 calc(100% - 1.4em), transparent); mask-image: linear-gradient(#000 calc(100% - 1.4em), transparent); }
+  @container tile (max-height: 200px) { #spList { -webkit-mask-image: none; mask-image: none; } }
+  /* Tall tiles: one column, text sized from the width. */
+  @container tile (max-aspect-ratio: 1/1) {
+    #spList { display: flex; column-count: auto; font-size: max(var(--f14), calc(min(5cqh, 5.2cqw) * var(--k))); }
+    .sp-h { font-size: max(var(--f14), calc(min(5cqh, 5.2cqw) * var(--k))); }
+  }
+
+  /* EV charging. */
+  #evList { font-size: max(var(--f16), calc(min(6cqh, 5cqw) * var(--k))); }
+  .ch .sub, .plug, .acc, .ch .nm .acc { font-size: max(var(--f14), .82em); }
+  @container tile (max-height: 220px) { #evTitle { display: none; } }
+  @container tile (max-height: 150px) {
+    .ch { padding: .45em .8em; row-gap: 0; }
+    .ch .sub { display: none; }
+    .ch .n { grid-row: auto; }
+    #evList { font-size: max(var(--f16), calc(min(18cqh, 5cqw) * var(--k))); gap: .4em; }
+  }
+  @container tile (max-height: 80px) { #evAttr { display: none; } #evList { -webkit-mask-image: none; mask-image: none; } }
+  @container tile (max-width: 260px) {
+    .ch { grid-template-columns: minmax(0, 1fr) auto; padding: .55em .7em; }
+    .ch .n { display: none; }
+    .ch .sub { grid-column: 1 / 3; }
+    .ch .op, .ch .sub .plug + .plug { display: none; }
+    #evAttr { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  }
+  @container tile (max-width: 130px) { .ch .km { display: none; } .ch { grid-template-columns: minmax(0, 1fr); } }
+  @container tile (max-width: 70px) { .ch .nm, .ch .sub { display: none; } .ch .km { display: block; text-align: center; } .ch { padding: .3em 0; } #evAttr { display: none; } }
+  /* Name first; the access pill moves under it when both don't fit (never over the distance). */
+  .ch .nm { flex-wrap: wrap; row-gap: .2em; }
+  .ch .nm b { flex: 0 1 auto; }
+  .ch .km { white-space: nowrap; }
+  @container tile (max-width: 70px) { #evList { font-size: 12px; } }
+  /* Map beside the list: the list's text is sized for its own column. */
+  @container tile (min-width: 620px) and (min-height: 300px) { #evList { font-size: max(var(--f16), calc(min(4.6cqh, 2.1cqw) * var(--k))); } }
+  /* Big tall tile: list on top, map below (not a squeezed side-by-side). */
+  @container tile (min-width: 620px) and (min-height: 300px) and (max-aspect-ratio: 1/1) {
+    .ev-b { flex-direction: column; }
+    #evList { flex: none; max-height: 55%; font-size: max(var(--f16), calc(min(4cqh, 3.4cqw) * var(--k))); }
+    #evMap { flex: 1; }
+  }
+
+  /* Calendar. */
+  #calEvents { font-size: max(var(--f14), calc(min(7.5cqh, 4.8cqw) * var(--k))) !important; }
+  .ag-d { font-size: max(var(--f13), .8em); }
+  .ag .at small { font-size: max(var(--f13), .82em); }
+  .ag .ab span { font-size: max(var(--f14), .85em); }
+  #calStrip { font-size: max(var(--f13), calc(min(7cqh, 4.4cqw) * var(--k))); }
+  #calStrip .sd small { font-size: max(var(--f12), .72em); }
+  /* Week board fills a tall tile too (the tile stacks its parts in a column there). */
+  @container tile (min-width: 620px) and (min-height: 300px) { #calWeek { flex: 1 1 auto; } }
+  @container tile (max-aspect-ratio: 1/1) and (min-width: 620px) and (min-height: 300px) {
+    #calWeek { font-size: max(var(--f16), calc(min(2.4cqh, 2.6cqw) * var(--k))); }
+  }
+  /* Narrow: time above the title (the title gets the whole width); no week strip. */
+  @container tile (max-width: 180px) {
+    #calStrip { display: none !important; }
+    .ag { grid-template-columns: .25em minmax(0, 1fr); column-gap: .5em; row-gap: .1em; }
+    .ag i { grid-column: 1; grid-row: 1 / 3; }
+    .ag .at { grid-column: 2; grid-row: 1; text-align: left; }
+    .ag .at small { display: none; }
+    .ag .ab { grid-column: 2; grid-row: 2; }
+  }
+  /* One-row strip: the next event only. */
+  @container tile (max-height: 80px) {
+    .ag-d, .ag .at small, .ag .ab span { display: none; }
+    #calEvents { -webkit-mask-image: none; mask-image: none; justify-content: center;
+                 font-size: max(var(--f14), calc(min(34cqh, 6cqw) * var(--k))) !important; }
+    .ag + .ag, .ag + .ag-d, .ag-d ~ * ~ .ag { display: none; }
+    .ag { grid-template-columns: auto .25em minmax(0, 1fr); }
+    .ag .at, .ag .ab { grid-column: auto; grid-row: auto; }
+    .ag i { grid-column: auto; grid-row: auto; }
+  }
+  @container tile (max-height: 80px) and (max-width: 180px) { .ag .at, .ag i { display: none; } .ag { grid-template-columns: minmax(0, 1fr); } }
+
+  /* YouTube: buttons grow with big tiles; quick pages stack on narrow ones; tiny = the search button. */
+  .yt { font-size: max(var(--f16), calc(min(9cqh, 5cqw) * var(--k))); }
+  .yt button { min-height: max(48px, min(16cqh, 3em)); }
+  .yt .yt-c button { font-size: max(var(--f14), .82em); }
+  @container tile (max-width: 359px) { .yt-c { flex-direction: column; } }
+  @container tile (max-width: 359px) and (max-height: 300px) { .yt-c { flex-direction: row; } .yt-c button:not(#ytHome) { display: none; } }
+  @container tile (max-height: 130px) and (max-width: 359px) { .yt-c { display: none; } }
+  .yt .yt-c button { padding: 0 .4em; }
+  @container tile (max-width: 130px) {
+    .yt { align-items: center; }
+    .yt .yt-s { padding: 0; width: 100%; justify-content: center; }
+    .yt-s span, .yt-c { display: none; }
+  }
+  @container tile (max-height: 80px) { .yt-c { display: none; } .yt button { min-height: min(48px, calc(100cqh - 12px)); } }
+  /* Owner, 26 Oct: up to 5 lyric lines on Home (previous · current · 3 next), smaller text, smaller
+     album art and play button. Lines that don't fit the tile are dropped whole by fitLyrics(). */
+  #lyr { display: flex; flex-direction: column; gap: .15em; min-height: 0; overflow: hidden; }
+  #music > #lyr { flex: 0 1 auto; }
+  #lyr > div { flex: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; -webkit-line-clamp: unset;
+               line-height: 1.3; font-weight: 500; color: var(--dim); font-size: max(var(--f13), calc(min(4.2cqw, 6cqh) * var(--k))); }
+  #lyr > #line { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+                 font-weight: 700; color: var(--ink); font-size: max(var(--f15), calc(min(5.4cqw, 7.5cqh) * var(--k))); }
+  #lyr > #prevL { opacity: .55; }
+  #lyr > .lx:empty, #lyr > .fitHide { display: none !important; }
+  .w[data-w="music"] .ctl { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
+  .w[data-w="music"] .ctl.play { width: 54px; height: 54px; min-width: 54px; min-height: 54px; }
+  .w[data-w="music"] #cover { width: calc(min(14cqw, 34cqh) * var(--as, 1)); height: auto; max-width: none; align-self: center; flex: none; }
+  @container tile (min-aspect-ratio: 13/5) { .w[data-w="music"] #cover { height: auto; width: calc(min(14cqw, 60cqh) * var(--as, 1)); } }
+  @container tile (max-aspect-ratio: 1/1) {
+    .w[data-w="music"] #cover { width: calc(min(24cqw, 11cqh) * var(--as, 1)); }
+    #lyr > div { font-size: max(var(--f13), calc(min(6cqw, 3cqh) * var(--k))); }
+    #lyr > #line { font-size: max(var(--f15), calc(min(7.5cqw, 3.8cqh) * var(--k))); }
+  }
+  @container tile (max-height: 80px) { #lyr { display: none; } }
+  .w[data-w="music"] #progress { height: 4px; }
+  .w.unsync #lyr > #line { font-weight: 500; color: var(--dim); font-size: max(var(--f13), calc(min(6cqw, 3cqh) * var(--k))); }
+  .w.unsync #lyr > #prevL { opacity: 1; color: var(--accent); font-weight: 600; white-space: normal; text-overflow: clip; margin-bottom: .3em; }
+  #lyr > .lx.xl { display: none; }
+  /* Owner, 26 Oct: tall music card = art, song and artist on top · lyrics fill the middle ·
+     buttons at the bottom, with clear space between the three groups. */
+  @container tile (max-aspect-ratio: 1/1) and (min-height: 300px) {
+    .w[data-w="music"] .mus, .w.noart[data-w="music"] .mus { display: grid; grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto auto minmax(0, 1fr) auto auto; grid-template-areas: "cover" "song" "lyr" "prog" "ctl";
+      align-content: stretch; justify-items: center; row-gap: 0; text-align: center; }
+    .w[data-w="music"] #music { display: contents; }
+    .w[data-w="music"] #cover { grid-area: cover; grid-row: auto; align-self: end; }
+    .w[data-w="music"] #songRow { grid-area: song; margin-top: max(8px, 1.6cqh); max-width: 100%; justify-content: center;
+      font-size: max(var(--f15), calc(min(6cqw, 2.8cqh) * var(--k))); }
+    .w[data-w="music"] #lyr { grid-area: lyr; width: 100%; height: 100%; justify-content: safe center; align-items: center;
+      padding: max(14px, 3cqh) 0; box-sizing: border-box; }
+    .w[data-w="music"] #lyr > div { max-width: 100%; }
+    #lyr > .lx.xl:not(:empty) { display: block; }
+    #lyr > .fitHide { display: none !important; }
+    .w[data-w="music"] #progress { grid-area: prog; width: 100%; margin: 0 0 max(10px, 2cqh); }
+    .w[data-w="music"] #controls { grid-area: ctl; grid-column: auto; align-self: start; justify-content: center; }
+  }
+  .w[data-w="music"].nodur #progress { display: none; }   /* radio: no song length, no empty bar */
 </style>
 <script src="dd_tall.js"></script>
 </head>
@@ -696,8 +1186,7 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
     <div id="cover">♪</div>
     <div id="music">
       <div id="songRow"><span id="song" class="ellipsis">Waiting for music…</span><span id="artist" class="ellipsis"></span></div>
-      <div id="line" class="ellipsis"></div>
-      <div id="next" class="ellipsis"></div>
+      <div id="lyr"><div id="prevL" class="lx"></div><div id="line" class="ellipsis"></div><div id="next" class="ellipsis lx"></div><div id="n2" class="lx"></div><div id="n3" class="lx"></div><div id="n4" class="lx xl"></div><div id="n5" class="lx xl"></div><div id="n6" class="lx xl"></div><div id="n7" class="lx xl"></div><div id="n8" class="lx xl"></div><div id="n9" class="lx xl"></div><div id="n10" class="lx xl"></div><div id="n11" class="lx xl"></div><div id="n12" class="lx xl"></div><div id="n13" class="lx xl"></div><div id="n14" class="lx xl"></div></div>
       <div id="progress"><div id="progressFill"></div></div>
     </div>
     <div id="controls">
@@ -713,7 +1202,9 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   <div class="w tile" data-w="air"><div class="in aq">
     <div class="tl" id="aqTitle">Air quality</div><div id="aqVal">–</div><div id="aqCat"></div><div id="aqMore"></div></div></div>
   <div class="w tile" data-w="radar"><div class="in"><div id="rdMap"></div><div id="rdDot"></div>
-    <div id="rdInfo"></div><div id="rdAttr">© OpenStreetMap · RainViewer</div></div></div>
+    <div id="rdInfo"></div><div id="rdAttr">© OpenStreetMap · RainViewer</div>
+    <div id="rdCtl"><button type="button" data-rdz="1" aria-label="Zoom in">+</button><button type="button" data-rdz="-1" aria-label="Zoom out">−</button><button type="button" data-rdz="0" aria-label="Back to my area">◎</button></div>
+    <div id="rdSwitch"><button type="button" data-rdmode="radar">Radar</button><button type="button" data-rdmode="map">Map</button></div></div></div>
   <div class="w tile" data-w="sports"><div class="in sp"><div class="sp-h"><div class="tl" id="spTitle">Sports</div><span class="sp-live" id="spLive"><i></i><span></span></span><div class="cv sp-tabs" id="spTabs"></div></div><div id="spChips"></div><div id="spList"></div></div></div>
   <div class="w tile" data-w="ev"><div class="in evw"><div class="tl" id="evTitle">EV charging nearby</div>
     <div class="ev-b"><div id="evList"></div><div id="evMap"></div></div><div id="evAttr">© Open Charge Map · OpenStreetMap</div></div></div>
@@ -753,18 +1244,20 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   function clock() {
     var d = new Date();
     var hr = d.getHours();
-    $('time').innerHTML = lastL.clock24 === false
+    var tHtml = lastL.clock24 === false
       ? ((hr % 12) || 12) + ':' + pad(d.getMinutes()) + '<small class="ap">' + (hr < 12 ? 'AM' : 'PM') + '</small>'
       : pad(hr) + ':' + pad(d.getMinutes());
+    if (tHtml !== clock.t) { clock.t = tHtml; $('time').innerHTML = tHtml; }
     var date = DAYS[d.getDay()] + ', ' + d.getDate() + ' ' + MONTHS[d.getMonth()];
     if (LANG !== 'en') {
       try { date = d.toLocaleDateString(LANG + '-MY', { weekday: 'long', day: 'numeric', month: 'short' }); } catch (_) {}
     }
-    $('date').textContent = date;
+    var de = $('date'); if (de.textContent !== date) de.textContent = date;
     if (state.nextEpoch) {
       var left = Math.max(0, Math.floor((state.nextEpoch - Date.now()) / 1000));
       var h = Math.floor(left / 3600), m = Math.floor(left % 3600 / 60), s = left % 60;
-      $('pCount').textContent = (h ? h + ':' + pad(m) : m) + ':' + pad(s);
+      var pc = (h ? h + ':' + pad(m) : m) + ':' + pad(s);
+      var pe = $('pCount'); if (pe.textContent !== pc) pe.textContent = pc;
     }
   }
 
@@ -780,18 +1273,38 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
     while (lo <= hi) { var mid = (lo + hi) >> 1; if (state.lines[mid][0] <= pos) { found = mid; lo = mid + 1; } else hi = mid - 1; }
     return found;
   }
+  // Show as many lyric lines as the tile has room for: drop next lines from the bottom first,
+  // then the previous line; the current line always stays.
+  function fitLyrics() {
+    var box = $('lyr'), mus = $('music');
+    if (!box || !mus) return;
+    var order = ['n14', 'n13', 'n12', 'n11', 'n10', 'n9', 'n8', 'n7', 'n6', 'n5', 'n4', 'n3', 'n2', 'prevL', 'next'];
+    order.forEach(function (id) { $(id).classList.remove('fitHide'); });
+    for (var k = 0; k < order.length && (mus.scrollHeight > mus.clientHeight + 1 || box.scrollHeight > box.clientHeight + 1); k++) {
+      $(order[k]).classList.add('fitHide');
+    }
+  }
+  window.addEventListener('resize', function () { fitLyrics(); });
   function frame() {
     if (!layout.music) { setTimeout(frame, 1000); return; }
     var pos = position();
-    if (state.duration > 0) $('progressFill').style.width = (100 * pos / state.duration).toFixed(2) + '%';
-    if (state.lines.length) {
+    if (state.duration > 0) {
+      var sx = (pos / state.duration).toFixed(4);
+      if (sx !== frame.sx) { frame.sx = sx; $('progressFill').style.transform = 'scaleX(' + sx + ')'; }
+    }
+    if (state.lines.length && !state.unsynced) {
       var i = findIndex(pos + LEAD);
       if (i !== state.idx) {
         state.idx = i;
         var cur = i >= 0 ? (state.lines[i][1] || '').trim() : '';
         $('line').textContent = cur || '♪';
-        var nx = state.lines[i + 1];
-        $('next').textContent = nx ? (nx[1] || '').trim() : '';
+        var L = function (k) { var x = state.lines[k]; return x ? (x[1] || '').trim() || '♪' : ''; };
+        $('prevL').textContent = i >= 1 ? L(i - 1) : '';
+        $('next').textContent = L(i + 1);
+        $('n2').textContent = L(i + 2);
+        $('n3').textContent = L(i + 3);
+        for (var q = 4; q <= 14; q++) $('n' + q).textContent = L(i + q);
+        fitLyrics();
       }
     }
     // 10 fps is plenty for a progress bar + line swap; idle at 1 fps when the Music widget is off.
@@ -819,8 +1332,7 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
       b.addEventListener('click', function () {
         var a = b.getAttribute('data-media');
         if (a === 'toggle') setPlayIcon(!isPlaying);   // flip now; the app's state follows
-        var host = window.DashMate;
-        if (host && host.media) host.media(a);
+        if (window.DashMate && window.DashMate.media) window.DashMate.media(a);
       });
     });
   }
@@ -841,21 +1353,38 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
       var art = m.art ? 'url("' + m.art + '")' : '';
       $('cover').style.backgroundImage = art;
       $('cover').textContent = m.art ? '' : '♪';
-      $('bg').style.backgroundImage = art;
-      document.body.classList.toggle('art', !!m.art);
+      // A station badge (no album cover found) is shown on the card only; the background stays plain.
+      var realArt = m.art && m.art.indexOf('data:image/svg') !== 0;
+      $('bg').style.backgroundImage = realArt ? art : '';
+      document.body.classList.toggle('art', !!realArt);
     }
     var transit = m.sentAtMs ? Math.min(Math.max(0, Date.now() - m.sentAtMs), 1500) : 0;
-    state.basePos = (m.positionMs || 0) + (m.playing ? transit : 0);
+    // delayMs: the car plays the sound a little after the phone's clock (set on the Lyrics page).
+    state.basePos = (m.positionMs || 0) - (m.delayMs || 0) + (m.playing ? transit : 0);
     state.baseAt = performance.now();
     state.playing = !!m.playing;
     setPlayIcon(state.playing);
     state.duration = m.durationMs || 0;
-    var key = (m.title || '') + '|' + (m.lines ? m.lines.length : 0);
+    var mw = document.querySelector('.w[data-w="music"]'); if (mw) mw.classList.toggle('nodur', !(state.duration > 0));
+    var key = (m.title || '') + '|' + (m.lines ? m.lines.length : 0) + '|' + (m.unsynced ? 'u' : 's');
+    state.unsynced = !!m.unsynced;
     if (key !== state.songKey) {
       state.songKey = key;
       state.lines = m.lines || [];
       state.idx = -2;
-      $('next').textContent = '';
+      ['prevL', 'next', 'n2', 'n3', 'n4', 'n5', 'n6', 'n7', 'n8', 'n9', 'n10', 'n11', 'n12', 'n13', 'n14'].forEach(function (id) { $(id).textContent = ''; });
+      var mw2 = document.querySelector('.w[data-w="music"]');
+      if (mw2) mw2.classList.toggle('unsync', state.unsynced && state.lines.length > 0);
+      if (state.unsynced && state.lines.length) {
+        // Tuned in mid-song: the lyrics can't be timed, so show them plainly (no moving highlight)
+        // until the next song starts.
+        $('prevL').textContent = tr('syncNext', 'Tuned in mid-song · lyrics follow along from the next song');
+        var T = function (k) { var x = state.lines[k]; return x ? (x[1] || '').trim() || '♪' : ''; };
+        $('line').textContent = T(0);
+        $('next').textContent = T(1); $('n2').textContent = T(2); $('n3').textContent = T(3);
+        for (var q = 4; q <= 14; q++) $('n' + q).textContent = T(q);
+        fitLyrics();
+      }
       if (!state.lines.length) {
         $('line').textContent = waiting ? (m.app ? '' : tr('playSomething', 'Play something in Spotify')) :
           ({ loading: tr('findingLyrics', 'Finding lyrics…'), notFound: m.playing ? '♪' : tr('paused', 'Paused'),
@@ -900,16 +1429,28 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   }
 
   var bgUrl = null;
+  function tallBgUrl(u) {
+    if (!isTallScreen() || u.indexOf('images.unsplash.com') < 0) return u;
+    try {
+      var x = new URL(u);
+      x.searchParams.set('w', '1080'); x.searchParams.set('h', '1920');
+      x.searchParams.set('fit', 'crop'); x.searchParams.set('crop', 'entropy');
+      return x.toString();
+    } catch (e) { return u; }
+  }
   function renderBg(b) {
     b = b || { mode: 'cover', dim: .35 };
     document.body.className = document.body.className.replace(/\bmode-\w+/g, '').trim() + ' mode-' + b.mode;
     $('dim').style.opacity = b.mode === 'plain' ? 0 : (b.dim == null ? .35 : b.dim);
-    if (b.url && b.url !== bgUrl) {
-      bgUrl = b.url;
+    // Tall screens (Jaecoo J7): ask for the same photo cut to a tall shape, so it isn't a
+    // blown-up slice of a wide picture.
+    var url = b.url ? tallBgUrl(b.url) : b.url;
+    if (url && url !== bgUrl) {
+      bgUrl = url;
       // Swap only once loaded, so it never flashes empty.
       var img = new Image();
-      img.onload = function () { if (bgUrl === b.url) $('photo').style.backgroundImage = 'url("' + b.url + '")'; };
-      img.src = b.url;
+      img.onload = function () { if (bgUrl === url) $('photo').style.backgroundImage = 'url("' + url + '")'; };
+      img.src = url;
     }
     $('credit').textContent = b.credit || '';
   }
@@ -940,15 +1481,32 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
     { id: 'speed', x: 7, y: 7, w: 3, h: 2, ta: 'center' },
     { id: 'shortcuts', x: 10, y: 7, w: 3, h: 2, ta: 'center' }
   ] };
+  // Small split-screen panel: the split layout, with a wider shortcuts tile so two icons fit side by side.
+  var DEFAULT_PANEL_LAYOUT = { v: 2, textScale: 1, clockFont: 'thin', widgets: DEFAULT_SPLIT_LAYOUT.widgets.map(function (w) {
+    if (w.id === 'speed') return { id: 'speed', x: 7, y: 7, w: 2, h: 2, ta: 'center' };
+    if (w.id === 'shortcuts') return { id: 'shortcuts', x: 9, y: 7, w: 4, h: 2, ta: 'center' };
+    return w;
+  }) };
   var layout = { music: true }, layoutKey = null, lastL = DEFAULT_LAYOUT, layoutLand = null, layoutPort = null;
+  // Tall placement: a tall surface, or the phone's "Always tall" lock (dd_tall.js) on any full-screen
+  // deck, even a wide one and even before the size settles. The small AA panel keeps its own layout.
+  function isPortraitSurface() { return window.innerHeight > window.innerWidth * 1.05; }
+  function isSmallPanel() { return !isPortraitSurface() && window.innerWidth < 620 && window.innerWidth / Math.max(1, window.innerHeight) <= 1.35; }
+  function isTallScreen() { return isPortraitSurface() || (window.ddTallLock ? window.ddTallLock() : false); }
+  var customLayout = null;
   function pickLayout() {
+    if (customLayout) return customLayout;
+    // Tall screens (Jaecoo J7) always use the tall layout; the wide one is only for wide screens.
+    if (isTallScreen()) {
+      return (layoutPort && layoutPort.widgets && layoutPort.widgets.length > 0) ? layoutPort : DEFAULT_PORTRAIT_LAYOUT;
+    }
+    // A small split-screen panel can't fit the full wide layout (tiles get too small and text is cut):
+    // use the roomier split layout there; the saved wide layout still shows on the full screen.
+    if (isSmallPanel()) return DEFAULT_PANEL_LAYOUT;
     if (layoutLand && layoutLand.widgets && layoutLand.widgets.length > 0) {
       return layoutLand;
     }
     var ar = window.innerWidth / Math.max(1, window.innerHeight);
-    if (window.innerHeight > window.innerWidth * 1.05) {
-      return layoutPort || DEFAULT_PORTRAIT_LAYOUT;
-    }
     if (ar < 1.35) {
       return DEFAULT_SPLIT_LAYOUT;
     }
@@ -956,14 +1514,12 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   }
   var DEFAULT_TA = { speed: 'center', shortcuts: 'center' };   // same as home_layout.dart
   function applyLayout(l) {
-    if (l && l.widgets && l.widgets.length > 0) {
-      layoutLand = l;
-    }
-    l = l || layoutLand || DEFAULT_LAYOUT;
+    setTimeout(function () { if (typeof fitLyrics === "function") fitLyrics(); }, 80);
+    l = l || pickLayout();
     var cols = 12;   // same grid on every screen, so the phone editor matches the car
-    // Portrait screens use their own layout on an 18-row grid (see home_layout.dart).
-    var isPort = l === layoutPort || l === DEFAULT_PORTRAIT_LAYOUT || (window.innerHeight > window.innerWidth * 1.05);
-    var gridRows = isPort ? 18 : 8;
+    // Tall screens use their own layout on an 18-row grid (the phone editor's "Tall" board).
+    var isPort = isTallScreen();
+    var gridRows = (isPort && l !== customLayout) ? 18 : 8;
     var key = JSON.stringify(l) + cols + 'x' + gridRows;
     if (key === layoutKey) return;                // unchanged: no restyle, no relayout
     layoutKey = key; lastL = l;
@@ -996,6 +1552,12 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
     postGeometry();
   }
   window.applyLayout = applyLayout;
+  // From the phone editor: store the wide or tall layout, then show whichever fits this screen.
+  window.ddSetLayout = function (l, tall) {
+    if (typeof l === 'string') l = JSON.parse(l);
+    if (tall) layoutPort = l; else layoutLand = l;
+    applyLayout(pickLayout());
+  };
   window.addEventListener('resize', function () { applyLayout(pickLayout()); radarKey = null; evKey = null; renderExtras(); postGeometry(); });
 
   // Phone widget editor only (never on the car): report where the grid sits so
@@ -1027,7 +1589,7 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
       // No icon (offline / unknown site): the name's first letter.
       img.onerror = function () { a.textContent = (sc.name || '?').charAt(0).toUpperCase(); };
       a.appendChild(img);
-      a.addEventListener('click', function () { var host = window.DashMate; if (host && host.site) host.site(sc.url); });
+      a.addEventListener('click', function () { if (window.DashMate && window.DashMate.site) window.DashMate.site(sc.url); });
       box.appendChild(a);
     });
   }
@@ -1047,7 +1609,7 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
 
   function renderForecast(f) {
     if (!on('forecast')) return;
-    if (!f || !f.now) { $('fcNow').innerHTML = '<div class="na">' + esc(tr('noData', 'No forecast yet')) + '</div>'; return; }
+    if (!f || !f.now) { $('fcNow').innerHTML = '<div class="na">' + esc(tr('noData', 'No forecast yet')) + '</div>'; return; }   // (an old 6-hour list is not this shape)
     var n = f.now || {}, wi = weatherOf(n.code, n.isDay), d0 = (f.days || [])[0] || {};
     var el = document.querySelector('.w[data-w="forecast"]');
     el.classList.toggle('big', el.offsetWidth >= 440 && el.offsetHeight >= 280);
@@ -1103,9 +1665,9 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
     if (!a || a.aqi == null) { $('aqVal').textContent = '–'; $('aqCat').textContent = ''; $('aqMore').textContent = ''; return; }
     var b = aqiBand(a.aqi);
     $('aqVal').textContent = Math.round(a.aqi);
-    $('aqVal').style.color = b[1];
+    $('aqVal').style.color = 'color-mix(in srgb, ' + b[1] + ' 72%, var(--ink))';
     $('aqCat').textContent = tr('aqi_' + b[0], b[0]);
-    $('aqCat').style.background = b[1] + '26'; $('aqCat').style.color = '#fff'; $('aqCat').style.boxShadow = 'inset 0 0 0 1.5px ' + b[1];
+    $('aqCat').style.background = b[1] + '26'; $('aqCat').style.color = 'var(--ink)'; $('aqCat').style.boxShadow = 'inset 0 0 0 1.5px ' + b[1];
     $('aqMore').innerHTML = '<span>PM2.5 <b>' + r0(a.pm25) + '</b></span><span>UV <b>' + (a.uv == null ? '–' : Math.round(a.uv)) +
       '</b> ' + esc(a.uv == null ? '' : tr('uv_' + uvBand(a.uv), uvBand(a.uv))) + '</span>' +
       (n.humidity == null ? '' : '<span>💧 <b>' + r0(n.humidity) + '%</b></span><span>💨 <b>' + r0(n.wind) + '</b> km/h</span>');
@@ -1113,36 +1675,165 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
 
   // Slippy-map tiles (z/x/y) around the place, base map + latest radar frame.
   var radarKey = null;
-  function renderRadar(r) {
-    if (!on('radar')) return;
-    var box = $('rdMap'), W = box.clientWidth, H = box.clientHeight;
-    var key = r ? r.path + '|' + W + 'x' + H : 'none';
-    if (key === radarKey) return;           // same frame, same size: keep the images
-    radarKey = key;
-    box.textContent = '';
-    if (!r || !W) { $('rdInfo').textContent = tr('noRadar', 'Radar unavailable'); return; }
-    var z = 7, n = Math.pow(2, z), lat = r.lat * Math.PI / 180;
-    var fx = (r.lon + 180) / 360 * n, fy = (1 - Math.log(Math.tan(lat) + 1 / Math.cos(lat)) / Math.PI) / 2 * n;
-    var cx = Math.floor(fx), cy = Math.floor(fy), ox = W / 2 - (fx - cx) * 256, oy = H / 2 - (fy - cy) * 256;
-    var rx = Math.ceil(W / 512) + 1, ry = Math.ceil(H / 512) + 1;
-    for (var dy = -ry; dy <= ry; dy++) for (var dx = -rx; dx <= rx; dx++) {
-      var x = ((cx + dx) % n + n) % n, y = cy + dy;
-      if (y < 0 || y >= n) continue;
-      var layers = [['base', 'https://tile.openstreetmap.org/' + z + '/' + x + '/' + y + '.png']];
-      if (r.path && r.path !== '/v2/radar/nowcast') {
-        layers.push(['rain', r.host + r.path + '/256/' + z + '/' + x + '/' + y + '/2/1_1.png']);
-      }
-      layers.forEach(function (t) {
-        var img = document.createElement('img');
-        img.className = t[0]; img.src = t[1]; img.loading = 'lazy';
-        img.style.left = (ox + dx * 256) + 'px'; img.style.top = (oy + dy * 256) + 'px';
-        img.onerror = function () { img.remove(); };
-        box.appendChild(img);
-      });
-    }
-    var d = new Date(r.time * 1000);
-    $('rdInfo').textContent = tr('rainRadar', 'Rain radar') + ' · ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  // ---- Radar card: Rain radar, or Map (street map following the car's GPS) ----
+  // Each mode keeps its own zoom and centre. Radar: 5–12 (RainViewer's free radar stops at 7, so
+  // above that its tiles are enlarged). Map: 5–20 (OpenStreetMap is sharp to 19, then enlarged once).
+  var rdMode = 'radar', lastRadar = null, rdLast = null, gps = null;
+  var VIEW = { radar: { z: 7, min: 5, max: 12, lat: null, lon: null },
+               map: { z: 17, min: 5, max: 20, lat: null, lon: null, follow: true } };
+  var rdPendX = 0, rdPendY = 0, rdTimer = null;
+  try { var sv = localStorage.getItem('dd_rd_mode'); rdMode = sv === 'map' ? 'map' : 'radar';
+        var mz = +localStorage.getItem('dd_map_zoom'); if (mz >= 5 && mz <= 20) VIEW.map.z = mz; } catch (_) {}
+  function tileXY(lat, lon, z) {
+    var n = Math.pow(2, z), r = lat * Math.PI / 180;
+    return [(lon + 180) / 360 * n, (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n];
   }
+  function tileLatLon(x, y, z) {
+    var n = Math.pow(2, z);
+    return [Math.atan(Math.sinh(Math.PI * (1 - 2 * y / n))) * 180 / Math.PI, x / n * 360 - 180];
+  }
+  function home() { return lastRadar ? [lastRadar.lat, lastRadar.lon] : [3.139, 101.6869]; }
+  // Where the view is centred now (the stored centre, the car when following, or the home area).
+  function centre() {
+    var v = VIEW[rdMode];
+    if (rdMode === 'map' && v.follow && gps) return [gps.lat, gps.lng];
+    if (v.lat != null) return [v.lat, v.lon];
+    if (rdMode === 'map' && gps) return [gps.lat, gps.lng];
+    return home();
+  }
+  function renderRadar(r) {
+    if (r) lastRadar = r;
+    rdLast = lastRadar;
+    if (!on('radar')) return;
+    var v = VIEW[rdMode], box = $('rdMap'), W = box.clientWidth, H = box.clientHeight;
+    var c = centre();
+    if (rdPendX || rdPendY) {     // a finished drag: move the centre by the dragged pixels
+      var t = tileXY(c[0], c[1], v.z);
+      c = tileLatLon(t[0] - rdPendX / 256, t[1] - rdPendY / 256, v.z);
+      v.lat = c[0]; v.lon = c[1]; rdPendX = rdPendY = 0;
+      if (rdMode === 'map') v.follow = false;
+    }
+    var radar = rdMode === 'radar' ? lastRadar : null;
+    var key = rdMode + '|' + v.z + '|' + c[0].toFixed(5) + ',' + c[1].toFixed(5) + '|' + W + 'x' + H + '|' + (radar ? radar.path : '') + '|' + document.documentElement.dataset.theme;
+    if (key !== radarKey) {
+      radarKey = key;
+      box.textContent = '';
+      box.style.transform = '';
+      if (!W) return;
+      var ct = tileXY(c[0], c[1], v.z);
+      var layer = function (cls, lz, url) {
+        var ts = 256 * Math.pow(2, v.z - lz), n = Math.pow(2, lz);
+        var fx = ct[0] / Math.pow(2, v.z - lz), fy = ct[1] / Math.pow(2, v.z - lz);
+        var cx = Math.floor(fx), cy = Math.floor(fy);
+        var ox = W / 2 - (fx - cx) * ts, oy = H / 2 - (fy - cy) * ts;
+        var x0 = Math.floor(-ox / ts) - 1, x1 = Math.ceil((W - ox) / ts), y0 = Math.floor(-oy / ts) - 1, y1 = Math.ceil((H - oy) / ts);
+        for (var dy = y0; dy <= y1; dy++) for (var dx = x0; dx <= x1; dx++) {
+          var x = ((cx + dx) % n + n) % n, y = cy + dy;
+          if (y < 0 || y >= n) continue;
+          var img = document.createElement('img');
+          img.className = cls; img.src = url(lz, x, y); img.loading = 'lazy';
+          img.style.left = (ox + dx * ts) + 'px'; img.style.top = (oy + dy * ts) + 'px';
+          img.style.width = img.style.height = ts + 'px';
+          img.onerror = function () { this.remove(); };
+          box.appendChild(img);
+        }
+      };
+      layer('base', Math.min(v.z, 19), function (z, x, y) { return 'https://tile.openstreetmap.org/' + z + '/' + x + '/' + y + '.png'; });
+      if (radar) layer('rain', Math.min(v.z, 7), function (z, x, y) { return radar.host + radar.path + '/256/' + z + '/' + x + '/' + y + '/2/1_1.png'; });
+    }
+    placeDot(c, v.z, W, H);
+    var tile = document.querySelector('.w[data-w="radar"]');
+    if (tile) { tile.classList.toggle('mapmode', rdMode === 'map'); tile.classList.toggle('follow', rdMode === 'map' && !!v.follow); }
+    if (rdMode === 'map') {
+      $('rdInfo').textContent = gps ? tr('yourLocation', 'Your location') : tr('waitingGps', 'Waiting for GPS…');
+      $('rdAttr').textContent = '© OpenStreetMap';
+    } else if (lastRadar) {
+      var d = new Date(lastRadar.time * 1000);
+      $('rdInfo').textContent = tr('rainRadar', 'Rain radar') + ' · ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+      $('rdAttr').textContent = '© OpenStreetMap · RainViewer';
+    } else $('rdInfo').textContent = tr('noRadar', 'Radar unavailable');
+  }
+  // The dot: the home area on the radar, the car (with its heading) on the map.
+  function placeDot(c, z, W, H) {
+    var dot = $('rdDot'), p = rdMode === 'map' ? (gps ? [gps.lat, gps.lng] : null) : home();
+    if (!p) { dot.style.display = 'none'; return; }
+    var a = tileXY(c[0], c[1], z), b = tileXY(p[0], p[1], z);
+    dot.style.display = '';
+    dot.dataset.x = (b[0] - a[0]) * 256; dot.dataset.y = (b[1] - a[1]) * 256;
+    dot.style.transform = 'translate(' + dot.dataset.x + 'px,' + dot.dataset.y + 'px)';
+    dot.classList.toggle('car', rdMode === 'map');
+    var arrow = rdMode === 'map' && gps && gps.bearing >= 0;
+    dot.classList.toggle('heading', !!arrow);
+    if (arrow) dot.style.setProperty('--bearing', gps.bearing + 'deg');
+  }
+  function rdRedraw() { radarKey = null; renderRadar(null); }
+  function setRdMode(mode) {
+    rdMode = mode === 'map' ? 'map' : 'radar';
+    try { localStorage.setItem('dd_rd_mode', rdMode); } catch (_) {}
+    Array.prototype.forEach.call(document.querySelectorAll('[data-rdmode]'), function (b) {
+      b.classList.toggle('on', b.getAttribute('data-rdmode') === rdMode);
+    });
+    rdRedraw();
+  }
+  document.addEventListener('click', function (e) {
+    var m = e.target.closest && e.target.closest('[data-rdmode]');
+    if (m) { e.stopPropagation(); setRdMode(m.getAttribute('data-rdmode')); return; }
+    var b = e.target.closest && e.target.closest('[data-rdz]');
+    if (!b) return;
+    e.stopPropagation();
+    var v = VIEW[rdMode], z = +b.getAttribute('data-rdz');
+    if (z === 0) { v.lat = v.lon = null; if (rdMode === 'map') v.follow = true; else v.z = 7; }
+    else v.z = Math.max(v.min, Math.min(v.max, v.z + z));
+    if (rdMode === 'map') { try { localStorage.setItem('dd_map_zoom', v.z); } catch (_) {} }
+    rdRedraw();
+  }, true);
+  // GPS for the map: asked every 2 s while the map is showing.
+  setInterval(function () {
+    if (rdMode !== 'map' || !on('radar') || !window.DashMate || !DashMate.location) return;
+    var j = ''; try { j = DashMate.location(); } catch (_) {}
+    var had = !!gps;
+    if (j) { try { gps = JSON.parse(j); } catch (_) {} }
+    if (!gps) return;
+    var v = VIEW.map;
+    if (!had) { rdRedraw(); return; }
+    // Following: move only the dot until the car nears the edge, then re-centre (no constant reload).
+    var box = $('rdMap'), W = box.clientWidth, H = box.clientHeight, c = centre();
+    if (v.follow && v.lat != null) c = [v.lat, v.lon];
+    var a = tileXY(c[0], c[1], v.z), b = tileXY(gps.lat, gps.lng, v.z);
+    var dx = (b[0] - a[0]) * 256, dy = (b[1] - a[1]) * 256;
+    if (v.follow && (Math.abs(dx) > W * .25 || Math.abs(dy) > H * .25)) { v.lat = gps.lat; v.lon = gps.lng; rdRedraw(); }
+    else { if (v.follow && v.lat == null) { v.lat = c[0]; v.lon = c[1]; } placeDot(v.follow ? [v.lat, v.lon] : c, v.z, W, H); $('rdInfo').textContent = tr('yourLocation', 'Your location'); }
+  }, 2000);
+  // Drag to move (both modes). A drag never counts as a tap (which would open the radar page).
+  (function () {
+    var map = $('rdMap'), dot = $('rdDot'), start = null, dragged = false;
+    function shift(dx, dy) {
+      map.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+      dot.style.transform = 'translate(' + ((+dot.dataset.x || 0) + dx) + 'px,' + ((+dot.dataset.y || 0) + dy) + 'px)';
+    }
+    map.addEventListener('pointerdown', function (e) { start = { x: e.clientX, y: e.clientY }; dragged = false; });
+    window.addEventListener('pointermove', function (e) {
+      if (!start) return;
+      var dx = e.clientX - start.x, dy = e.clientY - start.y;
+      // Car swipes arrive as many small steps, so a tiny threshold (a car tap has no movement at all).
+      if (!dragged && Math.abs(dx) + Math.abs(dy) < 2) return;
+      dragged = true;
+      shift(rdPendX + dx, rdPendY + dy);
+    });
+    window.addEventListener('pointerup', function (e) {
+      if (!start) return;
+      if (dragged) {
+        rdPendX += Math.round(e.clientX - start.x); rdPendY += Math.round(e.clientY - start.y);
+        shift(rdPendX, rdPendY);
+        if (rdMode === 'map') VIEW.map.follow = false;
+        clearTimeout(rdTimer); rdTimer = setTimeout(rdRedraw, 300);   // redraw once the swiping stops
+      }
+      start = null;
+    });
+    var tile = document.querySelector('.w[data-w="radar"]');
+    if (tile) tile.addEventListener('click', function (e) { if (dragged) { e.stopPropagation(); dragged = false; } }, true);
+  })();
+  setRdMode(rdMode);
 
   var spTab = 'games', spComp = null;
   try { spTab = localStorage.getItem('dd_sp_tab') || 'games'; spComp = localStorage.getItem('dd_sp_comp'); } catch (_) {}
@@ -1312,8 +2003,8 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
       (noAccess ? ' · ' + esc(tr('calAccess', 'Allow calendar access in the DashMate app')) : '') + '</span></div>' + nextChip(evs, now) + tog + '</div>';
     var block = function (e, style) {
       var c = e.color || '#5EF2D6', b = new Date(e.begin), en = new Date(e.end);
-      return '<div class="wk-e' + (e.end < now.getTime() ? ' past' : '') + '" data-ev="' + calAll.indexOf(e) + '" style="' + style + 'background:linear-gradient(135deg,' + esc(c) + '55,' +
-        esc(c) + '26);border-color:' + esc(c) + '"><b>' + esc(e.title) + '</b>' +
+      return '<div class="wk-e' + (e.end < now.getTime() ? ' past' : '') + '" data-ev="' + calAll.indexOf(e) + '" style="' + style + 'background:' + esc(c) + '40;' +
+        'border-color:' + esc(c) + '"><b>' + esc(e.title) + '</b>' +
         (e.allDay ? '' : '<span>' + pad(b.getHours()) + ':' + pad(b.getMinutes()) +
           (calView === 'day' ? '–' + pad(en.getHours()) + ':' + pad(en.getMinutes()) : '') + '</span>') +
         (calView === 'day' && e.where ? '<span>📍 ' + esc(e.where) + '</span>' : '') + '</div>';
@@ -1346,7 +2037,7 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
         var mins = Math.round((e.end - e.begin) / 6e4), dur = mins >= 60 ? Math.floor(mins / 60) + 'h' + (mins % 60 ? ' ' + mins % 60 + 'm' : '') : mins + 'm';
         var tm = e.allDay ? '<b>' + esc(tr('allDay', 'All day')) + '</b>' : '<b>' + pad(b.getHours()) + ':' + pad(b.getMinutes()) + '</b><span>' +
           pad(en.getHours()) + ':' + pad(en.getMinutes()) + '</span>';
-        return '<div class="dv-e' + st + '" data-ev="' + calAll.indexOf(e) + '" style="background:linear-gradient(135deg,' + esc(c) + '40,' + esc(c) + '14);border-color:' + esc(c) + '">' +
+        return '<div class="dv-e' + st + '" data-ev="' + calAll.indexOf(e) + '" style="background:' + esc(c) + '2e;border-color:' + esc(c) + '">' +
           '<div class="tm">' + tm + '</div><div class="bd"><b>' + esc(e.title) + '</b>' +
           (st === ' now' ? '<span>' + esc(tr('happeningNow', 'Happening now')) + '</span>' : (e.allDay ? '' : '<span>' + dur + '</span>')) +
           (e.where ? '<span>📍 ' + esc(e.where) + '</span>' : '') + '</div></div>';
@@ -1488,27 +2179,17 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   }
   function renderEv(e) {
     if (!on('ev')) return;
-    $('evTitle').textContent = tr('evTitle', 'Nearby Chargers & Petrol Stations');
+    $('evTitle').textContent = tr('evTitle', 'EV charging nearby');
     var items = (e && e.items) || [];
-    if (!items.length) { $('evList').innerHTML = '<div class="na">' + esc(tr('noChargers', 'No stations found nearby')) + '</div>'; $('evMap').textContent = ''; return; }
+    if (!items.length) { $('evList').innerHTML = '<div class="na">' + esc(tr('noChargers', 'No chargers found nearby')) + '</div>'; $('evMap').textContent = ''; return; }
     $('evList').innerHTML = items.map(function (c, i) {
       var km = c.km == null ? '' : c.km < 1 ? Math.round(c.km * 1000) + ' m' : c.km.toFixed(1) + ' km';
-      var plugs = '';
-      if (Array.isArray(c.plugs)) {
-        plugs = c.plugs.slice(0, 3).map(function (p) {
-          var isFuelType = p.kw === 0;
-          return '<span class="plug' + (p.kw >= 40 ? ' fast' : isFuelType ? ' fuel' : '') + '">' + esc(p.type || p) + (p.kw > 0 ? ' ' + p.kw + 'kW' : '') + (p.n > 1 ? ' ×' + p.n : '') + '</span>';
-        }).join('');
-      } else if (typeof c.plugs === 'string' && c.plugs) {
-        plugs = '<span class="plug fast">' + esc(c.plugs) + '</span>';
-      } else if (c.fuels) {
-        plugs = '<span class="plug fuel">' + esc(c.fuels) + '</span>';
-      }
-      var isFuel = c.kind === 'fuel' || c.type === 'fuel';
-      var badge = isFuel ? '⛽' : '⚡';
-      return '<div class="ch' + (c.status === 'down' ? ' down' : '') + '" data-nav-lat="' + c.lat + '" data-nav-lng="' + c.lng + '"><span class="n">' + badge + ' ' + (i + 1) +
+      var plugs = (c.plugs || []).slice(0, 3).map(function (p) {
+        return '<span class="plug' + (p.kw >= 40 ? ' fast' : '') + '">' + esc(p.type) + (p.kw ? ' ' + p.kw + 'kW' : '') + (p.n > 1 ? ' ×' + p.n : '') + '</span>';
+      }).join('');
+      return '<div class="ch' + (c.status === 'down' ? ' down' : '') + '" data-nav-lat="' + c.lat + '" data-nav-lng="' + c.lng + '"><span class="n">' + (i + 1) +
         '</span><span class="nm"><b>' + esc(c.name) + '</b>' + evAccess(c) + '</span><span class="km">' + km + '</span><span class="sub">' + plugs +
-        (c.operator || c.kind ? '<span class="op">' + esc([c.operator, isFuel ? 'Petrol Station' : 'EV Charging'].filter(Boolean).join(' · ')) + '</span>' : '') + '</span></div>';
+        (c.operator || c.kind ? '<span class="op">' + esc([c.operator, c.kind].filter(Boolean).join(' · ')) + '</span>' : '') + '</span></div>';
     }).join('');
     renderEvMap(e);
   }
@@ -1542,10 +2223,24 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   }
   document.addEventListener('click', function (ev) {
     var y = ev.target.closest && ev.target.closest('[data-yt]');
-    var host = window.DashMate;
-    if (y && host && host.youtube) host.youtube(y.getAttribute('data-yt'));
+    if (y && window.DashMate && window.DashMate.youtube) window.DashMate.youtube(y.getAttribute('data-yt'));
     var c = ev.target.closest && ev.target.closest('[data-nav-lat]');
-    if (c && host && host.navigate) host.navigate(+c.getAttribute('data-nav-lat'), +c.getAttribute('data-nav-lng'));
+    if (c && window.DashMate && window.DashMate.navigate) window.DashMate.navigate(+c.getAttribute('data-nav-lat'), +c.getAttribute('data-nav-lng'));
+    // A tap on a Home card opens that card's own page (owner, 25 Oct: never Waze from a card).
+    // Taps on a card's own controls (buttons, tabs, links, calendar days...) keep doing their job.
+    if (y || c) return;
+    if (ev.target.closest('button, a, input, select, textarea, [data-sptab], [data-spcomp], [data-cv], [data-ev], [data-day], [data-close], [data-yt], .ctl, [onclick]')) return;
+    var tile = ev.target.closest('.w.tile');
+    if (!tile || document.body.classList.contains('editing')) return;
+    var CARD_PAGE = { prayer: 'prayer', music: 'lyrics', weather: 'custom:weather', forecast: 'custom:weather',
+      air: 'custom:weather', radar: 'custom:radar', football: 'custom:sports', sports: 'custom:sports',
+      calendar: 'custom:calendar', ev: 'custom:ev' };
+    var target = CARD_PAGE[tile.getAttribute('data-w')];
+    if (tile.getAttribute('data-w') === 'radar' && tile.classList.contains('mapmode')) return;   // the map itself takes taps
+    if (!target || !window.DashMate || !window.DashMate.page) return;
+    // Already showing that page (e.g. a card on the Custom page itself): nothing to do.
+    if (target.indexOf('custom:') === 0 && document.body.classList.contains('pg-custom')) return;
+    window.DashMate.page(target);
   });
 
   var extras = {}, rainNote = null;
@@ -1559,11 +2254,14 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   /** Called from Kotlin with the JSON payload built in Dart. */
   window.ddUpdate = function (p) {
     if (typeof p === 'string') p = JSON.parse(p);
+    if (p && p.layoutMode && window.ddSetLayoutMode) window.ddSetLayoutMode(p.layoutMode);   // Always tall / Automatic
     setSpeed(p.speed, p.gps);
     if (p.speedOnly) return;
     if (p.labels) L = p.labels;
     if (p.lang) LANG = p.lang;
-    if (p.layout && p.layout.widgets && p.layout.widgets.length > 0) {
+    // The Custom page (forecast / air / radar) sends its own fixed layout under p.layout.
+    customLayout = (p.page === 'custom' && p.layout && p.layout.widgets) ? p.layout : null;
+    if (!customLayout && p.layout && p.layout.widgets && p.layout.widgets.length > 0) {
       layoutLand = p.layout;
     }
     if (p.layoutP) layoutPort = p.layoutP;

@@ -1,43 +1,57 @@
 <!doctype html>
 <html>
 <head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <script>(function(){var q=/[?&]theme=(dark|light)/.exec(location.search),m=q&&q[1];
-try{if(!m&&(window.DashMate?.theme||window.DriveDeck?.theme))m=(window.DashMate||window.DriveDeck).theme();}catch(e){}
+try{if(!m&&window.DashMate&&DashMate.theme)m=DashMate.theme();}catch(e){}
 if(!m)m=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
 document.documentElement.dataset.theme=m;
 window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'dark':'light');};})();</script>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <style>
   /* One base unit drives every size: scales with the smaller screen side. */
   html { font-size: clamp(9px, min(2.3vh, 1.35vw), 26px); }
   :root {
-    --accent: #14E0C1; --accent-soft: rgba(20,224,193,.16); --violet: #0B9E8A;
-    --ink: #FFFFFF; --dim: rgba(255,255,255,.7); --faint: rgba(255,255,255,.16);
-    --panel: rgba(18,24,40,.75);
+    --bg: #F8FAFC; --surface: #FFFFFF; --surface-2: #F1F5F9; --border: #E2E8F0;
+    --ink: #0F172A; --ink-2: #475569; --ink-3: #64748B;
+    --accent: #0F766E; --on-accent: #FFFFFF; --danger: #DC2626; --ok: #15803D;
+    --shadow: 0 1px 2px rgba(15,23,42,.06), 0 4px 12px rgba(15,23,42,.06);
+    --plate: 94%;                       /* surface opacity over a photo */
+    --gloom: rgba(15,23,42,.10); --drop: rgba(71,85,105,.45);
+    --accent-soft: color-mix(in srgb, var(--accent) 10%, var(--surface));
+    --violet: var(--accent); --dim: var(--ink-2); --faint: var(--border);
     --sans: "Google Sans", Roboto, system-ui, sans-serif;
     --mono: "Roboto Mono", "Noto Sans Mono", ui-monospace, monospace;
   }
+  :root[data-theme="dark"] {
+    --bg: #0F1115; --surface: #181B21; --surface-2: #20242B; --border: #2A2F37;
+    --ink: #F1F5F9; --ink-2: #A3ACB9; --ink-3: #7C8594;
+    --accent: #2DD4BF; --on-accent: #042F2E; --danger: #F87171; --ok: #4ADE80;
+    --shadow: none;
+    --plate: 90%;
+    --gloom: rgba(0,0,0,.35); --drop: rgba(215,225,240,.5);
+    --accent-soft: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body {
-    width: 100%; height: 100%; overflow: hidden; color: var(--ink); background: #0B0F1A;
+    width: 100%; height: 100%; overflow: hidden; color: var(--ink); background: var(--bg);
     font-family: var(--sans); -webkit-font-smoothing: antialiased;
   }
 
   /* ---------- Background ---------- */
-  #scene { position: fixed; inset: 0; overflow: hidden; background: radial-gradient(circle at 30% 20%, #16213D, #0B0F1A 70%); }
-  #photo { position: absolute; inset: -4%; background: center/cover no-repeat; opacity: 0; transition: opacity 2s ease;
-           filter: brightness(.7) saturate(.9); animation: drift 80s ease-in-out infinite alternate; }
-  @keyframes drift { from { transform: scale(1); } to { transform: scale(1.07) translate(-1%, -1%); } }
+  #scene { position: fixed; inset: 0; overflow: hidden; background: var(--bg); }
+  #photo { position: absolute; inset: 0; background: center/cover no-repeat; opacity: 0; transition: opacity .25s ease; }
   body.photo #photo { opacity: 1; }
-  #shade { position: absolute; inset: 0;
-           background: linear-gradient(100deg, rgba(10,9,13,.82) 0%, rgba(10,9,13,.45) 48%, rgba(10,9,13,.2) 70%, rgba(10,9,13,.55) 100%),
-                       linear-gradient(transparent 60%, rgba(10,9,13,.65)); }
-  #gloom { position: absolute; inset: 0; background: rgba(24,28,38,.55); opacity: 0; transition: opacity 3s; }
-  #rain { position: absolute; inset: 0; opacity: 0; transition: opacity 2s ease; }
-  .drop { position: absolute; top: -10%; width: 1.5px; height: 6vh; background: linear-gradient(transparent, rgba(215,225,240,.6)); animation: fall linear infinite; }
+  /* The dark wash only exists on a photo, so white hero text stays readable on any picture. */
+  #shade { position: absolute; inset: 0; display: none;
+           background: linear-gradient(100deg, rgba(10,9,13,.78) 0%, rgba(10,9,13,.45) 48%, rgba(10,9,13,.2) 70%, rgba(10,9,13,.5) 100%),
+                       linear-gradient(transparent 60%, rgba(10,9,13,.6)); }
+  body.photo #shade { display: block; }
+  #gloom { position: absolute; inset: 0; background: var(--gloom); opacity: 0; transition: opacity .25s ease; }
+  #rain { position: absolute; inset: 0; opacity: 0; transition: opacity .25s ease; }
+  .drop { position: absolute; top: -10%; width: 1.5px; height: 6vh; background: linear-gradient(transparent, var(--drop)); animation: fall linear infinite; will-change: transform; }
   @keyframes fall { to { transform: translateY(125vh) translateX(-4vh); } }
-  #flash { position: absolute; inset: 0; background: #fff; opacity: 0; }
+  #flash { position: absolute; inset: 0; background: var(--surface); opacity: 0; }
   #flash.on { animation: flash 7s infinite; }
   @keyframes flash { 0%, 93%, 100% { opacity: 0; } 94% { opacity: .5; } 95% { opacity: .05; } 96% { opacity: .35; } }
 
@@ -46,44 +60,54 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
          align-items: center; padding: calc(3.8rem + var(--dd-extra, 0px)) 3.8rem 3rem; }
 
   #hero { min-width: 0; }
-  #meta { display: flex; flex-wrap: wrap; gap: .4rem 1rem; font-size: 1.05rem; color: var(--dim); letter-spacing: .02em; font-weight: 500; }
+  #meta { display: flex; flex-wrap: wrap; gap: .4rem 1rem; font-size: 1.05rem; color: var(--ink-2); letter-spacing: .02em; font-weight: 500; }
   #meta .zone { color: var(--ink); font-weight: 700; }
   #label { margin-top: 1.5rem; font-size: 1rem; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
-  #name { font-family: var(--sans); font-size: 5.4rem; line-height: 1.08; font-weight: 700; letter-spacing: -.02em; margin-top: .3rem; color: #FFFFFF; text-shadow: 0 2px 16px rgba(0,0,0,.6); }
-  #at { font-size: 1.35rem; color: var(--dim); margin-top: .35rem; font-weight: 500; }
+  #name { font-family: var(--sans); font-size: 5.4rem; line-height: 1.08; font-weight: 700; letter-spacing: -.02em; margin-top: .3rem; color: var(--ink); }
+  #at { font-size: 1.35rem; color: var(--ink-2); margin-top: .35rem; font-weight: 500; }
   #at b { color: var(--ink); font-weight: 700; }
   #countdown { font-family: var(--mono); font-size: 4.6rem; font-weight: 700; letter-spacing: .02em; margin-top: 1.2rem;
-               font-variant-numeric: tabular-nums; line-height: 1; color: #FFFFFF; text-shadow: 0 2px 14px rgba(0,0,0,.6); }
+               font-variant-numeric: tabular-nums; line-height: 1; color: var(--ink); }
   #countdown .u { font-size: 1.4rem; font-weight: 600; color: var(--accent); margin: 0 .6rem 0 .2rem; letter-spacing: 0; }
-  #bar { margin-top: 1.5rem; height: .55rem; border-radius: 99px; background: rgba(255,255,255,.14); overflow: hidden; max-width: 30rem; box-shadow: inset 0 1px 2px rgba(0,0,0,.3); }
-  #barFill { height: 100%; width: 0; border-radius: 99px; background: linear-gradient(90deg, var(--accent), var(--violet));
-             box-shadow: 0 0 12px rgba(20,224,193,.6); transition: width 1s linear; }
-  #barText { margin-top: .7rem; font-size: 1rem; color: var(--dim); font-weight: 500; }
+  #bar { margin-top: 1.5rem; height: .55rem; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; max-width: 30rem; }
+  /* Filled with transform (not width) so each tick is a cheap compositor update. */
+  #barFill { height: 100%; width: 100%; border-radius: 99px; background: var(--accent);
+             transform: scaleX(0); transform-origin: left center; transition: transform .25s linear; }
+  #barText { margin-top: .7rem; font-size: 1rem; color: var(--ink-2); font-weight: 500; }
 
-  #list { background: linear-gradient(145deg, rgba(22,28,44,.78) 0%, rgba(12,16,26,.85) 100%);
-          border: 1px solid rgba(255,255,255,.16); box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 12px 36px rgba(0,0,0,.45);
-          border-radius: 1.8rem; padding: 1.1rem; min-width: 0;
-          backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
-  .row { display: flex; align-items: center; gap: 1rem; padding: .85rem 1.2rem; border-radius: 1.1rem; transition: background .2s ease, border-color .2s ease; }
-  .row .n { flex: 1; font-size: 1.45rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #FFFFFF; }
-  .row .t { font-family: var(--mono); font-size: 1.55rem; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .row .t small { font-size: .85rem; color: var(--dim); margin-left: .35rem; font-weight: 500; }
-  .row.marker .n, .row.marker .t { color: var(--dim); font-weight: 500; font-size: 1.25rem; }
-  .row.past { opacity: .45; }
-  .row.cur { background: linear-gradient(90deg, rgba(20,224,193,.22), rgba(20,224,193,.06)); border: 1px solid rgba(20,224,193,.55); box-shadow: 0 4px 16px rgba(20,224,193,.15); }
-  .row.cur .n { color: var(--accent); font-weight: 700; }
-  .row.next { box-shadow: inset 0 0 0 1px var(--faint); }
+  /* On a photo: hero text turns white with a soft shadow; tiles become near-solid plates. */
+  body.photo #meta, body.photo #at, body.photo #barText { color: rgba(255,255,255,.85); text-shadow: 0 1px 6px rgba(0,0,0,.55); }
+  body.photo #meta .zone, body.photo #at b, body.photo #name, body.photo #countdown { color: #FFFFFF; text-shadow: 0 2px 12px rgba(0,0,0,.55); }
+  body.photo #label, body.photo #countdown .u { color: #5EEAD4; text-shadow: 0 1px 6px rgba(0,0,0,.55); }
+  body.photo #bar { background: rgba(255,255,255,.22); border-color: transparent; }
+  body.photo #barFill { background: #5EEAD4; }
+
+  #list { background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow);
+          border-radius: 1.4rem; padding: 1.1rem; min-width: 0; }
+  body.photo #list, body.photo #weather { background: color-mix(in srgb, var(--surface) var(--plate), transparent); }
+  .row { display: flex; align-items: center; gap: 1rem; padding: .85rem 1.2rem; border-radius: 1rem; border: 1px solid transparent; }
+  .row .n { flex: 1; font-size: 1.45rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+  .row .t { font-family: var(--mono); font-size: 1.55rem; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--ink); }
+  .row .t small { font-size: .85rem; color: var(--ink-2); margin-left: .35rem; font-weight: 500; }
+  .row.marker .n, .row.marker .t { color: var(--ink-2); font-weight: 500; font-size: 1.25rem; }
+  .row.past .n, .row.past .t, .row.past .t small { color: var(--ink-3); }
+  .row.cur { background: var(--surface-2); }
+  .row.cur .n { color: var(--ink); font-weight: 700; }
+  /* The next prayer is the one the driver cares about: accent tint, accent name, accent tag. */
+  .row.next { background: var(--accent-soft); border-color: var(--accent); }
+  .row.next .n, .row.next .t { color: var(--accent); font-weight: 700; }
+  .row.next .t small { color: var(--accent); }
   .tag { font-size: .8rem; font-weight: 800; letter-spacing: .08em; padding: .25rem .7rem; border-radius: 99px; align-self: center; }
-  .row.cur .tag { background: var(--accent); color: #0B0F1A; box-shadow: 0 2px 8px rgba(20,224,193,.4); }
-  .row.next .tag { background: var(--faint); color: var(--ink); }
+  .row.cur .tag { background: var(--surface); color: var(--ink-2); border: 1px solid var(--border); }
+  .row.next .tag { background: var(--accent); color: var(--on-accent); }
 
   #weather { position: fixed; top: 1.4rem; right: 6.8rem; display: none; align-items: center; gap: .6rem;
-             font-size: 1.05rem; font-weight: 500; color: var(--dim); background: rgba(22,28,44,.8); border: 1px solid rgba(255,255,255,.18);
-             box-shadow: 0 4px 16px rgba(0,0,0,.35); padding: .45rem 1.1rem; border-radius: 99px; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+             font-size: 1.05rem; font-weight: 500; color: var(--ink-2); background: var(--surface); border: 1px solid var(--border);
+             box-shadow: var(--shadow); padding: .45rem 1.1rem; border-radius: 99px; }
   #weather b { color: var(--ink); font-weight: 700; }
-  #credit { position: fixed; left: 1rem; bottom: .4rem; font-size: .75rem; color: rgba(255,255,255,.5); display: none; }
+  #credit { position: fixed; left: 1rem; bottom: .4rem; font-size: .75rem; color: rgba(255,255,255,.7); text-shadow: 0 1px 4px rgba(0,0,0,.6); display: none; }
   body.photo #credit { display: block; }
-  #message { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; font-family: var(--sans); font-size: 2.6rem; font-weight: 700; }
+  #message { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; font-family: var(--sans); font-size: 2.6rem; font-weight: 700; color: var(--ink); }
 
   /* ---------- Narrow / split pane: stack, chips instead of the list ---------- */
   @media (max-aspect-ratio: 13/10), (max-width: 640px) {
@@ -95,6 +119,27 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
     .row .n { font-size: 1rem; } .row .t { font-size: 1.25rem; }
     .row.marker, .row .tag { display: none; }
     #weather { right: 1rem; }
+  }
+
+  /* ---------- Tall head units (Jaecoo J7 portrait): bigger, and the full list of times as rows ---------- */
+  @media (max-aspect-ratio: 4/5) {
+    html { font-size: clamp(14px, min(3.4vw, 1.8vh), 40px); }
+    #app { gap: 2rem; padding: calc(max(84px, 3.4rem) + var(--dd-extra, 0px)) 1.8rem 2rem; }
+    #name { font-size: 3.8rem; } #countdown { font-size: 3.2rem; }
+    #list { flex-direction: column; flex-wrap: nowrap; gap: .3rem; padding: .7rem; }
+    .row { flex: none; flex-direction: row; align-items: center; gap: 1rem; padding: .6rem 1rem; }
+    .row .n { font-size: 1.3rem; } .row .t { font-size: 1.4rem; }
+    .row.marker { display: flex; } .row .tag { display: inline-block; }
+    .row.marker .n, .row.marker .t { font-size: 1.1rem; }
+    #weather { top: max(16px, 1rem); right: 1.2rem; font-size: 1rem; }
+  }
+
+  /* ---------- Small Android Auto split-screen panel (e.g. 460×370): clear the floating dock bar ---------- */
+  @media (max-width: 619px) and (max-aspect-ratio: 27/20) and (min-aspect-ratio: 20/21) {
+    #app { gap: 1rem; padding: calc(68px + var(--dd-extra, 0px)) 1.6rem 1rem; align-content: start; }
+    #name { font-size: 3.4rem; } #countdown { font-size: 2.6rem; margin-top: .6rem; }
+    #label { margin-top: .8rem; } #bar { margin-top: .9rem; }
+    #weather { display: none !important; }   /* no room beside the dock; Home shows the weather */
   }
 
   /* ---------- Very short screens: hero only ---------- */
@@ -155,20 +200,29 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function byName(n) { return (data.times || []).filter(function (r) { return r.name === n; })[0]; }
 
+  // Last value written per element+property: the 1 s loop only touches the DOM when the text changes.
+  var shown = {};
+  function put(id, prop, v) {
+    var k = id + '.' + prop;
+    if (shown[k] === v) return;
+    shown[k] = v;
+    if (prop === 'transform') $(id).style.transform = v; else $(id)[prop] = v;
+  }
+
   function render() {
     if (!data) return;
     var now = Date.now(), next = data.next, cur = data.current;
     var sy = byName('Syuruk');
     if (cur && cur.name === 'Subuh' && sy && now >= sy.epochMs) cur = null; // Subuh ends at sunrise
 
-    $('name').textContent = next ? next.name : '—';
-    $('at').innerHTML = next ? 'at <b>' + clock12(next.epochMs) + '</b>' : '';
-    $('countdown').innerHTML = next ? countdownHtml(next.epochMs - now) : '';
+    put('name', 'textContent', next ? next.name : '—');
+    put('at', 'innerHTML', next ? 'at <b>' + clock12(next.epochMs) + '</b>' : '');
+    put('countdown', 'innerHTML', next ? countdownHtml(next.epochMs - now) : '');
 
     var p = 0, from = cur || (sy && now >= sy.epochMs ? sy : null);
     if (next && from && next.epochMs > from.epochMs) p = Math.min(1, Math.max(0, (now - from.epochMs) / (next.epochMs - from.epochMs)));
-    $('barFill').style.width = (p * 100).toFixed(1) + '%';
-    $('barText').textContent = from && next ? tr('since', 'Since {0}').replace('{0}', from.name) + ' · ' + Math.round(p * 100) + '% → ' + next.name : '';
+    put('barFill', 'transform', 'scaleX(' + p.toFixed(3) + ')');
+    put('barText', 'textContent', from && next ? tr('since', 'Since {0}').replace('{0}', from.name) + ' · ' + Math.round(p * 100) + '% → ' + next.name : '');
 
     var html = '';
     (data.times || []).forEach(function (r) {
@@ -179,7 +233,7 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
         (isCur ? '<span class="tag">' + tr('now', 'Now').toUpperCase() + '</span>' : isNext ? '<span class="tag">' + tr('nextCaps', 'NEXT') + '</span>' : '') +
         '<span class="t">' + c[0] + '<small>' + c[1] + '</small></span></div>';
     });
-    $('list').innerHTML = html;
+    put('list', 'innerHTML', html);
   }
 
   // ---------- weather ----------
@@ -230,13 +284,14 @@ window.ddTheme=function(t){document.documentElement.dataset.theme=(t==='dark'?'d
 
   window.ddUpdate = function (p) {
     if (typeof p === 'string') p = JSON.parse(p);
+    if (p && p.layoutMode && window.ddSetLayoutMode) window.ddSetLayoutMode(p.layoutMode);   // Always tall / Automatic
     if (p && p.prayer) {
       var labels = p.labels;
       p = Object.assign({}, p.prayer);
       if (labels && !p.labels) p.labels = labels;
     }
     if (p && typeof p === 'object' && p.labels) { L = p.labels; $('label').textContent = tr('nextPrayer', 'Next prayer'); }
-    if (p.status !== 'ok' && !p.times) {
+    if (p.status !== 'ok') {
       $('message').style.display = 'flex';
       $('message').textContent = p.message || tr('loadingPrayer', 'Loading prayer times…');
       $('app').style.visibility = 'hidden';
