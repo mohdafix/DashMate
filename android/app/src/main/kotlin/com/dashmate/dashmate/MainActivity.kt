@@ -1,4 +1,4 @@
-﻿package com.dashmate.dashmate
+package com.dashmate.dashmate
 
 import android.content.Context
 import android.content.Intent
@@ -377,9 +377,26 @@ class MainActivity : FlutterActivity() {
                 }
                 "setMenuItems" -> {
                     val items = call.argument<List<String>>("items") ?: listOf("home", "lyrics", "prayer", "radio", "custom", "web")
-                    sp.edit().putString("menu_items", JSONArray(items).toString()).apply()
+                    val json = JSONArray(items).toString()
+                    sp.edit().putString("menu_items", json).apply()
+                    getSharedPreferences("DashMatePrefs", Context.MODE_PRIVATE).edit().putString("menu_items", json).apply()
                     DashMateStateBridge.notifyStateChanged(this)
                     result.success(true)
+                }
+                "getMenuItems" -> {
+                    val json = sp.getString("menu_items", null)
+                        ?: getSharedPreferences("DashMatePrefs", Context.MODE_PRIVATE).getString("menu_items", null)
+                        ?: "[\"home\",\"lyrics\",\"prayer\",\"radio\",\"custom\",\"web\"]"
+                    try {
+                        val arr = JSONArray(json)
+                        val list = mutableListOf<String>()
+                        for (i in 0 until arr.length()) {
+                            list.add(arr.getString(i))
+                        }
+                        result.success(list)
+                    } catch (_: Exception) {
+                        result.success(listOf("home", "lyrics", "prayer", "radio", "custom", "web"))
+                    }
                 }
                 "setNavStyle" -> {
                     val opacity = call.argument<Double>("opacity") ?: 1.0
@@ -943,9 +960,14 @@ class MainActivity : FlutterActivity() {
                 }
                 "setMenuItems" -> {
                     val items = call.argument<List<String>>("items") ?: listOf("home", "lyrics", "prayer", "radio", "custom", "web")
+                    val json = org.json.JSONArray(items).toString()
                     getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
                         .edit()
-                        .putString("menu_items", org.json.JSONArray(items).toString())
+                        .putString("menu_items", json)
+                        .apply()
+                    getSharedPreferences("DashMatePrefs", Context.MODE_PRIVATE)
+                        .edit()
+                        .putString("menu_items", json)
                         .apply()
                     DashMateStateBridge.notifyStateChanged(this)
                     result.success(true)

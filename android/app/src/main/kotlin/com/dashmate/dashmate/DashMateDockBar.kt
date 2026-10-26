@@ -27,6 +27,20 @@ class DashMateDockBar(
     private val onExit: () -> Unit = {},
 ) : FrameLayout(context) {
 
+    companion object {
+        val ITEM_DEFINITIONS: Map<String, Pair<Int, String>> = mapOf(
+            "home" to Pair(R.drawable.dd_ic_home, "Home"),
+            "lyrics" to Pair(R.drawable.dd_ic_lyrics, "Lyrics"),
+            "prayer" to Pair(R.drawable.dd_ic_prayer, "Prayer Times"),
+            "radio" to Pair(R.drawable.dd_ic_radio, "Radio"),
+            "custom" to Pair(R.drawable.dd_ic_grid, "Custom Dashboard"),
+            "web" to Pair(R.drawable.dd_ic_web, "Browser"),
+            "nav" to Pair(R.drawable.dd_ic_nav, "Navigation (Waze Live Map)")
+        )
+    }
+
+    private val itemDefinitions get() = ITEM_DEFINITIONS
+
     private val prefs: SharedPreferences = context.getSharedPreferences("dd_car_browser", Context.MODE_PRIVATE)
     private val density: Float = context.resources.displayMetrics.density
 
@@ -95,28 +109,13 @@ class DashMateDockBar(
         appsIcon = createIconButton("apps", R.drawable.dd_ic_grid_circles, "Apps Launcher") {
             toggleExpand()
         }
-        dockPill.addView(appsIcon)
-
-        val items = listOf(
-            Triple("home", R.drawable.dd_ic_home, "Home"),
-            Triple("lyrics", R.drawable.dd_ic_lyrics, "Lyrics"),
-            Triple("prayer", R.drawable.dd_ic_prayer, "Prayer Times"),
-            Triple("radio", R.drawable.dd_ic_radio, "Radio"),
-            Triple("custom", R.drawable.dd_ic_grid, "Custom Dashboard"),
-            Triple("web", R.drawable.dd_ic_web, "Browser"),
-            Triple("nav", R.drawable.dd_ic_nav, "Navigation (Waze Live Map)"),
-        )
-        for ((id, drawableRes, desc) in items) {
-            val btn = createIconButton(id, drawableRes, desc) { selectPage(id) }
-            itemViews[id] = btn
-            dockPill.addView(btn)
-        }
 
         // Exit: not a page, so it is never highlighted; red so it is easy to find.
         exitBtn = createIconButton("exit", R.drawable.dd_ic_exit, "Exit DashMate") { onExit() }.apply {
             (layoutParams as LinearLayout.LayoutParams).marginStart = dp(8)
         }
-        dockPill.addView(exitBtn)
+
+        rebuildMenuItems()
 
         addView(dockPill, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
         addView(
@@ -126,6 +125,57 @@ class DashMateDockBar(
 
         applyTheme(DashMateTheme.isDark)
         setExpandedState(expanded = true, animate = false)
+    }
+
+    private var lastMenuItemsJson: String? = null
+
+    fun rebuildMenuItems() {
+        val jsonStr = try {
+            val sp = context.getSharedPreferences("dd_car_browser", Context.MODE_PRIVATE)
+            val spPrefs = context.getSharedPreferences("DashMatePrefs", Context.MODE_PRIVATE)
+            sp.getString("menu_items", null) ?: spPrefs.getString("menu_items", null)
+        } catch (_: Exception) { null }
+
+        val effectiveJson = if (!jsonStr.isNullOrBlank()) jsonStr else "default"
+        if (effectiveJson == lastMenuItemsJson && itemViews.isNotEmpty()) {
+            updatePageHighlight(currentPage)
+            return
+        }
+        lastMenuItemsJson = effectiveJson
+
+        val activeIds: List<String> = if (!jsonStr.isNullOrBlank()) {
+            try {
+                val arr = org.json.JSONArray(jsonStr)
+                val list = mutableListOf<String>()
+                for (i in 0 until arr.length()) {
+                    val id = arr.getString(i).trim().lowercase()
+                    if (itemDefinitions.containsKey(id) && !list.contains(id)) {
+                        list.add(id)
+                    }
+                }
+                list
+            } catch (_: Exception) {
+                listOf("home", "lyrics", "prayer", "radio", "custom", "web")
+            }
+        } else {
+            listOf("home", "lyrics", "prayer", "radio", "custom", "web")
+        }
+
+        val finalIds = if (activeIds.isEmpty()) listOf("home") else activeIds
+
+        dockPill.removeAllViews()
+        dockPill.addView(appsIcon)
+        itemViews.clear()
+
+        for (id in finalIds) {
+            val info = itemDefinitions[id] ?: continue
+            val btn = createIconButton(id, info.first, info.second) { selectPage(id) }
+            itemViews[id] = btn
+            dockPill.addView(btn)
+        }
+
+        dockPill.addView(exitBtn)
+        updatePageHighlight(currentPage)
     }
 
     /** Recolours the dock for day (white) or night (dark). Colours only; nothing else changes. */

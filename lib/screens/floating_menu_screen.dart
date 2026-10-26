@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_colors.dart';
 
 class MenuItemData {
@@ -34,50 +35,79 @@ class _FloatingMenuScreenState extends State<FloatingMenuScreen> {
     super.initState();
     _items = [
       MenuItemData(id: 'home', title: 'Home', icon: Icons.home_outlined, enabled: true),
-      MenuItemData(id: 'lyrics', title: 'Lyrics', icon: Icons.speaker_notes_outlined, enabled: true),
+      MenuItemData(id: 'web', title: 'Browse', icon: Icons.public_outlined, enabled: true),
       MenuItemData(id: 'prayer', title: 'Prayer', icon: Icons.mosque_outlined, enabled: true),
       MenuItemData(id: 'radio', title: 'Radio FM', icon: Icons.radio_outlined, enabled: true),
       MenuItemData(id: 'custom', title: 'Custom page', icon: Icons.view_quilt_outlined, enabled: true),
-      MenuItemData(id: 'web', title: 'Browse', icon: Icons.public_outlined, enabled: true),
+      MenuItemData(id: 'lyrics', title: 'Lyrics', icon: Icons.speaker_notes_outlined, enabled: true),
     ];
     _loadPrefs();
   }
 
-  void _loadPrefs() async {
+  Future<void> _loadPrefs() async {
+    List<String>? savedActiveIds;
+    List<String>? savedOrderIds;
     try {
-      final res = await _channel.invokeMethod('getMenuItems');
-      if (res != null && res is List && mounted) {
-        final List<String> savedIds = res.map((e) => e.toString()).toList();
-        final List<MenuItemData> reordered = [];
-        for (final id in savedIds) {
-          final found = _items.firstWhere(
-            (item) => item.id == id,
-            orElse: () => MenuItemData(id: id, title: id, icon: Icons.circle_outlined),
-          );
-          found.enabled = true;
-          reordered.add(found);
-        }
-        for (final item in _items) {
-          if (!savedIds.contains(item.id)) {
-            if (item.id == 'radio') {
-              item.enabled = true;
-            } else {
-              item.enabled = false;
-            }
-            reordered.add(item);
-          }
-        }
-        setState(() {
-          _items = reordered;
-        });
+      final prefs = await SharedPreferences.getInstance();
+      savedActiveIds = prefs.getStringList('car_menu_active_items');
+      savedOrderIds = prefs.getStringList('car_menu_order');
+    } catch (_) {}
+
+    try {
+      final res = await _channel.invokeMethod('getMenuItems') ??
+          await _browserChannel.invokeMethod('getMenuItems');
+      if (res != null && res is List) {
+        savedActiveIds ??= res.map((e) => e.toString()).toList();
       }
     } catch (_) {}
+
+    if (savedActiveIds == null && savedOrderIds == null) return;
+    if (!mounted) return;
+
+    final orderToUse = savedOrderIds ?? savedActiveIds ?? _items.map((e) => e.id).toList();
+    final activeSet = (savedActiveIds ?? orderToUse).toSet();
+
+    final List<MenuItemData> reordered = [];
+    final seen = <String>{};
+    for (final id in orderToUse) {
+      if (seen.contains(id)) continue;
+      seen.add(id);
+      final found = _items.firstWhere(
+        (item) => item.id == id,
+        orElse: () => MenuItemData(id: id, title: id, icon: Icons.circle_outlined),
+      );
+      found.enabled = activeSet.contains(id);
+      reordered.add(found);
+    }
+    for (final item in _items) {
+      if (!seen.contains(item.id)) {
+        seen.add(item.id);
+        item.enabled = activeSet.contains(item.id);
+        reordered.add(item);
+      }
+    }
+
+    if (reordered.isNotEmpty) {
+      setState(() {
+        _items = reordered;
+      });
+    }
   }
 
-  void _savePrefs() {
+  Future<void> _savePrefs() async {
     final activeIds = _items.where((i) => i.enabled).map((i) => i.id).toList();
-    _channel.invokeMethod('setMenuItems', {'items': activeIds});
-    _browserChannel.invokeMethod('setMenuItems', {'items': activeIds});
+    final allIds = _items.map((i) => i.id).toList();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList('car_menu_active_items', activeIds);
+      await prefs.setStringList('car_menu_order', allIds);
+    } catch (_) {}
+    try {
+      await _channel.invokeMethod('setMenuItems', {'items': activeIds});
+    } catch (_) {}
+    try {
+      await _browserChannel.invokeMethod('setMenuItems', {'items': activeIds});
+    } catch (_) {}
   }
 
   @override

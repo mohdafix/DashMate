@@ -1,4 +1,4 @@
-﻿/* DashMate car pages: the "Always tall" layout lock (phone app › Settings › Car layout).
+/* DashMate car pages: the "Always tall" layout lock (phone app › Settings › Car layout).
  *
  * Included at the end of <head> on every car page, after its <style>, so it runs before the
  * first paint. When the mode is "tall" (the default) and the page is not in the small Android

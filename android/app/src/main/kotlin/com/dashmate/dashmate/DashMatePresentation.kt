@@ -150,7 +150,12 @@ class DashMatePresentation(
                 useWideViewPort = true
                 loadWithOverviewMode = true
             }
-            webChromeClient = object : WebChromeClient() {}
+            webChromeClient = object : WebChromeClient() {
+                override fun onConsoleMessage(cm: android.webkit.ConsoleMessage?): Boolean {
+                    Log.d(TAG, "Deck WebView [${cm?.messageLevel()}]: ${cm?.message()} (line ${cm?.lineNumber()})")
+                    return true
+                }
+            }
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
@@ -705,15 +710,38 @@ class DashMatePresentation(
             val screenHeight = rootLayout.height
             if (screenWidth <= 0 || screenHeight <= 0) return@post
 
+            // If visible area is empty or invalid, reset margins to 0 and do not collapse
+            if (visibleArea.width() <= 0 || visibleArea.height() <= 0 ||
+                visibleArea.left < 0 || visibleArea.top < 0 ||
+                visibleArea.right > screenWidth || visibleArea.bottom > screenHeight) {
+                for (wv in listOf(deckWebView, browserWebView)) {
+                    val wlp = wv?.layoutParams as? FrameLayout.LayoutParams ?: continue
+                    if (wlp.leftMargin != 0 || wlp.topMargin != 0 || wlp.rightMargin != 0 || wlp.bottomMargin != 0) {
+                        wlp.setMargins(0, 0, 0, 0)
+                        wv.layoutParams = wlp
+                    }
+                }
+                return@post
+            }
+
             val insetLeft = visibleArea.left
             val insetTop = visibleArea.top
-            val insetRight = screenWidth - visibleArea.right
-            val insetBottom = screenHeight - visibleArea.bottom
+            val insetRight = maxOf(0, screenWidth - visibleArea.right)
+            val insetBottom = maxOf(0, screenHeight - visibleArea.bottom)
 
-            val padLeft = if (!isFullscreen && insetLeft > 0) insetLeft else 0
-            val padTop = if (!isFullscreen && insetTop > 0) insetTop else 0
-            val padRight = if (!isFullscreen && insetRight > 0) insetRight else 0
-            val padBottom = if (!isFullscreen && insetBottom > 0) insetBottom else 0
+            var padLeft = if (!isFullscreen && insetLeft > 0) insetLeft else 0
+            var padTop = if (!isFullscreen && insetTop > 0) insetTop else 0
+            var padRight = if (!isFullscreen && insetRight > 0) insetRight else 0
+            var padBottom = if (!isFullscreen && insetBottom > 0) insetBottom else 0
+
+            if (padLeft + padRight >= screenWidth) {
+                padLeft = 0
+                padRight = 0
+            }
+            if (padTop + padBottom >= screenHeight) {
+                padTop = 0
+                padBottom = 0
+            }
 
             for (wv in listOf(deckWebView, browserWebView)) {
                 val wlp = wv?.layoutParams as? FrameLayout.LayoutParams ?: continue
@@ -774,6 +802,7 @@ class DashMatePresentation(
         val quotedJson = JSONObject.quote(stateJson)
         val script = "if (window.ddUpdate) { window.ddUpdate($quotedJson); }"
         deckWebView?.post { deckWebView?.evaluateJavascript(script, null) }
+        dockBar?.post { dockBar?.rebuildMenuItems() }
     }
 
     /** A real finger touch from the phone's car-screen preview, already in this display's pixels. */
