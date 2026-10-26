@@ -507,7 +507,11 @@ object DashMateStateBridge {
             defaultWeather()
         }
         state.put("weather", weatherObj)
-        if (weatherObj.has("forecast")) {
+        // The Forecast card reads {now, hours, days}; the older 6-hour list was never what it expected
+        // (the card showed "–°").
+        if (weatherObj.has("detail")) {
+            state.put("forecast", weatherObj.getJSONObject("detail"))
+        } else if (weatherObj.has("forecast")) {
             state.put("forecast", weatherObj.getJSONArray("forecast"))
         }
 

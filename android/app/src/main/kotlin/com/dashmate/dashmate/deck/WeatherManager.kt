@@ -31,6 +31,52 @@ object WeatherManager {
 
     private fun cityOf(zone: PrayerZone): String = zone.name.split(",")[0].trim()
 
+    /**
+     * The Forecast card's data: now (temp, feels, UV, humidity, wind), the next 12 hours and 7 days,
+     * shaped as the car page reads it ({now, hours, days}). Null if Open-Meteo can't be reached.
+     */
+    private fun fetchDetail(zone: PrayerZone): JSONObject? = try {
+        val url = "https://api.open-meteo.com/v1/forecast?latitude=${zone.lat}&longitude=${zone.lon}" +
+            "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,is_day,uv_index" +
+            "&hourly=temperature_2m,weather_code,precipitation_probability,is_day" +
+            "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max" +
+            "&forecast_days=7&timezone=auto"
+        val conn = openConn(url)
+        if (conn.responseCode != 200) null else {
+            val api = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
+            val c = api.getJSONObject("current")
+            val now = JSONObject().apply {
+                put("temp", c.optDouble("temperature_2m")); put("feels", c.optDouble("apparent_temperature"))
+                put("code", c.optInt("weather_code")); put("isDay", c.optInt("is_day", 1) == 1)
+                put("uv", c.optDouble("uv_index")); put("humidity", c.optDouble("relative_humidity_2m"))
+                put("wind", c.optDouble("wind_speed_10m"))
+            }
+            // The next 8 hours from the current one (the list starts at local midnight); more crowd a tall screen.
+            val h = api.getJSONObject("hourly")
+            val times = h.getJSONArray("time")
+            val currentHour = c.optString("time").take(13)
+            var start = 0
+            while (start < times.length() && times.getString(start).take(13) < currentHour) start++
+            val hours = JSONArray()
+            for (i in start until minOf(start + 8, times.length())) hours.put(JSONObject().apply {
+                put("t", times.getString(i).substring(11, 16)); put("temp", h.getJSONArray("temperature_2m").optDouble(i))
+                put("code", h.getJSONArray("weather_code").optInt(i)); put("isDay", h.getJSONArray("is_day").optInt(i, 1) == 1)
+                put("rain", h.getJSONArray("precipitation_probability").optInt(i))
+            })
+            val d = api.getJSONObject("daily")
+            val days = JSONArray()
+            for (i in 0 until d.getJSONArray("time").length()) days.put(JSONObject().apply {
+                put("d", d.getJSONArray("time").getString(i)); put("code", d.getJSONArray("weather_code").optInt(i))
+                put("max", d.getJSONArray("temperature_2m_max").optDouble(i)); put("min", d.getJSONArray("temperature_2m_min").optDouble(i))
+                put("rain", d.getJSONArray("precipitation_probability_max").optInt(i))
+            })
+            JSONObject().apply { put("now", now); put("hours", hours); put("days", days) }
+        }
+    } catch (e: Exception) {
+        Log.w(TAG, "Forecast detail failed: ${e.message}")
+        null
+    }
+
     suspend fun getWeatherData(context: Context): JSONObject = withContext(Dispatchers.IO) {
         val zone = PrayerTimesManager.getSelectedZone(context)
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -93,6 +139,7 @@ object WeatherManager {
                         }
                     }
                     result.put("forecast", forecastArr)
+                    fetchDetail(zone)?.let { result.put("detail", it) }
 
                     prefs.edit()
                         .putString(PREF_CACHE_KEY, result.toString())
