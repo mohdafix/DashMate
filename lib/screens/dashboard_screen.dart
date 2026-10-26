@@ -54,6 +54,134 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String _welcomeSound = "Chime";
   bool _autoStart = true;
   String _layoutMode = "Tall Display (Portrait)";
+  String _driverName = "Mohamad Afix";
+
+  String _getDriverInitials(String name) {
+    final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    if (parts.isEmpty) return 'DM';
+    if (parts.length == 1) {
+      final w = parts[0];
+      return w.substring(0, w.length >= 2 ? 2 : 1).toUpperCase();
+    }
+    return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+  }
+
+  Future<void> _loadDriverName() async {
+    try {
+      final name = await _channel.invokeMethod<String>('getDriverName');
+      if (name != null && name.isNotEmpty && mounted) {
+        setState(() => _driverName = name);
+        return;
+      }
+    } catch (_) {}
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final name = prefs.getString('driver_name');
+      if (name != null && name.isNotEmpty && mounted) {
+        setState(() => _driverName = name);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _updateDriverName(String name) async {
+    setState(() => _driverName = name);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('driver_name', name);
+    } catch (_) {}
+    try {
+      await _channel.invokeMethod('setDriverName', {'name': name});
+    } catch (_) {}
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Driver profile updated to $name'),
+          backgroundColor: const Color(0xFF16253B),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    }
+  }
+
+  void _showEditDriverNameDialog() {
+    final controller = TextEditingController(text: _driverName);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF131A26),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: AppColors.border),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.person_rounded, color: AppColors.accentTeal),
+            SizedBox(width: 10),
+            Text(
+              'Edit Driver Profile',
+              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Enter driver name. This name is used for car welcome greetings and profile display.',
+              style: TextStyle(color: AppColors.textSub, fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              textCapitalization: TextCapitalization.words,
+              style: const TextStyle(color: Colors.white, fontSize: 16),
+              decoration: InputDecoration(
+                labelText: 'Driver Name',
+                labelStyle: const TextStyle(color: AppColors.accentTeal),
+                hintText: 'e.g. Mohamad Afix',
+                hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
+                prefixIcon: const Icon(Icons.badge_outlined, color: AppColors.accentTeal),
+                filled: true,
+                fillColor: const Color(0xFF1E2838),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppColors.border),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppColors.accentTeal, width: 1.5),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: AppColors.textSub)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.accentTeal,
+              foregroundColor: Colors.black,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () async {
+              final newName = controller.text.trim();
+              if (newName.isNotEmpty) {
+                await _updateDriverName(newName);
+              }
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text('Save', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<void> _loadAutoStart() async {
     try {
@@ -193,6 +321,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadDriverName();
       _loadState();
       _loadLayout();
       _refreshMedia();
@@ -275,6 +404,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         final lang = parsed['lang'] ?? 'en';
         AppLocalizations.setLocale(lang);
 
+        if (parsed['driverName'] != null && (parsed['driverName'] as String).isNotEmpty) {
+          _driverName = parsed['driverName'] as String;
+        }
         setState(() {
           _isCarConnected = parsed['carConnected'] == true || parsed['connected'] == true;
           if (parsed['scr_name'] != null && (parsed['scr_name'] as String).isNotEmpty) {
@@ -495,96 +627,108 @@ class _DashboardScreenState extends State<DashboardScreen> {
         const SizedBox(height: 16),
 
         // Premium Obsidian Executive Driver Welcome Card
-        Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF141C2B), Color(0xFF0C111C)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+        InkWell(
+          onTap: _showEditDriverNameDialog,
+          borderRadius: BorderRadius.circular(22),
+          child: Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF141C2B), Color(0xFF0C111C)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: const Color(0x335EF2D6), width: 1.2),
+              boxShadow: const [
+                BoxShadow(color: Color(0x145EF2D6), blurRadius: 16, offset: Offset(0, 4)),
+              ],
             ),
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: const Color(0x335EF2D6), width: 1.2),
-            boxShadow: const [
-              BoxShadow(color: Color(0x145EF2D6), blurRadius: 16, offset: Offset(0, 4)),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Stack(
-                    children: [
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: LinearGradient(
-                            colors: [Color(0xFF8C5C26), Color(0xFFD4B892)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                        ),
-                        child: const Center(
-                          child: Text(
-                            'MA',
-                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        right: 0,
-                        bottom: 0,
-                        child: Container(
-                          width: 12,
-                          height: 12,
-                          decoration: BoxDecoration(
-                            color: _isCarConnected ? const Color(0xFF5EF2D6) : const Color(0xFFFFB800),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: const Color(0xFF0C111C), width: 2),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(width: 14),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Stack(
                       children: [
-                        Text(
-                          'DRIVER PROFILE',
-                          style: TextStyle(
-                            color: AppColors.accentTeal,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1.2,
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: LinearGradient(
+                              colors: [Color(0xFF8C5C26), Color(0xFFD4B892)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                          ),
+                          child: Center(
+                            child: Text(
+                              _getDriverInitials(_driverName),
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
                           ),
                         ),
-                        SizedBox(height: 2),
-                        Text(
-                          'Mohamad Afix',
-                          style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          child: Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              color: _isCarConnected ? const Color(0xFF5EF2D6) : const Color(0xFFFFB800),
+                              shape: BoxShape.circle,
+                              border: Border.all(color: const Color(0xFF0C111C), width: 2),
+                            ),
+                          ),
                         ),
                       ],
                     ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: const Color(0x1F5EF2D6),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: const Color(0x335EF2D6)),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'DRIVER PROFILE',
+                            style: TextStyle(
+                              color: AppColors.accentTeal,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  _driverName,
+                                  style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              const Icon(Icons.edit_outlined, color: AppColors.accentTeal, size: 16),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                    child: const Text(
-                      'DashMate',
-                      style: TextStyle(color: Color(0xFF5EF2D6), fontSize: 11, fontWeight: FontWeight.bold),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: const Color(0x1F5EF2D6),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0x335EF2D6)),
+                      ),
+                      child: const Text(
+                        'DashMate',
+                        style: TextStyle(color: Color(0xFF5EF2D6), fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
               const SizedBox(height: 14),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -620,6 +764,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
             ],
           ),
+        ),
         ),
 
         const SizedBox(height: 16),

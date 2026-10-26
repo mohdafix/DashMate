@@ -31,11 +31,140 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _is24Hour = true;
   bool _useKmh = true;
   bool _mediaButtonsOverride = true;
+  String _driverName = 'Mohamad Afix';
 
   @override
   void initState() {
     super.initState();
     _loadAutoStart();
+    _loadDriverName();
+  }
+
+  String _getDriverInitials(String name) {
+    final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    if (parts.isEmpty) return 'DM';
+    if (parts.length == 1) {
+      final w = parts[0];
+      return w.substring(0, w.length >= 2 ? 2 : 1).toUpperCase();
+    }
+    return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+  }
+
+  Future<void> _loadDriverName() async {
+    try {
+      final name = await _channel.invokeMethod<String>('getDriverName');
+      if (name != null && name.isNotEmpty && mounted) {
+        setState(() => _driverName = name);
+        return;
+      }
+    } catch (_) {}
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final name = prefs.getString('driver_name');
+      if (name != null && name.isNotEmpty && mounted) {
+        setState(() => _driverName = name);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _updateDriverName(String name) async {
+    setState(() => _driverName = name);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('driver_name', name);
+    } catch (_) {}
+    try {
+      await _channel.invokeMethod('setDriverName', {'name': name});
+    } catch (_) {}
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Driver profile updated to $name'),
+          backgroundColor: const Color(0xFF16253B),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    }
+  }
+
+  void _showEditDriverNameDialog() {
+    final controller = TextEditingController(text: _driverName);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF131A26),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: AppColors.border),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.person_rounded, color: AppColors.tealAccent),
+            SizedBox(width: 10),
+            Text(
+              'Edit Driver Profile',
+              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Enter driver name. This name is used for car welcome greetings and profile display.',
+              style: TextStyle(color: AppColors.textSub, fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              textCapitalization: TextCapitalization.words,
+              style: const TextStyle(color: Colors.white, fontSize: 16),
+              decoration: InputDecoration(
+                labelText: 'Driver Name',
+                labelStyle: const TextStyle(color: AppColors.tealAccent),
+                hintText: 'e.g. Mohamad Afix',
+                hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
+                prefixIcon: const Icon(Icons.badge_outlined, color: AppColors.tealAccent),
+                filled: true,
+                fillColor: const Color(0xFF1E2838),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppColors.glassBorder),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppColors.tealAccent, width: 1.5),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: AppColors.textSub)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.tealAccent,
+              foregroundColor: Colors.black,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () async {
+              final newName = controller.text.trim();
+              if (newName.isNotEmpty) {
+                await _updateDriverName(newName);
+              }
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text('Save', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _loadAutoStart() async {
@@ -114,40 +243,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         children: [
-          // Account Card
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF132D44), Color(0xFF0F1E2E)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+          // Account Card (Tappable to Edit Driver Profile)
+          InkWell(
+            onTap: _showEditDriverNameDialog,
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF132D44), Color(0xFF0F1E2E)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: AppColors.glassBorder),
               ),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppColors.glassBorder),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: const BoxDecoration(color: AppColors.tealAccent, shape: BoxShape.circle),
-                  child: const Center(
-                    child: Text('M', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black)),
+              child: Row(
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: const BoxDecoration(color: AppColors.tealAccent, shape: BoxShape.circle),
+                    child: Center(
+                      child: Text(
+                        _getDriverInitials(_driverName),
+                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black),
+                      ),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 14),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('DashMate Edition', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)),
-                      SizedBox(height: 2),
-                      Text('Mohamad Afix · All features unlocked', style: TextStyle(fontSize: 12, color: AppColors.tealAccent)),
-                    ],
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('DashMate Edition', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)),
+                        const SizedBox(height: 2),
+                        Text('$_driverName · All features unlocked', style: const TextStyle(fontSize: 12, color: AppColors.tealAccent)),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                  const Icon(Icons.edit_outlined, color: AppColors.tealAccent, size: 20),
+                ],
+              ),
             ),
           ),
 
@@ -163,6 +300,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             child: Column(
               children: [
+                _buildSettingTile(
+                  icon: Icons.person_outline,
+                  title: 'Driver profile name',
+                  subtitle: '$_driverName · Tap to edit',
+                  onTap: _showEditDriverNameDialog,
+                ),
+                const Divider(height: 1, indent: 56, color: AppColors.glassBorder),
                 _buildSettingTile(
                   icon: Icons.grid_view,
                   title: 'Car home widgets',

@@ -292,10 +292,17 @@ object DashMateStateBridge {
         root.put("speedOnly", false)
         root.put("gps", isGps)
 
+        var driverName = "Mohamad Afix"
         if (context != null) {
             try {
                 val spBrowser = context.getSharedPreferences("dd_car_browser", Context.MODE_PRIVATE)
                 val spPrefs = context.getSharedPreferences("DashMatePrefs", Context.MODE_PRIVATE)
+                val spDash = context.getSharedPreferences("dashmate_prefs", Context.MODE_PRIVATE)
+                driverName = spBrowser.getString("driver_name", null)
+                    ?: spDash.getString("driver_name", null)
+                    ?: spPrefs.getString("driver_name", null)
+                    ?: spBrowser.getString("owner_name", null)
+                    ?: "Mohamad Afix"
                 val savedCustom = spBrowser.getString("customPage", null)
                     ?: spPrefs.getString("customPage", null)
                 if (!savedCustom.isNullOrBlank()) {
@@ -303,6 +310,7 @@ object DashMateStateBridge {
                 }
             } catch (_: Exception) {}
         }
+        root.put("driverName", driverName)
 
         root.put("fn", if (currentPage == "custom") customPageMode else activeFont)
         root.put("page", currentPage)

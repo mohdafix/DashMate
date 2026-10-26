@@ -825,8 +825,13 @@ class MainActivity : FlutterActivity() {
                     val rawText = call.argument<String>("text") ?: ""
                     val speed = call.argument<Double>("speed")?.toFloat() ?: 1.0f
                     val pitch = call.argument<Double>("pitch")?.toFloat() ?: 1.0f
-                    val text = if (rawText.isBlank()) "Welcome back, Mohamad Afix" else rawText
-                        .replace("{name}", "Mohamad Afix")
+                    val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
+                    val spPrefs = getSharedPreferences("dashmate_prefs", Context.MODE_PRIVATE)
+                    val driverName = sp.getString("driver_name", null)
+                        ?: spPrefs.getString("driver_name", null)
+                        ?: "Mohamad Afix"
+                    val text = if (rawText.isBlank()) "Welcome back, $driverName" else rawText
+                        .replace("{name}", driverName)
                         .replace("{prayer_name}", "Maghrib")
                         .replace("{prayer_time}", "6:59 PM")
                         .replace("{time}", "7:15 PM")
@@ -926,6 +931,21 @@ class MainActivity : FlutterActivity() {
                     val enabled = getSharedPreferences("dashmate_prefs", Context.MODE_PRIVATE)
                         .getBoolean("pref_auto_start", true)
                     result.success(enabled)
+                }
+                "getDriverName" -> {
+                    val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
+                    val spPrefs = getSharedPreferences("dashmate_prefs", Context.MODE_PRIVATE)
+                    val name = sp.getString("driver_name", null)
+                        ?: spPrefs.getString("driver_name", null)
+                        ?: "Mohamad Afix"
+                    result.success(name)
+                }
+                "setDriverName" -> {
+                    val name = call.argument<String>("name") ?: "Mohamad Afix"
+                    getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE).edit().putString("driver_name", name).apply()
+                    getSharedPreferences("dashmate_prefs", Context.MODE_PRIVATE).edit().putString("driver_name", name).apply()
+                    DashMateStateBridge.notifyStateChanged(this)
+                    result.success(true)
                 }
                 else -> {
                     result.notImplemented()
