@@ -70,8 +70,10 @@ object DashMateTheme {
             else -> MODE_AUTO
         }
         val sp = context.getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
-        sp.edit().putString(KEY_THEME_MODE, themeMode).apply()
-        sp.edit().putString("theme", if (themeMode == MODE_DAY) "light" else "dark").apply()
+        sp.edit()
+            .putString(KEY_THEME_MODE, themeMode)
+            .putString("theme", if (themeMode == MODE_DAY) "light" else "dark")
+            .apply()
         applyCurrentMode(lastCarDarkMode)
     }
 

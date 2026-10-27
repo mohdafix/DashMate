@@ -32,16 +32,23 @@ class PlatformChannels {
   static Future<bool> isNotificationAccessGranted() async {
     try {
       final res = await nowPlaying.invokeMethod<bool>('isNotificationAccessGranted');
-      return res ?? false;
-    } catch (_) {
-      return false;
-    }
+      if (res != null) return res;
+    } catch (_) {}
+    try {
+      final res = await legacy.invokeMethod<bool>('isNotificationAccessGranted');
+      if (res != null) return res;
+    } catch (_) {}
+    return false;
   }
 
   static Future<void> openNotificationAccessSettings() async {
     try {
       await nowPlaying.invokeMethod('openNotificationAccessSettings');
-    } catch (_) {}
+    } catch (_) {
+      try {
+        await legacy.invokeMethod('openNotificationSettings');
+      } catch (_) {}
+    }
   }
 
   // Car browser

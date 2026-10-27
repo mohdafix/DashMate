@@ -6,8 +6,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.BufferedReader
-import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -42,35 +40,39 @@ object WeatherManager {
             "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max" +
             "&forecast_days=7&timezone=auto"
         val conn = openConn(url)
-        if (conn.responseCode != 200) null else {
-            val api = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
-            val c = api.getJSONObject("current")
-            val now = JSONObject().apply {
-                put("temp", c.optDouble("temperature_2m")); put("feels", c.optDouble("apparent_temperature"))
-                put("code", c.optInt("weather_code")); put("isDay", c.optInt("is_day", 1) == 1)
-                put("uv", c.optDouble("uv_index")); put("humidity", c.optDouble("relative_humidity_2m"))
-                put("wind", c.optDouble("wind_speed_10m"))
+        try {
+            if (conn.responseCode != 200) null else {
+                val api = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
+                val c = api.getJSONObject("current")
+                val now = JSONObject().apply {
+                    put("temp", c.optDouble("temperature_2m")); put("feels", c.optDouble("apparent_temperature"))
+                    put("code", c.optInt("weather_code")); put("isDay", c.optInt("is_day", 1) == 1)
+                    put("uv", c.optDouble("uv_index")); put("humidity", c.optDouble("relative_humidity_2m"))
+                    put("wind", c.optDouble("wind_speed_10m"))
+                }
+                // The next 8 hours from the current one (the list starts at local midnight); more crowd a tall screen.
+                val h = api.getJSONObject("hourly")
+                val times = h.getJSONArray("time")
+                val currentHour = c.optString("time").take(13)
+                var start = 0
+                while (start < times.length() && times.getString(start).take(13) < currentHour) start++
+                val hours = JSONArray()
+                for (i in start until minOf(start + 8, times.length())) hours.put(JSONObject().apply {
+                    put("t", times.getString(i).substring(11, 16)); put("temp", h.getJSONArray("temperature_2m").optDouble(i))
+                    put("code", h.getJSONArray("weather_code").optInt(i)); put("isDay", h.getJSONArray("is_day").optInt(i, 1) == 1)
+                    put("rain", h.getJSONArray("precipitation_probability").optInt(i))
+                })
+                val d = api.getJSONObject("daily")
+                val days = JSONArray()
+                for (i in 0 until d.getJSONArray("time").length()) days.put(JSONObject().apply {
+                    put("d", d.getJSONArray("time").getString(i)); put("code", d.getJSONArray("weather_code").optInt(i))
+                    put("max", d.getJSONArray("temperature_2m_max").optDouble(i)); put("min", d.getJSONArray("temperature_2m_min").optDouble(i))
+                    put("rain", d.getJSONArray("precipitation_probability_max").optInt(i))
+                })
+                JSONObject().apply { put("now", now); put("hours", hours); put("days", days) }
             }
-            // The next 8 hours from the current one (the list starts at local midnight); more crowd a tall screen.
-            val h = api.getJSONObject("hourly")
-            val times = h.getJSONArray("time")
-            val currentHour = c.optString("time").take(13)
-            var start = 0
-            while (start < times.length() && times.getString(start).take(13) < currentHour) start++
-            val hours = JSONArray()
-            for (i in start until minOf(start + 8, times.length())) hours.put(JSONObject().apply {
-                put("t", times.getString(i).substring(11, 16)); put("temp", h.getJSONArray("temperature_2m").optDouble(i))
-                put("code", h.getJSONArray("weather_code").optInt(i)); put("isDay", h.getJSONArray("is_day").optInt(i, 1) == 1)
-                put("rain", h.getJSONArray("precipitation_probability").optInt(i))
-            })
-            val d = api.getJSONObject("daily")
-            val days = JSONArray()
-            for (i in 0 until d.getJSONArray("time").length()) days.put(JSONObject().apply {
-                put("d", d.getJSONArray("time").getString(i)); put("code", d.getJSONArray("weather_code").optInt(i))
-                put("max", d.getJSONArray("temperature_2m_max").optDouble(i)); put("min", d.getJSONArray("temperature_2m_min").optDouble(i))
-                put("rain", d.getJSONArray("precipitation_probability_max").optInt(i))
-            })
-            JSONObject().apply { put("now", now); put("hours", hours); put("days", days) }
+        } finally {
+            try { conn.disconnect() } catch (_: Exception) {}
         }
     } catch (e: Exception) {
         Log.w(TAG, "Forecast detail failed: ${e.message}")
@@ -96,57 +98,59 @@ object WeatherManager {
                 "&longitude=" + zone.lon +
                 "&current_weather=true&hourly=temperature_2m,weathercode,relativehumidity_2m&forecast_days=2"
             val conn = openConn(urlStr)
-            if (conn.responseCode == 200) {
-                val reader = BufferedReader(InputStreamReader(conn.inputStream))
-                val resp = reader.readText()
-                reader.close()
-                val apiObj = JSONObject(resp)
-                val current = apiObj.optJSONObject("current_weather")
-                if (current != null) {
-                    val temp = current.optDouble("temperature", 31.0)
-                    val code = current.optInt("weathercode", 2)
-                    val wind = current.optDouble("windspeed", 10.0)
-                    val conditionInfo = parseWeatherCode(code)
+            try {
+                if (conn.responseCode == 200) {
+                    val resp = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                    val apiObj = JSONObject(resp)
+                    val current = apiObj.optJSONObject("current_weather")
+                    if (current != null) {
+                        val temp = current.optDouble("temperature", 31.0)
+                        val code = current.optInt("weathercode", 2)
+                        val wind = current.optDouble("windspeed", 10.0)
+                        val conditionInfo = parseWeatherCode(code)
 
-                    val result = JSONObject()
-                    result.put("temp", Math.round(temp))
-                    result.put("code", code)
-                    result.put("cond", conditionInfo.first)
-                    result.put("icon", conditionInfo.second)
-                    result.put("city", cityOf(zone))
-                    result.put("wind", "${Math.round(wind)} km/h")
-                    result.put("rain", if (code in 51..82) "Precipitation expected" else null)
+                        val result = JSONObject()
+                        result.put("temp", Math.round(temp))
+                        result.put("code", code)
+                        result.put("cond", conditionInfo.first)
+                        result.put("icon", conditionInfo.second)
+                        result.put("city", cityOf(zone))
+                        result.put("wind", "${Math.round(wind)} km/h")
+                        result.put("rain", if (code in 51..82) "Precipitation expected" else null)
 
-                    val hourly = apiObj.optJSONObject("hourly")
-                    val forecastArr = JSONArray()
-                    if (hourly != null) {
-                        val times = hourly.optJSONArray("time")
-                        val temps = hourly.optJSONArray("temperature_2m")
-                        val codes = hourly.optJSONArray("weathercode")
-                        if (times != null && temps != null && codes != null) {
-                            val count = minOf(times.length(), 6)
-                            for (i in 0 until count) {
-                                val tStr = times.optString(i, "")
-                                val hour = if (tStr.length >= 16) tStr.substring(11, 16) else "$i:00"
-                                val hTemp = Math.round(temps.optDouble(i, 30.0))
-                                val hCode = codes.optInt(i, 1)
-                                val item = JSONObject()
-                                item.put("time", hour)
-                                item.put("temp", "$hTemp°")
-                                item.put("icon", parseWeatherCode(hCode).second)
-                                forecastArr.put(item)
+                        val hourly = apiObj.optJSONObject("hourly")
+                        val forecastArr = JSONArray()
+                        if (hourly != null) {
+                            val times = hourly.optJSONArray("time")
+                            val temps = hourly.optJSONArray("temperature_2m")
+                            val codes = hourly.optJSONArray("weathercode")
+                            if (times != null && temps != null && codes != null) {
+                                val count = minOf(times.length(), 6)
+                                for (i in 0 until count) {
+                                    val tStr = times.optString(i, "")
+                                    val hour = if (tStr.length >= 16) tStr.substring(11, 16) else "$i:00"
+                                    val hTemp = Math.round(temps.optDouble(i, 30.0))
+                                    val hCode = codes.optInt(i, 1)
+                                    val item = JSONObject()
+                                    item.put("time", hour)
+                                    item.put("temp", "$hTemp°")
+                                    item.put("icon", parseWeatherCode(hCode).second)
+                                    forecastArr.put(item)
+                                }
                             }
                         }
-                    }
-                    result.put("forecast", forecastArr)
-                    fetchDetail(zone)?.let { result.put("detail", it) }
+                        result.put("forecast", forecastArr)
+                        fetchDetail(zone)?.let { result.put("detail", it) }
 
-                    prefs.edit()
-                        .putString(PREF_CACHE_KEY, result.toString())
-                        .putLong(PREF_CACHE_TIME_KEY, now)
-                        .apply()
-                    return@withContext result
+                        prefs.edit()
+                            .putString(PREF_CACHE_KEY, result.toString())
+                            .putLong(PREF_CACHE_TIME_KEY, now)
+                            .apply()
+                        return@withContext result
+                    }
                 }
+            } finally {
+                try { conn.disconnect() } catch (_: Exception) {}
             }
         } catch (e: Throwable) {
             Log.w(TAG, "Weather fetch error: " + e.message)
@@ -180,22 +184,26 @@ object WeatherManager {
             val urlStr = "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=" + zone.lat +
                 "&longitude=" + zone.lon + "&current=us_aqi,pm2_5,uv_index"
             val conn = openConn(urlStr)
-            if (conn.responseCode == 200) {
-                val resp = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                val root = JSONObject(resp)
-                val current = root.optJSONObject("current")
-                if (current != null) {
-                    val aqi = current.optDouble("us_aqi", 42.0).toInt()
-                    val pm25 = current.optDouble("pm2_5", 12.0).toInt()
-                    val uv = current.optDouble("uv_index", 5.0)
-                    val airObj = JSONObject()
-                    airObj.put("aqi", aqi)
-                    airObj.put("pm25", pm25)
-                    airObj.put("uv", uv)
-                    airObj.put("label", getAqiLabel(aqi))
-                    prefs.edit().putString(PREF_AIR_CACHE_KEY, airObj.toString()).apply()
-                    return@withContext airObj
+            try {
+                if (conn.responseCode == 200) {
+                    val resp = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                    val root = JSONObject(resp)
+                    val current = root.optJSONObject("current")
+                    if (current != null) {
+                        val aqi = current.optDouble("us_aqi", 42.0).toInt()
+                        val pm25 = current.optDouble("pm2_5", 12.0).toInt()
+                        val uv = current.optDouble("uv_index", 5.0)
+                        val airObj = JSONObject()
+                        airObj.put("aqi", aqi)
+                        airObj.put("pm25", pm25)
+                        airObj.put("uv", uv)
+                        airObj.put("label", getAqiLabel(aqi))
+                        prefs.edit().putString(PREF_AIR_CACHE_KEY, airObj.toString()).apply()
+                        return@withContext airObj
+                    }
                 }
+            } finally {
+                try { conn.disconnect() } catch (_: Exception) {}
             }
         } catch (e: Throwable) {
             Log.w(TAG, "Air Quality fetch error: " + e.message)
@@ -226,24 +234,28 @@ object WeatherManager {
 
         try {
             val conn = openConn("https://api.rainviewer.com/public/weather-maps.json")
-            if (conn.responseCode == 200) {
-                val resp = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                val root = JSONObject(resp)
-                val host = root.optString("host", "https://tilecache.rainviewer.com")
-                val past = root.optJSONObject("radar")?.optJSONArray("past")
-                if (past != null && past.length() > 0) {
-                    val latest = past.getJSONObject(past.length() - 1)
-                    val path = latest.optString("path", "")
-                    val time = latest.optLong("time", now / 1000)
-                    val radar = JSONObject()
-                    radar.put("host", host)
-                    radar.put("path", path)
-                    radar.put("lat", zone.lat)
-                    radar.put("lon", zone.lon)
-                    radar.put("time", time)
-                    prefs.edit().putString(PREF_RADAR_CACHE_KEY, radar.toString()).apply()
-                    return@withContext radar
+            try {
+                if (conn.responseCode == 200) {
+                    val resp = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                    val root = JSONObject(resp)
+                    val host = root.optString("host", "https://tilecache.rainviewer.com")
+                    val past = root.optJSONObject("radar")?.optJSONArray("past")
+                    if (past != null && past.length() > 0) {
+                        val latest = past.getJSONObject(past.length() - 1)
+                        val path = latest.optString("path", "")
+                        val time = latest.optLong("time", now / 1000)
+                        val radar = JSONObject()
+                        radar.put("host", host)
+                        radar.put("path", path)
+                        radar.put("lat", zone.lat)
+                        radar.put("lon", zone.lon)
+                        radar.put("time", time)
+                        prefs.edit().putString(PREF_RADAR_CACHE_KEY, radar.toString()).apply()
+                        return@withContext radar
+                    }
                 }
+            } finally {
+                try { conn.disconnect() } catch (_: Exception) {}
             }
         } catch (e: Throwable) {
             Log.w(TAG, "RainViewer fetch error: " + e.message)

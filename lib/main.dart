@@ -24,6 +24,8 @@ void main() {
   runApp(const DashMateApp());
 }
 
+Timer? _syncTimer;
+
 void _initSyncServices() {
   Future.microtask(() async {
     try {
@@ -34,7 +36,8 @@ void _initSyncServices() {
       ]);
     } catch (_) {}
 
-    Timer.periodic(const Duration(minutes: 10), (_) async {
+    _syncTimer?.cancel();
+    _syncTimer = Timer.periodic(const Duration(minutes: 10), (_) async {
       try {
         await Future.wait([
           WeatherService.syncWeather(),

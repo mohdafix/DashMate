@@ -3,7 +3,11 @@ package com.dashmate.dashmate
 import android.content.Context
 import android.content.Intent
 import android.content.res.AssetFileDescriptor
+import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.os.Build
+import java.io.File
+import com.dashmate.dashmate.deck.WelcomeVoiceManager
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -195,21 +199,83 @@ object DashMateStateBridge {
         notifyStateChanged()
     }
 
-    fun playWelcomeChime(context: Context) {
+    fun playWelcomeExperience(context: Context, isTestOnPhone: Boolean = false) {
+        val sp = context.getSharedPreferences("dd_car_browser", Context.MODE_PRIVATE)
+        val mode = sp.getInt("welcome_mode", 1) // 0: Off, 1: Chime, 2: Custom
+        val voice = sp.getBoolean("welcome_voice", true)
+        val customText = sp.getString("welcome_text", "") ?: ""
+        val speed = sp.getFloat("welcome_speed", 1.0f)
+        val pitch = sp.getFloat("welcome_pitch", 1.0f)
+        val volume = sp.getFloat("welcome_volume", 0.8f)
+
+        fun speakGreetingIfEnabled() {
+            if (voice) {
+                mainHandler.postDelayed({
+                    WelcomeVoiceManager.playGreeting(context, customText, speed, pitch, volume, isTestOnPhone = isTestOnPhone)
+                }, 200)
+            }
+        }
+
+        if (mode == 0) {
+            speakGreetingIfEnabled()
+            return
+        }
+
+        var player: MediaPlayer? = null
+        var afd: AssetFileDescriptor? = null
+
         try {
-            val afd: AssetFileDescriptor = context.assets.openFd("dd_welcome_chime.wav")
-            val player = MediaPlayer().apply {
-                setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+            player = MediaPlayer().apply {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    val usage = if (isTestOnPhone) AudioAttributes.USAGE_MEDIA else AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE
+                    val contentType = if (isTestOnPhone) AudioAttributes.CONTENT_TYPE_MUSIC else AudioAttributes.CONTENT_TYPE_SONIFICATION
+                    setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(usage)
+                            .setContentType(contentType)
+                            .build()
+                    )
+                }
+
+                if (mode == 2) {
+                    val customFile = File(context.filesDir, "welcome_custom_sound.audio")
+                    if (customFile.exists() && customFile.length() > 0) {
+                        setDataSource(customFile.absolutePath)
+                    } else {
+                        afd = context.assets.openFd("dd_welcome_chime.wav")
+                        setDataSource(afd!!.fileDescriptor, afd!!.startOffset, afd!!.length)
+                    }
+                } else {
+                    afd = context.assets.openFd("dd_welcome_chime.wav")
+                    setDataSource(afd!!.fileDescriptor, afd!!.startOffset, afd!!.length)
+                }
+
+                setOnCompletionListener { mp ->
+                    try { mp.release() } catch (_: Exception) {}
+                    try { afd?.close() } catch (_: Exception) {}
+                    speakGreetingIfEnabled()
+                }
+
+                setOnErrorListener { mp, _, _ ->
+                    try { mp.release() } catch (_: Exception) {}
+                    try { afd?.close() } catch (_: Exception) {}
+                    speakGreetingIfEnabled()
+                    true
+                }
+
                 prepare()
                 start()
-                setOnCompletionListener {
-                    it.release()
-                    afd.close()
-                }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Could not play welcome chime: ${e.message}")
+            Log.w(TAG, "Could not play welcome sound: ${e.message}")
+            try { player?.release() } catch (_: Exception) {}
+            try { afd?.close() } catch (_: Exception) {}
+            speakGreetingIfEnabled()
         }
+    }
+
+    fun playWelcomeChime(context: Context) {
+        playWelcomeExperience(context)
     }
 
     fun updateMediaInfo(
@@ -312,7 +378,7 @@ object DashMateStateBridge {
         root.put("speedOnly", false)
         root.put("gps", isGps)
 
-        var driverName = "Mohamad Afix"
+        var driverName = "Driver"
         if (context != null) {
             try {
                 val spBrowser = context.getSharedPreferences("dd_car_browser", Context.MODE_PRIVATE)
@@ -322,7 +388,7 @@ object DashMateStateBridge {
                     ?: spDash.getString("driver_name", null)
                     ?: spPrefs.getString("driver_name", null)
                     ?: spBrowser.getString("owner_name", null)
-                    ?: "Mohamad Afix"
+                    ?: "Driver"
                 val savedCustom = spBrowser.getString("custom_page_modes", null)
                     ?: spBrowser.getString("customPage", null)
                     ?: spPrefs.getString("custom_page_modes", null)

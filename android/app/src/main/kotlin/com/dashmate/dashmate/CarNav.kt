@@ -64,7 +64,7 @@ object CarNav {
         )
     }
 
-    private val io = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO)
+    private val io = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
 
     /** Nearest masjid / petrol station as exact coordinates (Waze then starts the route by itself). */
     fun toNearest(context: Context, kind: com.dashmate.dashmate.deck.NearbyFinder.Kind) {

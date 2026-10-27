@@ -13,6 +13,7 @@ class _WelcomeSoundScreenState extends State<WelcomeSoundScreen> {
   static const MethodChannel _channel = MethodChannel('com.dashmate.dashmate/channel');
 
   int _selectedSoundMode = 1; // 0: Off, 1: Chime, 2: Custom
+  String _customSoundName = '';
   bool _voiceGreeting = true;
   final TextEditingController _greetingController = TextEditingController();
   String _selectedVoice = 'Phone default';
@@ -45,6 +46,7 @@ class _WelcomeSoundScreenState extends State<WelcomeSoundScreen> {
           _speed = (res['speed'] as num?)?.toDouble() ?? 1.0;
           _pitch = (res['pitch'] as num?)?.toDouble() ?? 1.0;
           _volume = (res['volume'] as num?)?.toDouble() ?? 0.8;
+          _customSoundName = (res['customSoundName'] as String?) ?? '';
         });
       }
     } catch (_) {}
@@ -91,12 +93,31 @@ class _WelcomeSoundScreenState extends State<WelcomeSoundScreen> {
   }
 
   void _testSpeech() {
-    _channel.invokeMethod('testVoiceGreeting', {
-      'text': _greetingController.text,
+    _channel.invokeMethod('testWelcomeExperience', {
+      'mode': _selectedSoundMode,
+      'voiceGreeting': _voiceGreeting,
+      'customText': _greetingController.text,
       'speed': _speed,
       'pitch': _pitch,
       'volume': _volume,
     });
+  }
+
+  void _pickCustomSound() async {
+    try {
+      final res = await _channel.invokeMethod<Map<dynamic, dynamic>>('pickCustomSound');
+      if (res != null && mounted) {
+        setState(() {
+          _customSoundName = res['name']?.toString() ?? '';
+          _selectedSoundMode = 2;
+        });
+        _savePrefs();
+      }
+    } catch (_) {}
+  }
+
+  void _previewSound() {
+    _channel.invokeMethod('testSound');
   }
 
   @override
@@ -152,6 +173,67 @@ class _WelcomeSoundScreenState extends State<WelcomeSoundScreen> {
                     ],
                   ),
                 ),
+
+                if (_selectedSoundMode == 2) ...[
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF131D2A),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFF2C3E55)),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1E2F44),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(Icons.audio_file_rounded, color: AppColors.accentTeal, size: 20),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _customSoundName.isNotEmpty ? _customSoundName : 'No file chosen',
+                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                _customSoundName.isNotEmpty ? 'Tap Change to replace audio' : 'Tap Browse to choose audio file',
+                                style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.5)),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (_customSoundName.isNotEmpty) ...[
+                          IconButton(
+                            icon: const Icon(Icons.play_circle_fill, color: AppColors.accentTeal, size: 26),
+                            onPressed: _previewSound,
+                            tooltip: 'Preview sound',
+                          ),
+                        ],
+                        TextButton(
+                          onPressed: _pickCustomSound,
+                          style: TextButton.styleFrom(
+                            backgroundColor: const Color(0xFF243B55),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: Text(_customSoundName.isNotEmpty ? 'Change' : 'Browse', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
 
                 const SizedBox(height: 24),
 
@@ -394,6 +476,9 @@ class _WelcomeSoundScreenState extends State<WelcomeSoundScreen> {
       onTap: () {
         setState(() => _selectedSoundMode = index);
         _savePrefs();
+        if (index == 2 && _customSoundName.isEmpty) {
+          _pickCustomSound();
+        }
       },
       child: Container(
         decoration: BoxDecoration(

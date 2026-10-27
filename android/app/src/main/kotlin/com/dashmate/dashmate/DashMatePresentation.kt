@@ -101,7 +101,7 @@ class DashMatePresentation(
     // only the try/catch region around the saved-layout lookup had to be re-scoped).
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        DashMateStateBridge.playWelcomeChime(context)
+        DashMateStateBridge.playWelcomeExperience(context)
 
         try {
             val spBrowser = hostContext.getSharedPreferences("dd_car_browser", Context.MODE_PRIVATE)
@@ -364,7 +364,16 @@ class DashMatePresentation(
             blurKeyboardField()
         }
         authOverlay?.visibility = View.GONE
-        authWebView?.loadUrl("about:blank")
+        try {
+            authWebView?.stopLoading()
+            authWebView?.loadUrl("about:blank")
+            authWebView?.destroy()
+            authWebView = null
+        } catch (_: Exception) {}
+        try {
+            authOverlay?.let { rootLayout.removeView(it) }
+            authOverlay = null
+        } catch (_: Exception) {}
     }
 
     private fun injectBrowserEnhancements(view: WebView?) {
@@ -780,6 +789,8 @@ class DashMatePresentation(
         DashMateStateBridge.removeListener(this)
         DashMateTheme.removeListener(themeListener)
         com.dashmate.dashmate.deck.CarLocation.stop(hostContext)
+        releaseBrowser()
+        closeAuthOverlay()
         super.onStop()
     }
 

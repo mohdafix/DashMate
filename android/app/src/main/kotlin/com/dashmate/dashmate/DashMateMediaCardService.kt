@@ -821,12 +821,18 @@ class DashMateMediaCardService : MediaBrowserServiceCompat(), DashMateStateBridg
             fun copyAsset(assetName: String, destFile: String) {
                 val f = File(artDir, destFile)
                 if (f.exists()) return
-                val stream: InputStream = try {
-                    assets.open("flutter_assets/assets/car/$assetName")
+                try {
+                    val stream: InputStream = try {
+                        assets.open("flutter_assets/assets/car/$assetName")
+                    } catch (e: Exception) {
+                        assets.open("assets/car/$assetName")
+                    }
+                    stream.use { input ->
+                        FileOutputStream(f).use { out -> input.copyTo(out) }
+                    }
                 } catch (e: Exception) {
-                    assets.open("assets/car/$assetName")
+                    Log.w(TAG, "Failed copying asset $assetName: ${e.message}")
                 }
-                FileOutputStream(f).use { out -> stream.copyTo(out) }
             }
 
             copyAsset("card_prayer.png", "card_prayer.png")

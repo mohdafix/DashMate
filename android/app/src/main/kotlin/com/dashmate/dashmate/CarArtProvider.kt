@@ -107,7 +107,12 @@ class CarArtProvider : ContentProvider() {
         val ctx = context ?: throw FileNotFoundException("No context available")
         val dir = File(ctx.cacheDir, "car_art")
         val file = File(dir, filename)
-        if (!file.exists()) {
+        val canonicalDir = dir.canonicalFile
+        val canonicalFile = file.canonicalFile
+        if (!canonicalFile.path.startsWith(canonicalDir.path)) {
+            throw SecurityException("Path traversal attempt")
+        }
+        if (!canonicalFile.exists()) {
             throw FileNotFoundException("File not found: ${file.absolutePath}")
         }
         return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)

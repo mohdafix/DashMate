@@ -7,7 +7,12 @@ import android.media.AudioManager
 import android.os.Build
 import android.provider.Settings
 import android.view.KeyEvent
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import android.content.ComponentName
+import android.net.Uri
+import android.provider.OpenableColumns
+import com.dashmate.dashmate.deck.WelcomeVoiceManager
 import com.dashmate.dashmate.deck.CalendarManager
 import com.dashmate.dashmate.deck.LocalizationManager
 import com.dashmate.dashmate.deck.LyricsFetcher
@@ -44,24 +49,125 @@ class MainActivity : FlutterActivity() {
     private var flutterChannel: MethodChannel? = null
     private var carStateEventSink: EventChannel.EventSink? = null
     private var nowPlayingEventSink: EventChannel.EventSink? = null
-    private var tts: android.speech.tts.TextToSpeech? = null
+    private var stateBridgeListener: DashMateStateBridge.StateListener? = null
+    private val REQ_CODE_PICK_SOUND = 1002
+    private var pendingSoundPickerResult: MethodChannel.Result? = null
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_CODE_PICK_SOUND) {
+            val pending = pendingSoundPickerResult
+            pendingSoundPickerResult = null
+            if (resultCode == android.app.Activity.RESULT_OK && data?.data != null) {
+                val uri = data.data!!
+                try {
+                    var displayName = "custom_sound.audio"
+                    contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                            if (nameIdx >= 0) displayName = cursor.getString(nameIdx)
+                        }
+                    }
+
+                    val destFile = java.io.File(filesDir, "welcome_custom_sound.audio")
+                    contentResolver.openInputStream(uri)?.use { input ->
+                        destFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+
+                    val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
+                    sp.edit()
+                        .putString("welcome_custom_sound_name", displayName)
+                        .putString("welcome_custom_sound_path", destFile.absolutePath)
+                        .putInt("welcome_mode", 2)
+                        .apply()
+
+                    pending?.success(mapOf(
+                        "name" to displayName,
+                        "path" to destFile.absolutePath
+                    ))
+                } catch (e: Exception) {
+                    android.util.Log.e("MainActivity", "Failed copying custom audio: ${e.message}")
+                    pending?.error("FILE_ERROR", e.message, null)
+                }
+            } else {
+                pending?.success(null)
+            }
+        }
+    }
+
+    private fun isNotificationListenerGranted(context: Context): Boolean {
+        try {
+            val enabledPackages = NotificationManagerCompat.getEnabledListenerPackages(context)
+            if (enabledPackages.contains(context.packageName)) return true
+        } catch (_: Exception) {}
+
+        try {
+            val flat = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
+            val cn = ComponentName(context, DashMateMediaListenerService::class.java).flattenToString()
+            if (flat != null && (flat.contains(cn) || flat.contains(context.packageName))) return true
+        } catch (_: Exception) {}
+
+        return false
+    }
+
+    private fun openNotificationListenerSettings(result: MethodChannel.Result? = null) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                try {
+                    val detailIntent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS).apply {
+                        putExtra(
+                            Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME,
+                            ComponentName(this@MainActivity, DashMateMediaListenerService::class.java).flattenToString()
+                        )
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    startActivity(detailIntent)
+                    result?.success(true)
+                    return
+                } catch (e: Exception) {
+                    android.util.Log.w("MainActivity", "Detail listener settings failed: ${e.message}")
+                }
+            }
+
+            try {
+                val listIntent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(listIntent)
+                result?.success(true)
+                return
+            } catch (e: Exception) {
+                android.util.Log.w("MainActivity", "List listener settings failed: ${e.message}")
+            }
+
+            try {
+                val appSettings = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.fromParts("package", packageName, null)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(appSettings)
+                result?.success(true)
+            } catch (e: Exception) {
+                result?.error("SETTINGS_ERROR", e.message, null)
+            }
+        } catch (e: Exception) {
+            result?.error("SETTINGS_ERROR", e.message, null)
+        }
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         DashMateTheme.init(this)
+        WelcomeVoiceManager.init(this)
         val messenger = flutterEngine.dartExecutor.binaryMessenger
 
         // 1. Legacy DashMate Channel for existing widgets & screens
         val legacyChan = MethodChannel(messenger, CHANNEL_LEGACY)
         flutterChannel = legacyChan
 
-        try {
-            tts = android.speech.tts.TextToSpeech(this) { status ->
-                if (status == android.speech.tts.TextToSpeech.SUCCESS) {
-                    tts?.language = java.util.Locale.getDefault()
-                }
-            }
-        } catch (_: Exception) {}
+
 
         // Start DashMateMediaCardService for Android Auto Coolwalk side-by-side card
         try {
@@ -271,14 +377,10 @@ class MainActivity : FlutterActivity() {
                     result.success(true)
                 }
                 "isNotificationAccessGranted" -> {
-                    val enabled = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")?.contains(packageName) == true
-                    result.success(enabled)
+                    result.success(isNotificationListenerGranted(this))
                 }
-                "openNotificationAccessSettings" -> {
-                    val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    startActivity(intent)
-                    result.success(true)
+                "openNotificationAccessSettings", "openNotificationSettings" -> {
+                    openNotificationListenerSettings(result)
                 }
                 else -> result.notImplemented()
             }
@@ -321,7 +423,8 @@ class MainActivity : FlutterActivity() {
             }
         })
 
-        DashMateStateBridge.addListener(object : DashMateStateBridge.StateListener {
+        stateBridgeListener?.let { DashMateStateBridge.removeListener(it) }
+        val bridgeListener = object : DashMateStateBridge.StateListener {
             override fun onStateUpdated(stateJson: String) {
                 runOnUiThread {
                     flutterChannel?.invokeMethod("onStateUpdate", stateJson)
@@ -334,7 +437,9 @@ class MainActivity : FlutterActivity() {
             }
             override fun onSwitchPage(page: String) {}
             override fun onExecuteScript(script: String) {}
-        })
+        }
+        stateBridgeListener = bridgeListener
+        DashMateStateBridge.addListener(bridgeListener)
 
         // Handler for drivedeck/car_browser
         browserChan.setMethodCallHandler { call, result ->
@@ -535,15 +640,11 @@ class MainActivity : FlutterActivity() {
         // Handler for drivedeck/permissions
         permissionsChan.setMethodCallHandler { call, result ->
             when (call.method) {
-                "checkNotifications" -> {
-                    val enabled = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")?.contains(packageName) == true
-                    result.success(enabled)
+                "checkNotifications", "isNotificationAccessGranted" -> {
+                    result.success(isNotificationListenerGranted(this))
                 }
-                "openNotificationSettings" -> {
-                    val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    startActivity(intent)
-                    result.success(true)
+                "openNotificationSettings", "openNotificationAccessSettings" -> {
+                    openNotificationListenerSettings(result)
                 }
                 "checkCalendar" -> {
                     val granted = ContextCompat.checkSelfPermission(this, android.Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
@@ -806,11 +907,11 @@ class MainActivity : FlutterActivity() {
                     DashMateStateBridge.notifyStateChanged(this)
                     result.success(true)
                 }
-                "openNotificationSettings" -> {
-                    val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    startActivity(intent)
-                    result.success(true)
+                "openNotificationSettings", "openNotificationAccessSettings" -> {
+                    openNotificationListenerSettings(result)
+                }
+                "checkNotifications", "isNotificationAccessGranted" -> {
+                    result.success(isNotificationListenerGranted(this))
                 }
                 "saveLayoutSettings" -> {
                     val layoutStr = call.argument<String>("layout")
@@ -903,8 +1004,27 @@ class MainActivity : FlutterActivity() {
                         "customText" to sp.getString("welcome_text", ""),
                         "speed" to sp.getFloat("welcome_speed", 1.0f).toDouble(),
                         "pitch" to sp.getFloat("welcome_pitch", 1.0f).toDouble(),
-                        "volume" to sp.getFloat("welcome_volume", 0.8f).toDouble()
+                        "volume" to sp.getFloat("welcome_volume", 0.8f).toDouble(),
+                        "customSoundName" to sp.getString("welcome_custom_sound_name", "")
                     ))
+                }
+                "pickCustomSound" -> {
+                    pendingSoundPickerResult = result
+                    val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                        type = "audio/*"
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("audio/*", "audio/mpeg", "audio/wav", "audio/ogg", "audio/mp4", "audio/x-wav"))
+                    }
+                    try {
+                        startActivityForResult(intent, REQ_CODE_PICK_SOUND)
+                    } catch (e: Exception) {
+                        pendingSoundPickerResult = null
+                        result.error("PICKER_ERROR", e.message, null)
+                    }
+                }
+                "testSound" -> {
+                    DashMateStateBridge.playWelcomeExperience(this)
+                    result.success(true)
                 }
                 "setWelcomePrefs" -> {
                     val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
@@ -928,20 +1048,28 @@ class MainActivity : FlutterActivity() {
                     val rawText = call.argument<String>("text") ?: ""
                     val speed = call.argument<Double>("speed")?.toFloat() ?: 1.0f
                     val pitch = call.argument<Double>("pitch")?.toFloat() ?: 1.0f
+                    val vol = call.argument<Double>("volume")?.toFloat() ?: 0.8f
+                    WelcomeVoiceManager.playGreeting(this, rawText, speed, pitch, vol, isTestOnPhone = true)
+                    result.success(true)
+                }
+                "testWelcomeExperience" -> {
+                    val mode = call.argument<Int>("mode") ?: 1
+                    val voice = call.argument<Boolean>("voiceGreeting") ?: true
+                    val text = call.argument<String>("customText") ?: ""
+                    val speed = call.argument<Double>("speed")?.toFloat() ?: 1.0f
+                    val pitch = call.argument<Double>("pitch")?.toFloat() ?: 1.0f
+                    val vol = call.argument<Double>("volume")?.toFloat() ?: 0.8f
                     val sp = getSharedPreferences(PREFS_BROWSER, Context.MODE_PRIVATE)
-                    val spPrefs = getSharedPreferences("dashmate_prefs", Context.MODE_PRIVATE)
-                    val driverName = sp.getString("driver_name", null)
-                        ?: spPrefs.getString("driver_name", null)
-                        ?: "Mohamad Afix"
-                    val text = if (rawText.isBlank()) "Welcome back, $driverName" else rawText
-                        .replace("{name}", driverName)
-                        .replace("{prayer_name}", "Maghrib")
-                        .replace("{prayer_time}", "6:59 PM")
-                        .replace("{time}", "7:15 PM")
-                        .replace("{rain}", "No rain expected")
-                    tts?.setSpeechRate(speed)
-                    tts?.setPitch(pitch)
-                    tts?.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "greeting_test")
+                    sp.edit()
+                        .putInt("welcome_mode", mode)
+                        .putBoolean("welcome_voice", voice)
+                        .putString("welcome_text", text)
+                        .putFloat("welcome_speed", speed)
+                        .putFloat("welcome_pitch", pitch)
+                        .putFloat("welcome_volume", vol)
+                        .apply()
+
+                    DashMateStateBridge.playWelcomeExperience(this, isTestOnPhone = true)
                     result.success(true)
                 }
                 "getMenuItems" -> {
@@ -1063,8 +1191,9 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        stateBridgeListener?.let { DashMateStateBridge.removeListener(it) }
+        stateBridgeListener = null
         super.onDestroy()
-        tts?.stop()
-        tts?.shutdown()
+        WelcomeVoiceManager.shutdown()
     }
 }

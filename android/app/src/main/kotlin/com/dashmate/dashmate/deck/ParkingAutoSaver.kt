@@ -43,6 +43,7 @@ object ParkingAutoSaver {
     private var wasConnected = false
     private var observing = false
     private var listening = false
+    private var carConnection: CarConnection? = null
 
     private val connectionObserver = Observer<Int> { type ->
         val ctx = appContext ?: return@Observer
@@ -93,7 +94,8 @@ object ParkingAutoSaver {
         if (!wasConnected) clearAutoSavedSpot(ctx)
         if (!observing) {
             observing = true
-            CarConnection(ctx).type.observeForever(connectionObserver)
+            val conn = carConnection ?: CarConnection(ctx).also { carConnection = it }
+            conn.type.observeForever(connectionObserver)
         }
         wasConnected = true
         startLocationUpdates(ctx)
@@ -103,6 +105,14 @@ object ParkingAutoSaver {
     fun onCarSessionEnded(context: Context) {
         // CarConnection will confirm the disconnect; keep the fix we have.
         lastFix?.let { Log.d(TAG, "Session ended with fix acc=${it.accuracy}") }
+    }
+
+    fun stop() {
+        if (observing) {
+            carConnection?.type?.removeObserver(connectionObserver)
+            observing = false
+        }
+        appContext?.let { stopLocationUpdates(it) }
     }
 
     private fun hasLocationPermission(ctx: Context) =

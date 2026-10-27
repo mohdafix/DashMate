@@ -21,6 +21,8 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.extractor.metadata.icy.IcyInfo
 import androidx.media3.extractor.metadata.id3.TextInformationFrame
 import com.dashmate.dashmate.deck.RadioStation
+import kotlinx.coroutines.*
+
 
 /**
  * Thin ExoPlayer wrapper for live radio streams (mp3 / aac / HLS).
@@ -53,6 +55,7 @@ class RadioPlayer(private val context: Context, private val listener: Listener) 
     }
 
     private val handler = Handler(Looper.getMainLooper())
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var player: ExoPlayer? = null
     private var retryCount = 0
     private var reconnecting = false
@@ -180,8 +183,8 @@ class RadioPlayer(private val context: Context, private val listener: Listener) 
         val np = RadioNowPlaying.from(streamText, st.name, st.subtitle)
         if (!np.isSong) return
         val tuned = tunedWallMs
-        Thread {
-            val startWall = RadioSongStart.estimate(st.url, np.title) ?: return@Thread
+        scope.launch {
+            val startWall = RadioSongStart.estimate(st.url, np.title) ?: return@launch
             handler.post {
                 // Still the same song and still not timed by a real song change?
                 if (nowPlaying != streamText || songStartKnown || tunedWallMs != tuned) return@post
@@ -195,7 +198,7 @@ class RadioPlayer(private val context: Context, private val listener: Listener) 
                 Log.i(TAG, "Mid-song start estimated: ${songPositionMs() / 1000}s into \"${np.title}\"")
                 listener.onRadioStateChanged()
             }
-        }.apply { isDaemon = true }.start()
+        }
     }
 
     private fun ensurePlayer(): ExoPlayer {
@@ -285,6 +288,7 @@ class RadioPlayer(private val context: Context, private val listener: Listener) 
 
     fun release() {
         handler.removeCallbacks(retryRunnable)
+        scope.cancel()
         player?.removeListener(playerListener)
         player?.release()
         player = null
